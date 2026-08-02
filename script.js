@@ -427,7 +427,7 @@ function initFirestoreConnection() {
         });
         firestoreReady = true;
         setConnectUI('connected');
-        if (currentRole() === 'admin') renderAll();
+        renderAll();
       },
       (err) => {
         console.error('Firestore listen error:', err);
@@ -557,6 +557,118 @@ const inputTanggal = document.getElementById('input-tanggal');
 const inputJumlah = document.getElementById('input-jumlah');
 const formError = document.getElementById('form-error');
 const form = document.getElementById('form-laporan');
+
+/* ==========================================================================
+   SCAN BARCODE — LOKASI (Input Laporan)
+========================================================================== */
+const btnScanLokasi = document.getElementById('btn-scan-lokasi');
+const scanModal = document.getElementById('scan-modal');
+const scanModalClose = document.getElementById('scan-modal-close');
+const scanStatus = document.getElementById('scan-status');
+const scanErrorBox = document.getElementById('scan-error');
+
+const LOKASI_SET = new Set(MASTER_DATA.lokasi);
+let html5QrScanner = null;
+let scanBusy = false;
+
+function normalizeLokasiCode(text) {
+  return String(text || '').trim().toUpperCase();
+}
+
+function stripSeparators(text) {
+  return normalizeLokasiCode(text).replace(/[^A-Z0-9]/g, '');
+}
+
+function findMatchingLokasi(decodedText) {
+  const exact = normalizeLokasiCode(decodedText);
+  let match = MASTER_DATA.lokasi.find(l => normalizeLokasiCode(l) === exact);
+  if (match) return match;
+
+  // toleran terhadap perbedaan spasi/strip/prefix pada barcode fisik
+  const stripped = stripSeparators(decodedText);
+  match = MASTER_DATA.lokasi.find(l => stripSeparators(l) === stripped);
+  if (match) return match;
+
+  // coba cari pola kode lokasi (huruf-2digit-2digit) di dalam teks yang lebih panjang
+  const patternMatch = exact.match(/[A-Z]-?\d{2}-?\d{2}/);
+  if (patternMatch) {
+    const strippedPattern = stripSeparators(patternMatch[0]);
+    match = MASTER_DATA.lokasi.find(l => stripSeparators(l) === strippedPattern);
+    if (match) return match;
+  }
+  return null;
+}
+
+async function stopScanner() {
+  if (html5QrScanner) {
+    try {
+      const state = html5QrScanner.getState ? html5QrScanner.getState() : null;
+      const isActive = (typeof Html5QrcodeScannerState !== 'undefined')
+        ? (state === Html5QrcodeScannerState.SCANNING || state === Html5QrcodeScannerState.PAUSED)
+        : !!state;
+      if (isActive) await html5QrScanner.stop();
+      html5QrScanner.clear();
+    } catch (e) { /* kamera mungkin sudah berhenti, aman diabaikan */ }
+  }
+}
+
+async function openScanModal() {
+  if (typeof Html5Qrcode === 'undefined') {
+    showToast('Fitur scan belum siap dimuat. Periksa koneksi internet lalu coba lagi.', 'error');
+    return;
+  }
+  scanModal.hidden = false;
+  scanErrorBox.hidden = true;
+  scanStatus.textContent = 'Menyiapkan kamera...';
+  scanBusy = false;
+
+  try {
+    html5QrScanner = new Html5Qrcode('scan-reader', { verbose: false });
+    await html5QrScanner.start(
+      { facingMode: 'environment' },
+      {
+        fps: 10,
+        qrbox: (vw, vh) => {
+          const size = Math.floor(Math.min(vw, vh) * 0.75);
+          return { width: size, height: Math.max(size * 0.45, 80) };
+        },
+      },
+      onScanSuccess,
+      () => { /* frame tanpa barcode terdeteksi, abaikan */ }
+    );
+    scanStatus.textContent = 'Arahkan kamera ke barcode lokasi di rak.';
+  } catch (err) {
+    console.error('Gagal membuka kamera untuk scan:', err);
+    scanStatus.textContent = '';
+    scanErrorBox.hidden = false;
+    scanErrorBox.textContent = 'Tidak bisa mengakses kamera. Pastikan izin kamera diberikan, lalu coba lagi.';
+  }
+}
+
+async function closeScanModal() {
+  await stopScanner();
+  scanModal.hidden = true;
+}
+
+async function onScanSuccess(decodedText) {
+  if (scanBusy) return;
+  console.log('[scan-lokasi] barcode terbaca:', decodedText);
+  const matched = findMatchingLokasi(decodedText);
+
+  if (matched) {
+    scanBusy = true;
+    selLokasi.setValue(matched);
+    await closeScanModal();
+    showToast(`Lokasi berhasil di-scan: ${matched}`);
+  } else {
+    scanErrorBox.hidden = false;
+    scanErrorBox.textContent = `Kode "${decodedText}" tidak dikenali sebagai lokasi yang valid. Coba scan ulang.`;
+  }
+}
+
+if (btnScanLokasi) btnScanLokasi.addEventListener('click', openScanModal);
+if (scanModalClose) scanModalClose.addEventListener('click', closeScanModal);
+if (scanModal) scanModal.addEventListener('click', (e) => { if (e.target === scanModal) closeScanModal(); });
 
 inputTanggal.value = todayISO();
 
@@ -971,7 +1083,6 @@ const katalogEmpty = document.getElementById('katalog-empty');
 const searchKatalog = document.getElementById('search-katalog');
 
 function renderKatalog() {
-  if (currentRole() !== 'admin') return;
   const items = buildStokList(currentEntries);
   const q = searchKatalog.value.trim().toLowerCase();
   const filtered = q
@@ -1024,7 +1135,6 @@ const lokasiHintEl = document.getElementById('lokasi-hint');
 const searchLokasi = document.getElementById('search-lokasi');
 
 function renderLokasi() {
-  if (currentRole() !== 'admin') return;
   const all = buildLocationStock(currentEntries);
   const q = searchLokasi.value.trim().toLowerCase();
   const filtered = q ? all.filter(l => l.lokasi.toLowerCase().includes(q)) : all;
@@ -1108,6 +1218,7 @@ const modalBody = document.getElementById('modal-body');
 document.getElementById('modal-close').addEventListener('click', closeItemModal);
 itemModal.addEventListener('click', (e) => { if (e.target === itemModal) closeItemModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeItemModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && scanModal && !scanModal.hidden) closeScanModal(); });
 
 function closeItemModal() { itemModal.hidden = true; }
 

@@ -628,6 +628,34 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 }
 .modal-close:hover { background: var(--merah-flag-soft); color: var(--merah-flag); }
 
+/* ==========================================================================
+   SCAN BARCODE — LOKASI
+========================================================================== */
+.lokasi-input-row { display: flex; gap: 8px; align-items: stretch; }
+.lokasi-input-row .searchable { flex: 1; min-width: 0; }
+.btn-scan {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 0 14px; border-radius: 10px; border: 2px solid var(--navy);
+  background: var(--navy); color: var(--text-on-dark);
+  font-family: var(--font-display); font-weight: 700; font-size: 12.5px; letter-spacing: 0.3px;
+}
+.btn-scan:hover { background: var(--navy-dark, var(--navy)); opacity: 0.92; }
+.btn-scan svg { flex-shrink: 0; }
+@media (max-width: 480px) {
+  .btn-scan span { display: none; }
+  .btn-scan { padding: 0 12px; }
+}
+
+.modal-panel-scan { max-width: 460px; }
+.scan-reader {
+  width: 100%; border-radius: 12px; overflow: hidden;
+  background: #000; margin-top: 4px; min-height: 240px;
+}
+.scan-reader video { width: 100% !important; height: auto !important; display: block; }
+.scan-status {
+  margin-top: 12px; text-align: center; font-size: 13px; color: var(--text-muted);
+}
+
 .modal-item-head { padding-right: 30px; margin-bottom: 16px; }
 .modal-item-kode { font-size: 11.5px; color: var(--text-muted); margin-bottom: 2px; }
 .modal-item-nama { font-family: var(--font-display); font-weight: 700; font-size: 20px; margin: 0; line-height: 1.2; }
