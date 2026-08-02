@@ -631,6 +631,12 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 /* ==========================================================================
    SCAN BARCODE — LOKASI
 ========================================================================== */
+.lokasi-scan-box {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  border: 2px dashed var(--kraft-line); border-radius: 9px;
+  padding: 11px 14px; background: var(--kraft-light, #F7F4EC);
+}
+.lokasi-scan-box svg { color: var(--navy); flex-shrink: 0; }
 .lokasi-input-row { display: flex; gap: 8px; align-items: stretch; }
 .lokasi-input-row .searchable { flex: 1; min-width: 0; }
 .btn-scan {

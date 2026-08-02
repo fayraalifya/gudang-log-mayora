@@ -544,13 +544,27 @@ const selPemilik = setupSearchableSelect({
   onSelect: () => {},
 });
 
-const selLokasi = setupSearchableSelect({
-  id: 'sel-lokasi',
-  options: MASTER_DATA.lokasi,
-  getLabel: o => o,
-  placeholder: 'Pilih lokasi...',
-  onSelect: () => {},
-});
+// Lokasi Penyimpanan BUKAN dropdown pilihan manual — nilainya hanya bisa
+// diisi lewat hasil scan barcode (lihat onScanSuccess di bawah).
+const lokasiValueEl = document.getElementById('sel-lokasi-value');
+const selLokasi = {
+  _value: null,
+  getValue: () => selLokasi._value,
+  reset: () => {
+    selLokasi._value = null;
+    if (lokasiValueEl) {
+      lokasiValueEl.textContent = 'Belum di-scan...';
+      lokasiValueEl.classList.remove('has-value');
+    }
+  },
+  setValue: (v) => {
+    selLokasi._value = v;
+    if (lokasiValueEl) {
+      lokasiValueEl.textContent = v;
+      lokasiValueEl.classList.add('has-value');
+    }
+  },
+};
 
 const inputOperator = document.getElementById('input-operator');
 const inputTanggal = document.getElementById('input-tanggal');
@@ -712,7 +726,7 @@ form.addEventListener('submit', async (e) => {
   if (!barang) return showError('Pilih nama barang terlebih dahulu.');
   if (!supplier) return showError('Pilih supplier terlebih dahulu.');
   if (!pemilik) return showError('Pilih pemilik barang (pabrik) terlebih dahulu.');
-  if (!lokasi) return showError('Pilih lokasi penyimpanan terlebih dahulu.');
+  if (!lokasi) return showError('Scan barcode lokasi penyimpanan terlebih dahulu.');
   if (!tanggal) return showError('Tanggal wajib diisi.');
   if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
 
