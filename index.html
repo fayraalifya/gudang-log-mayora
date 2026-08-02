@@ -515,10 +515,26 @@
           </div>
 
           <div class="field">
-            <label for="input-jumlah">Jumlah Barang <span class="req">*</span></label>
+            <label for="input-jumlah">Jumlah Barang (pcs) <span class="req">*</span></label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
               <input type="number" id="input-jumlah" min="1" placeholder="0">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="input-qty-pallet">Qty per Pallet (pcs)</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
+              <input type="number" id="input-qty-pallet" min="1" placeholder="Opsional">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="input-jumlah-pallet">Jumlah Pallet (otomatis)</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
+              <input type="text" id="input-jumlah-pallet" placeholder="-" readonly disabled>
             </div>
           </div>
 

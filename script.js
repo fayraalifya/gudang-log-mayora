@@ -271,8 +271,8 @@ let currentEntries = [];
 let unsubscribeLaporan = null;
 let firestoreReady = false;
 
-const MONTH_HEADERS = ['Tanggal', 'Jenis', 'Tipe', 'Nama Operator', 'Kode Barang', 'Nama Barang', 'Supplier', 'Pemilik Barang', 'Lokasi', 'Jumlah', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
-const MONTH_COL_WIDTHS = [12, 9, 13, 18, 14, 34, 22, 14, 10, 9, 28, 22, 22, 14];
+const MONTH_HEADERS = ['Tanggal', 'Jenis', 'Tipe', 'Nama Operator', 'Kode Barang', 'Nama Barang', 'Supplier', 'Pemilik Barang', 'Lokasi', 'Jumlah (pcs)', 'Qty per Pallet (pcs)', 'Jumlah Pallet', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
+const MONTH_COL_WIDTHS = [12, 9, 13, 18, 14, 34, 22, 14, 10, 12, 16, 12, 28, 22, 22, 14];
 const STOK_HEADERS = ['Kode Barang', 'Nama Barang', 'Lokasi Terpakai', 'Total Masuk', 'Total Keluar', 'Stok Saat Ini', 'Terakhir Masuk', 'Terakhir Keluar', 'Terakhir Diperbarui'];
 const STOK_COL_WIDTHS = [14, 34, 26, 12, 12, 12, 22, 22, 22];
 
@@ -342,6 +342,8 @@ function buildMonthSheet(entries) {
     t.pemilik,
     t.lokasi,
     t.jumlah,
+    t.qtyPerPallet != null ? t.qtyPerPallet : '',
+    t.jumlahPallet != null ? t.jumlahPallet : '',
     t.keterangan || '',
     new Date(t.createdAt).toISOString(),
     new Date(t.updatedAt).toISOString(),
@@ -350,7 +352,7 @@ function buildMonthSheet(entries) {
   const aoa = [MONTH_HEADERS, ...rows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = MONTH_COL_WIDTHS.map(w => ({ wch: w }));
-  ws['!autofilter'] = { ref: `A1:N${aoa.length}` };
+  ws['!autofilter'] = { ref: `A1:P${aoa.length}` };
   return ws;
 }
 
@@ -569,8 +571,24 @@ const selLokasi = {
 const inputOperator = document.getElementById('input-operator');
 const inputTanggal = document.getElementById('input-tanggal');
 const inputJumlah = document.getElementById('input-jumlah');
+const inputQtyPallet = document.getElementById('input-qty-pallet');
+const inputJumlahPallet = document.getElementById('input-jumlah-pallet');
 const formError = document.getElementById('form-error');
 const form = document.getElementById('form-laporan');
+
+function hitungJumlahPallet() {
+  const jumlah = parseFloat(inputJumlah.value);
+  const qtyPallet = parseFloat(inputQtyPallet.value);
+  if (!jumlah || !qtyPallet || qtyPallet <= 0) {
+    inputJumlahPallet.value = '';
+    return;
+  }
+  const hasil = jumlah / qtyPallet;
+  // tampilkan maks 2 angka desimal, buang nol yang tidak perlu
+  inputJumlahPallet.value = (Math.round(hasil * 100) / 100).toString();
+}
+inputJumlah.addEventListener('input', hitungJumlahPallet);
+inputQtyPallet.addEventListener('input', hitungJumlahPallet);
 
 /* ==========================================================================
    SCAN BARCODE — LOKASI (Input Laporan)
@@ -703,6 +721,8 @@ function resetForm() {
   selLokasi.reset();
   document.getElementById('kode-box').hidden = true;
   inputJumlah.value = '';
+  inputQtyPallet.value = '';
+  inputJumlahPallet.value = '';
   inputTanggal.value = todayISO();
   setJenis('masuk');
   hideError();
@@ -721,6 +741,9 @@ form.addEventListener('submit', async (e) => {
   const lokasi = selLokasi.getValue();
   const tanggal = inputTanggal.value;
   const jumlah = parseInt(inputJumlah.value, 10);
+  const qtyPerPalletRaw = inputQtyPallet.value.trim();
+  const qtyPerPallet = qtyPerPalletRaw ? parseFloat(qtyPerPalletRaw) : null;
+  const jumlahPallet = inputJumlahPallet.value ? parseFloat(inputJumlahPallet.value) : null;
 
   if (!operator) return showError('Nama operator wajib diisi.');
   if (!barang) return showError('Pilih nama barang terlebih dahulu.');
@@ -729,6 +752,16 @@ form.addEventListener('submit', async (e) => {
   if (!lokasi) return showError('Scan barcode lokasi penyimpanan terlebih dahulu.');
   if (!tanggal) return showError('Tanggal wajib diisi.');
   if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
+  if (qtyPerPalletRaw && (!qtyPerPallet || qtyPerPallet <= 0)) return showError('Qty per pallet harus berupa angka lebih dari 0.');
+
+  if (jenis === 'keluar') {
+    const stokTersedia = currentEntries
+      .filter(t => t.kodeBarang === barang.kode)
+      .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlah : -t.jumlah), 0);
+    if (jumlah > stokTersedia) {
+      return showError(`Jumlah keluar (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok yang tersedia (${stokTersedia.toLocaleString('id-ID')} pcs) untuk barang ini.`);
+    }
+  }
 
   const submitBtn = document.getElementById('btn-submit');
   const submitText = document.getElementById('btn-submit-text');
@@ -740,7 +773,7 @@ form.addEventListener('submit', async (e) => {
     const now = Date.now();
     await addEntryToFirestore({
       jenis, tipe: 'transaksi', operator, kodeBarang: barang.kode, namaBarang: barang.nama,
-      supplier, pemilik, lokasi, jumlah, keterangan: '', tanggal, createdAt: now, updatedAt: now,
+      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, keterangan: '', tanggal, createdAt: now, updatedAt: now,
     });
 
     resetForm();
@@ -1361,7 +1394,9 @@ function renderRiwayat() {
         <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier)}</div>
         <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik)}</div>
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
-        <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${t.jumlah}</div>
+        <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
+        ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet} pcs</div>` : ''}
+        ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet}</div>` : ''}
         <div><span class="lbl">Tanggal: </span>${formatTanggal(t.tanggal)}</div>
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
