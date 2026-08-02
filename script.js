@@ -154,6 +154,17 @@ function clearSession() {
 }
 
 /* ---- UI Elements ---- */
+const loginScreen = document.getElementById('login-screen');
+const appScreen = document.getElementById('app-screen');
+const rolePill = document.getElementById('role-pill');
+const userNameLabel = document.getElementById('user-name-label');
+const tabOperator = document.getElementById('tab-operator');
+const tabAdmin = document.getElementById('tab-admin');
+const formLoginOperator = document.getElementById('form-login-operator');
+const formLoginAdmin = document.getElementById('form-login-admin');
+const loginOperatorNama = document.getElementById('login-operator-nama');
+const loginAdminPassword = document.getElementById('login-admin-password');
+const loginError = document.getElementById('login-error');
 const operatorModeTabs = document.getElementById('operator-mode-tabs');
 const tabOperatorLogin = document.getElementById('tab-operator-login');
 const tabOperatorRegister = document.getElementById('tab-operator-register');
