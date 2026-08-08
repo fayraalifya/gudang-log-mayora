@@ -29,6 +29,8 @@ import {
   onSnapshot,
   writeBatch,
   getDocs,
+  query,
+  where,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   getAuth,
@@ -51,12 +53,16 @@ const auth = getAuth(app);
 
 const LAPORAN_COLLECTION = "laporan";
 const OPERATOR_COLLECTION = "operator";
+const BARANG_BARU_COLLECTION = "barangBaru";
+const PEMILIK_BARU_COLLECTION = "pemilikBaru";
 
 window.gudangFirebase = {
   db,
   auth,
   laporanCol: collection(db, LAPORAN_COLLECTION),
   operatorCol: collection(db, OPERATOR_COLLECTION),
+  barangBaruCol: collection(db, BARANG_BARU_COLLECTION),
+  pemilikBaruCol: collection(db, PEMILIK_BARU_COLLECTION),
   collection,
   addDoc,
   updateDoc,
@@ -65,6 +71,8 @@ window.gudangFirebase = {
   onSnapshot,
   writeBatch,
   getDocs,
+  query,
+  where,
 };
 
 // ---- Autentikasi anonim ----

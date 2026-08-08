@@ -5,3 +5,18 @@ const MASTER_DATA = {"barang":[{"kode":"2051019037","nama":"CRT B1 APETIT CREAMY
 const ADMIN_ACCOUNTS = [
   { nama: "Fakhri", password: "@admin1fakhri" },
 ];
+
+// ==========================================================================
+// KODE AKSES PENDAFTARAN OPERATOR
+// ==========================================================================
+// Ini adalah "kode gerbang" yang WAJIB dimasukkan setiap orang saat mendaftar
+// akun operator baru. Kode ini TIDAK ditampilkan di aplikasi — hanya
+// dibagikan secara langsung/manual oleh admin gudang kepada karyawan Mayora
+// yang berhak (misal lewat grup WA internal, bukan lewat email/chat publik).
+//
+// Siapapun yang tidak tahu kode ini TIDAK akan bisa membuat akun operator,
+// walaupun mereka tahu alamat/URL aplikasi ini. Ganti kode ini kapan saja
+// (misalnya tiap beberapa bulan) cukup dengan mengubah nilai teks di bawah —
+// operator lama yang sudah terdaftar tidak akan terpengaruh, karena kode ini
+// hanya dicek pada saat PENDAFTARAN, bukan saat login harian.
+const KODE_AKSES_PENDAFTARAN = "MAYORA2025";

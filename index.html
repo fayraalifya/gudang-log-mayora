@@ -112,13 +112,28 @@
 
         <!-- FORM OPERATOR REGISTER -->
         <form id="form-register-operator" class="login-form" hidden>
-          <p class="login-form-desc">Buat akun operator baru dengan nama dan kata sandi.</p>
+          <p class="login-form-desc">Buat akun operator baru. Pendaftaran hanya bisa diselesaikan oleh karyawan Mayora yang memiliki Kode Akses Pendaftaran.</p>
           <div class="field">
             <label for="register-operator-nama">Nama Operator</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/></svg>
               <input type="text" id="register-operator-nama" placeholder="Masukkan nama Anda" autocomplete="off">
             </div>
+          </div>
+          <div class="field">
+            <label for="register-operator-id-karyawan">ID Karyawan / NIK</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6M7 12h10M7 16h6"/></svg>
+              <input type="text" id="register-operator-id-karyawan" placeholder="Masukkan ID karyawan / NIK Anda" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label for="register-operator-kode-akses">Kode Akses Pendaftaran</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.5"/></svg>
+              <input type="password" id="register-operator-kode-akses" placeholder="Minta kode ini ke admin gudang" autocomplete="off">
+            </div>
+            <p class="field-hint">Kode internal dari admin gudang — mencegah orang di luar Mayora ikut mendaftar.</p>
           </div>
           <div class="field">
             <label for="register-operator-password">Kata Sandi</label>
@@ -328,6 +343,20 @@
         <div id="lokasi-list" class="lokasi-list"></div>
       </section>
 
+      <!-- AKUN OPERATOR TERDAFTAR — hanya admin -->
+      <section id="akun-operator" class="akun-operator admin-only">
+        <div class="katalog-header">
+          <h3>Akun Operator Terdaftar</h3>
+          <div class="search-inline">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="search-akun-operator" placeholder="Cari nama / ID karyawan...">
+          </div>
+        </div>
+        <p class="katalog-hint">Daftar semua orang yang berhasil mendaftar sebagai operator. Hapus akun yang tidak dikenali / mencurigakan.</p>
+        <div id="akun-operator-empty" class="empty-state">Belum ada operator yang mendaftar.</div>
+        <div id="akun-operator-list" class="akun-operator-list"></div>
+      </section>
+
       <!-- SESUAIKAN STOK — hanya admin (stok awal / koreksi stock opname / pindah lokasi) -->
       <form id="form-penyesuaian" class="card admin-only">
         <h2 class="card-title">Sesuaikan Stok</h2>
@@ -378,6 +407,21 @@
               <div class="dropdown-panel" id="sel-adj-lokasi-panel" hidden>
                 <div class="search-box"><input type="text" id="sel-adj-lokasi-search" placeholder="Ketik untuk mencari..."></div>
                 <div class="options-list" id="sel-adj-lokasi-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Pemilik Barang <span class="req">*</span></label>
+            <div class="searchable" id="sel-adj-pemilik">
+              <button type="button" class="select-btn" id="sel-adj-pemilik-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span class="select-value" id="sel-adj-pemilik-value" data-placeholder="Pilih pemilik barang...">Pilih pemilik barang...</span>
+                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="dropdown-panel" id="sel-adj-pemilik-panel" hidden>
+                <div class="search-box"><input type="text" id="sel-adj-pemilik-search" placeholder="Ketik untuk mencari..."></div>
+                <div class="options-list" id="sel-adj-pemilik-list"></div>
               </div>
             </div>
           </div>
@@ -600,8 +644,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script src="data.js"></script>
-  <script type="module" src="firebase-config.js"></script>
-  <script src="script.js"></script>
+  <script src="data.js?v=20260808"></script>
+  <script type="module" src="firebase-config.js?v=20260808"></script>
+  <script src="script.js?v=20260808"></script>
 </body>
 </html>

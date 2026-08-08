@@ -45,7 +45,7 @@ function escapeHtml(str) {
 ========================================================================== */
 const openPanels = [];
 
-function setupSearchableSelect({ id, options, getLabel, getSub, onSelect, placeholder }) {
+function setupSearchableSelect({ id, options, getLabel, getSub, onSelect, placeholder, allowAdd, onAdd, addMode }) {
   const wrap = document.getElementById(id);
   const btn = document.getElementById(`${id}-btn`);
   const valueEl = document.getElementById(`${id}-value`);
@@ -55,26 +55,135 @@ function setupSearchableSelect({ id, options, getLabel, getSub, onSelect, placeh
 
   if (!wrap || !btn || !valueEl || !panel || !search || !list) {
     console.warn(`setupSearchableSelect: markup untuk "${id}" tidak ditemukan, dilewati.`);
-    return { getValue: () => null, reset: () => {}, setValue: () => {} };
+    return { getValue: () => null, reset: () => {}, setValue: () => {}, updateOptions: () => {} };
   }
 
   let selected = null;
+  let currentOptions = options;
+  let addBusy = false;
 
   function closeThis() { panel.hidden = true; btn.classList.remove('is-open'); }
   openPanels.push(closeThis);
 
+  function selectOption(o) {
+    selected = o;
+    valueEl.textContent = getLabel(o);
+    valueEl.classList.add('has-value');
+    closeThis();
+    search.value = '';
+    onSelect(o);
+  }
+
+  function renderAddForm(query) {
+    const box = document.createElement('div');
+    box.className = 'option-item-add-form';
+    box.innerHTML = `
+      <div class="add-form-title">Barang belum ada di daftar. Tambahkan sebagai barang baru:</div>
+      <label class="add-form-lbl">Nama Barang</label>
+      <input type="text" class="add-form-nama" value="${escapeHtml(query)}" placeholder="Nama barang">
+      <label class="add-form-lbl">Kode Barang</label>
+      <input type="text" class="add-form-kode" placeholder="Contoh: 2051019099">
+      <div class="add-form-actions">
+        <button type="button" class="btn-mini btn-mini-cancel add-form-cancel">Batal</button>
+        <button type="button" class="btn-mini btn-mini-save add-form-confirm">+ Tambahkan</button>
+      </div>
+    `;
+    const namaInput = box.querySelector('.add-form-nama');
+    const kodeInput = box.querySelector('.add-form-kode');
+    box.querySelector('.add-form-cancel').addEventListener('click', () => renderList(search.value));
+    box.querySelector('.add-form-confirm').addEventListener('click', async () => {
+      if (addBusy) return;
+      const nama = namaInput.value.trim().toUpperCase();
+      const kode = kodeInput.value.trim();
+      if (!nama) return namaInput.focus();
+      if (!kode) return kodeInput.focus();
+      const dup = currentOptions.find(o => String(o.kode) === kode);
+      if (dup) {
+        selectOption(dup);
+        return;
+      }
+      addBusy = true;
+      const confirmBtn = box.querySelector('.add-form-confirm');
+      const originalTxt = confirmBtn.textContent;
+      confirmBtn.textContent = 'Menyimpan...';
+      try {
+        const newItem = { kode, nama };
+        await onAdd(newItem);
+        currentOptions = [newItem, ...currentOptions];
+        selectOption(newItem);
+        showToast(`Barang baru "${nama}" ditambahkan ke daftar.`);
+      } catch (err) {
+        confirmBtn.textContent = originalTxt;
+        addBusy = false;
+        showToast('Gagal menambah barang baru: ' + err.message, 'error');
+      }
+    });
+    list.appendChild(box);
+  }
+
+  function renderSimpleAddForm(query) {
+    const box = document.createElement('div');
+    box.className = 'option-item-add-form';
+    box.innerHTML = `
+      <div class="add-form-title">Belum ada di daftar. Tambahkan sebagai baru:</div>
+      <label class="add-form-lbl">Nama</label>
+      <input type="text" class="add-form-simple" value="${escapeHtml(query)}" placeholder="Ketik nama baru">
+      <div class="add-form-actions">
+        <button type="button" class="btn-mini btn-mini-cancel add-form-cancel">Batal</button>
+        <button type="button" class="btn-mini btn-mini-save add-form-confirm">+ Tambahkan</button>
+      </div>
+    `;
+    const nameInput = box.querySelector('.add-form-simple');
+    box.querySelector('.add-form-cancel').addEventListener('click', () => renderList(search.value));
+    box.querySelector('.add-form-confirm').addEventListener('click', async () => {
+      if (addBusy) return;
+      const nama = nameInput.value.trim();
+      if (!nama) return nameInput.focus();
+      const dup = currentOptions.find(o => String(o).toLowerCase() === nama.toLowerCase());
+      if (dup) {
+        selectOption(dup);
+        return;
+      }
+      addBusy = true;
+      const confirmBtn = box.querySelector('.add-form-confirm');
+      const originalTxt = confirmBtn.textContent;
+      confirmBtn.textContent = 'Menyimpan...';
+      try {
+        await onAdd(nama);
+        currentOptions = [nama, ...currentOptions];
+        selectOption(nama);
+        showToast(`"${nama}" ditambahkan ke daftar.`);
+      } catch (err) {
+        confirmBtn.textContent = originalTxt;
+        addBusy = false;
+        showToast('Gagal menambah: ' + err.message, 'error');
+      }
+    });
+    list.appendChild(box);
+  }
+
   function renderList(query = '') {
     const q = query.trim().toLowerCase();
-    let filtered = options;
+    let filtered = currentOptions;
     if (q) {
-      filtered = options.filter(o =>
+      filtered = currentOptions.filter(o =>
         getLabel(o).toLowerCase().includes(q) ||
         (getSub && getSub(o) && String(getSub(o)).toLowerCase().includes(q))
       );
     }
     list.innerHTML = '';
     if (filtered.length === 0) {
-      list.innerHTML = '<div class="no-result">Tidak ditemukan</div>';
+      // Sebelumnya opsi "Tambah baru" hanya muncul kalau `q` (teks pencarian)
+      // sudah diisi. Itu bikin tombolnya kelihatan "nggak ada sama sekali"
+      // kalau daftar kosong sebelum user sempat mengetik apa pun. Sekarang
+      // cukup allowAdd + onAdd aktif, tidak perlu ada `q` dulu.
+      if (allowAdd && onAdd) {
+        list.innerHTML = '';
+        if (addMode === 'simple') renderSimpleAddForm(search.value.trim());
+        else renderAddForm(search.value.trim());
+      } else {
+        list.innerHTML = '<div class="no-result">Tidak ditemukan</div>';
+      }
       return;
     }
     filtered.forEach(o => {
@@ -83,16 +192,25 @@ function setupSearchableSelect({ id, options, getLabel, getSub, onSelect, placeh
       item.className = 'option-item';
       const sub = getSub ? getSub(o) : null;
       item.innerHTML = `<span class="opt-label">${escapeHtml(getLabel(o))}</span>` + (sub ? `<span class="opt-sub">${escapeHtml(sub)}</span>` : '');
-      item.addEventListener('click', () => {
-        selected = o;
-        valueEl.textContent = getLabel(o);
-        valueEl.classList.add('has-value');
-        closeThis();
-        search.value = '';
-        onSelect(o);
-      });
+      item.addEventListener('click', () => selectOption(o));
       list.appendChild(item);
     });
+    // Sama seperti di atas: dulu tombol trigger "+ Tambah baru" di bawah
+    // daftar juga mensyaratkan `q` terisi. Sekarang selalu tampil selama
+    // allowAdd + onAdd aktif, supaya user tidak harus ngetik dulu untuk
+    // sekadar melihat opsi tambah barang/pemilik baru.
+    if (allowAdd && onAdd) {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'option-item option-item-add-trigger';
+      addBtn.textContent = addMode === 'simple' ? `+ Tidak ada di daftar? Tambah baru...` : `+ Barang tidak ada di daftar? Tambah baru...`;
+      addBtn.addEventListener('click', () => {
+        list.innerHTML = '';
+        if (addMode === 'simple') renderSimpleAddForm(search.value.trim());
+        else renderAddForm(search.value.trim());
+      });
+      list.appendChild(addBtn);
+    }
   }
 
   btn.addEventListener('click', (e) => {
@@ -120,6 +238,9 @@ function setupSearchableSelect({ id, options, getLabel, getSub, onSelect, placeh
       selected = o;
       valueEl.textContent = getLabel(o);
       valueEl.classList.add('has-value');
+    },
+    updateOptions: (newOptions) => {
+      currentOptions = newOptions;
     },
   };
 }
@@ -172,6 +293,11 @@ const formRegisterOperator = document.getElementById('form-register-operator');
 const loginOperatorPassword = document.getElementById('login-operator-password');
 const loginOperatorError = document.getElementById('login-operator-error');
 const registerOperatorError = document.getElementById('register-operator-error');
+const registerOperatorNama = document.getElementById('register-operator-nama');
+const registerOperatorIdKaryawan = document.getElementById('register-operator-id-karyawan');
+const registerOperatorKodeAkses = document.getElementById('register-operator-kode-akses');
+const registerOperatorPassword = document.getElementById('register-operator-password');
+const registerOperatorPasswordConfirm = document.getElementById('register-operator-password-confirm');
 
 function switchOperatorMode(mode) {
   tabOperatorLogin.classList.toggle('is-active', mode === 'login');
@@ -211,12 +337,181 @@ const selAdminNama = setupSearchableSelect({
   onSelect: () => {},
 });
 
-formLoginOperator.addEventListener('submit', (e) => {
+/* ==========================================================================
+   AKUN OPERATOR — daftar & login sungguhan lewat Firestore
+   (mencegah orang masuk tanpa mendaftar terlebih dahulu)
+========================================================================== */
+
+// Hash satu arah (SHA-256) supaya kata sandi tidak tersimpan sebagai teks
+// polos di database. Ini bukan pengganti backend yang sesungguhnya (idealnya
+// hashing + salt dilakukan di server), tapi jauh lebih aman dibanding
+// menyimpan password apa adanya, dan cukup untuk skala aplikasi internal ini.
+async function hashPassword(password) {
+  const enc = new TextEncoder().encode(password);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function normalizeNamaKey(nama) {
+  return String(nama || '').trim().toLowerCase();
+}
+
+// Halaman login bisa tampil sebelum proses sign-in anonim ke Firebase
+// selesai. Fungsi ini menunggu event 'gudang-firebase-ready' (ditembakkan
+// oleh firebase-config.js setelah auth siap) sebelum kita mencoba
+// membaca/menulis koleksi 'operator'.
+let firebaseAuthReady = false;
+window.addEventListener('gudang-firebase-ready', () => { firebaseAuthReady = true; });
+
+function waitForFirebaseAuth(timeoutMs = 12000) {
+  return new Promise((resolve, reject) => {
+    if (firebaseAuthReady && window.gudangFirebase) return resolve();
+    let settled = false;
+    const onReady = () => { if (settled) return; settled = true; cleanup(); resolve(); };
+    const onError = () => { if (settled) return; settled = true; cleanup(); reject(new Error('auth-error')); };
+    const timer = setTimeout(() => { if (settled) return; settled = true; cleanup(); reject(new Error('timeout')); }, timeoutMs);
+    function cleanup() {
+      clearTimeout(timer);
+      window.removeEventListener('gudang-firebase-ready', onReady);
+      window.removeEventListener('gudang-firebase-auth-error', onError);
+    }
+    window.addEventListener('gudang-firebase-ready', onReady);
+    window.addEventListener('gudang-firebase-auth-error', onError);
+  });
+}
+
+async function findOperatorAccountByNama(nama) {
+  const fb = window.gudangFirebase;
+  const namaKey = normalizeNamaKey(nama);
+  const q = fb.query(fb.operatorCol, fb.where('namaLower', '==', namaKey));
+  const snapshot = await fb.getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() };
+}
+
+function showRegisterError(msg) {
+  registerOperatorError.hidden = false;
+  registerOperatorError.textContent = msg;
+}
+function hideRegisterError() {
+  registerOperatorError.hidden = true;
+  registerOperatorError.textContent = '';
+}
+function showLoginOperatorError(msg) {
+  loginOperatorError.hidden = false;
+  loginOperatorError.textContent = msg;
+}
+function hideLoginOperatorError() {
+  loginOperatorError.hidden = true;
+  loginOperatorError.textContent = '';
+}
+
+formRegisterOperator.addEventListener('submit', async (e) => {
   e.preventDefault();
+  hideRegisterError();
+
+  const nama = registerOperatorNama.value.trim();
+  const idKaryawan = registerOperatorIdKaryawan.value.trim();
+  const kodeAkses = registerOperatorKodeAkses.value.trim();
+  const password = registerOperatorPassword.value;
+  const passwordConfirm = registerOperatorPasswordConfirm.value;
+
+  if (!nama) { showRegisterError('Nama operator wajib diisi.'); registerOperatorNama.focus(); return; }
+  if (!idKaryawan) { showRegisterError('ID Karyawan / NIK wajib diisi.'); registerOperatorIdKaryawan.focus(); return; }
+  if (!kodeAkses) { showRegisterError('Kode Akses Pendaftaran wajib diisi. Minta kode ini ke admin gudang.'); registerOperatorKodeAkses.focus(); return; }
+  if (typeof KODE_AKSES_PENDAFTARAN === 'undefined') {
+    showRegisterError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
+    return;
+  }
+  if (kodeAkses !== KODE_AKSES_PENDAFTARAN) {
+    showRegisterError('Kode Akses Pendaftaran salah. Pastikan Anda mendapatkan kode resmi dari admin gudang Mayora.');
+    registerOperatorKodeAkses.value = '';
+    registerOperatorKodeAkses.focus();
+    return;
+  }
+  if (!password || password.length < 6) { showRegisterError('Kata sandi minimal 6 karakter.'); registerOperatorPassword.focus(); return; }
+  if (password !== passwordConfirm) { showRegisterError('Konfirmasi kata sandi tidak cocok.'); registerOperatorPasswordConfirm.focus(); return; }
+
+  const submitBtn = formRegisterOperator.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'MENDAFTARKAN...';
+
+  try {
+    await waitForFirebaseAuth();
+
+    const existing = await findOperatorAccountByNama(nama);
+    if (existing) {
+      showRegisterError('Nama ini sudah terdaftar. Silakan masuk lewat tab "Masuk", atau gunakan nama lain.');
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    const fb = window.gudangFirebase;
+    await fb.addDoc(fb.operatorCol, {
+      nama,
+      namaLower: normalizeNamaKey(nama),
+      idKaryawan,
+      passwordHash,
+      createdAt: Date.now(),
+    });
+
+    formRegisterOperator.reset();
+    switchOperatorMode('login');
+    loginOperatorNama.value = nama;
+    loginOperatorPassword.focus();
+    showToast('Pendaftaran berhasil. Silakan masuk dengan akun yang baru dibuat.');
+  } catch (err) {
+    console.error('Gagal mendaftarkan operator:', err);
+    showRegisterError('Gagal mendaftar: sistem belum siap atau koneksi bermasalah. Coba lagi.');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
+  }
+});
+
+formLoginOperator.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideLoginOperatorError();
+
   const nama = loginOperatorNama.value.trim();
+  const password = loginOperatorPassword.value;
+
   if (!nama) { loginOperatorNama.focus(); return; }
-  setSession({ role: 'operator', nama });
-  enterApp({ role: 'operator', nama });
+  if (!password) { showLoginOperatorError('Kata sandi wajib diisi.'); loginOperatorPassword.focus(); return; }
+
+  const submitBtn = formLoginOperator.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'MEMERIKSA...';
+
+  try {
+    await waitForFirebaseAuth();
+
+    const akun = await findOperatorAccountByNama(nama);
+    if (!akun) {
+      showLoginOperatorError('Nama belum terdaftar. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    if (passwordHash !== akun.passwordHash) {
+      showLoginOperatorError('Kata sandi salah. Coba lagi.');
+      loginOperatorPassword.value = '';
+      loginOperatorPassword.focus();
+      return;
+    }
+
+    setSession({ role: 'operator', nama: akun.nama });
+    enterApp({ role: 'operator', nama: akun.nama });
+  } catch (err) {
+    console.error('Gagal memeriksa akun operator:', err);
+    showLoginOperatorError('Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
+  }
 });
 
 formLoginAdmin.addEventListener('submit', (e) => {
@@ -270,6 +565,17 @@ const RINGKASAN_SHEET = 'Ringkasan Stok';
 let currentEntries = [];
 let unsubscribeLaporan = null;
 let firestoreReady = false;
+
+// periodMode & periodDate dipindah ke sini (sebelum initFirestoreConnection()
+// bisa dipanggil) supaya sudah pasti terisi sebelum listener Firestore
+// (onSnapshot -> renderAll -> renderRingkasan) sempat menyala. Sebelumnya
+// kedua variabel ini dideklarasikan jauh di bawah, dekat kode tab periode,
+// sehingga ada celah di mana renderRingkasan() bisa terpanggil (lewat
+// snapshot Firestore yang datang dari cache lokal / lebih cepat dari sisa
+// skrip yang belum selesai jalan) sebelum baris deklarasinya tereksekusi —
+// itu yang memicu error "Cannot access 'periodMode' before initialization".
+let periodMode = 'harian';
+let periodDate = todayISO();
 
 const MONTH_HEADERS = ['Tanggal', 'Jenis', 'Tipe', 'Nama Operator', 'Kode Barang', 'Nama Barang', 'Supplier', 'Pemilik Barang', 'Lokasi', 'Jumlah (pcs)', 'Qty per Pallet (pcs)', 'Jumlah Pallet', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
 const MONTH_COL_WIDTHS = [12, 9, 13, 18, 14, 34, 22, 14, 10, 12, 16, 12, 28, 22, 22, 14];
@@ -409,7 +715,11 @@ function renderAll() {
   renderKatalog();
   renderLokasi();
   renderRiwayat();
+  renderAkunOperator();
 }
+
+let currentOperatorAccounts = [];
+let unsubscribeOperatorAccounts = null;
 
 function initFirestoreConnection() {
   setConnectUI('connecting');
@@ -437,6 +747,20 @@ function initFirestoreConnection() {
         setConnectUI('error');
       }
     );
+
+    if (currentRole() === 'admin') {
+      if (unsubscribeOperatorAccounts) unsubscribeOperatorAccounts();
+      unsubscribeOperatorAccounts = fb.onSnapshot(
+        fb.operatorCol,
+        (snapshot) => {
+          currentOperatorAccounts = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          renderAkunOperator();
+        },
+        (err) => {
+          console.error('Gagal memuat daftar akun operator:', err);
+        }
+      );
+    }
   }
 
   if (window.gudangFirebase) {
@@ -488,6 +812,150 @@ function showToast(message, type = 'success') {
 }
 
 /* ==========================================================================
+   BARANG BARU — kode barang yang belum ada di MASTER_DATA
+   Disimpan di koleksi Firestore "barangBaru" supaya begitu satu operator/
+   admin menambahkan kode barang baru, semua orang lain (di device lain)
+   otomatis melihatnya juga tanpa perlu update file data.js.
+========================================================================== */
+let customBarang = [];
+let BARANG_OPTIONS = MASTER_DATA.barang;
+
+// Dideklarasikan lebih dulu (belum diberi nilai) — sama seperti selPemilik.
+// rebuildBarangOptions() bisa terpanggil (lewat listener realtime Firestore)
+// sebelum selBarang/selAdjBarang selesai dibuat lebih bawah di file ini.
+// `typeof x !== 'undefined'` TIDAK melindungi dari kasus ini untuk
+// variabel let/const yang masih di "temporal dead zone" — tetap melempar
+// ReferenceError. Solusinya: deklarasikan lebih awal dengan `let`, baru
+// diisi (assign) belakangan tanpa redeklarasi const.
+let selBarang;
+let selAdjBarang;
+
+function rebuildBarangOptions() {
+  const known = new Set(MASTER_DATA.barang.map(o => String(o.kode)));
+  const extra = customBarang.filter(o => !known.has(String(o.kode)));
+  BARANG_OPTIONS = [...MASTER_DATA.barang, ...extra];
+  if (selBarang && selBarang.updateOptions) selBarang.updateOptions(BARANG_OPTIONS);
+  if (selAdjBarang && selAdjBarang.updateOptions) selAdjBarang.updateOptions(BARANG_OPTIONS);
+}
+
+// firebase-config.js dimuat sebagai <script type="module">, yang butuh waktu
+// fetch 3 file dari gstatic.com sebelum window.gudangFirebase benar-benar
+// terisi. Kalau user sempat klik "+ Tambahkan" pas jendela waktu itu (baru
+// buka halaman, koneksi agak lambat, dsb), window.gudangFirebase masih
+// undefined walau sebenarnya tidak ada masalah koneksi permanen — cuma
+// belum selesai loading. Fungsi ini menunggu (bukan langsung gagal) sampai
+// window.gudangFirebase siap, atau menyerah setelah beberapa detik.
+function waitForFirebase(timeoutMs = 6000) {
+  if (window.gudangFirebase) return Promise.resolve(window.gudangFirebase);
+  return new Promise((resolve, reject) => {
+    const onReady = () => { cleanup(); resolve(window.gudangFirebase); };
+    const onAuthError = (e) => { cleanup(); reject(new Error('Gagal masuk ke Firebase: ' + (e.detail && e.detail.message ? e.detail.message : 'tidak diketahui'))); };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Database tidak terhubung. Periksa koneksi internet lalu coba lagi.')); }, timeoutMs);
+    function cleanup() {
+      clearTimeout(timer);
+      window.removeEventListener('gudang-firebase-ready', onReady);
+      window.removeEventListener('gudang-firebase-auth-error', onAuthError);
+    }
+    window.addEventListener('gudang-firebase-ready', onReady, { once: true });
+    window.addEventListener('gudang-firebase-auth-error', onAuthError, { once: true });
+  });
+}
+
+async function tambahBarangBaru(item) {
+  const fb = await waitForFirebase();
+  if (!fb.barangBaruCol) throw new Error('Database tidak terhubung.');
+  const session = getSession();
+  await fb.addDoc(fb.barangBaruCol, {
+    kode: item.kode,
+    nama: item.nama,
+    ditambahOleh: session ? session.nama : '-',
+    createdAt: Date.now(),
+  });
+}
+
+function startBarangBaruListener() {
+  const fb = window.gudangFirebase;
+  if (!fb || !fb.barangBaruCol) return;
+  fb.onSnapshot(fb.barangBaruCol, (snapshot) => {
+    customBarang = snapshot.docs.map(d => {
+      const data = d.data();
+      return { kode: data.kode, nama: data.nama };
+    });
+    rebuildBarangOptions();
+  }, (err) => {
+    console.error('Gagal memuat daftar barang baru:', err);
+  });
+}
+
+if (window.gudangFirebase) {
+  startBarangBaruListener();
+} else {
+  window.addEventListener('gudang-firebase-ready', startBarangBaruListener, { once: true });
+}
+
+/* ==========================================================================
+   PEMILIK BARANG (PABRIK) — sama polanya dengan "Barang Baru" di atas:
+   daftar dasarnya statis (PEMILIK_OPTIONS di bawah, boleh dikosongkan),
+   tapi operator/admin bisa mengetik nama pemilik baru langsung dari
+   dropdown ("+ Tambah baru..."). Begitu ditambahkan, tersimpan ke
+   koleksi Firestore "pemilikBaru" sehingga semua device lain otomatis
+   melihat nama pemilik baru itu juga di dropdown mereka — TIDAK perlu
+   mengedit file data.js secara manual setiap kali ada pabrik baru.
+========================================================================== */
+// Daftar awal pemilik barang/pabrik. Boleh dikosongkan sepenuhnya —
+// isi manual lewat dropdown form akan otomatis tersimpan & tersinkron.
+const PEMILIK_OPTIONS = (typeof window.PEMILIK_OPTIONS !== 'undefined') ? window.PEMILIK_OPTIONS : [];
+
+let customPemilik = [];
+
+// Dideklarasikan dulu (belum diberi nilai) supaya rebuildPemilikOptions() bisa
+// dipanggil dengan aman sebelum selPemilik selesai dibuat di bawah (fungsi ini
+// dipanggil di dalam options: pada setupSearchableSelect({ id: 'sel-pemilik' }),
+// yaitu SAAT selPemilik sendiri sedang diinisialisasi). `typeof selPemilik !==
+// 'undefined'` tidak cukup untuk kasus ini: variabel let/const yang belum
+// dieksekusi baris deklarasinya berada di "temporal dead zone" dan tetap
+// melempar ReferenceError walau dicek pakai typeof.
+let selPemilik;
+let selAdjPemilik;
+
+function rebuildPemilikOptions() {
+  const known = new Set(PEMILIK_OPTIONS.map(o => String(o).toLowerCase()));
+  const extra = customPemilik.filter(o => !known.has(String(o).toLowerCase()));
+  const merged = [...PEMILIK_OPTIONS, ...extra];
+  if (selPemilik && selPemilik.updateOptions) selPemilik.updateOptions(merged);
+  if (selAdjPemilik && selAdjPemilik.updateOptions) selAdjPemilik.updateOptions(merged);
+  return merged;
+}
+
+async function tambahPemilikBaru(nama) {
+  const fb = await waitForFirebase();
+  if (!fb.pemilikBaruCol) throw new Error('Database tidak terhubung.');
+  const session = getSession();
+  await fb.addDoc(fb.pemilikBaruCol, {
+    nama,
+    ditambahOleh: session ? session.nama : '-',
+    createdAt: Date.now(),
+  });
+}
+
+function startPemilikBaruListener() {
+  const fb = window.gudangFirebase;
+  if (!fb || !fb.pemilikBaruCol) return;
+  fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
+    customPemilik = snapshot.docs.map(d => d.data().nama);
+    rebuildPemilikOptions();
+  }, (err) => {
+    console.error('Gagal memuat daftar pemilik baru:', err);
+  });
+}
+
+if (window.gudangFirebase) {
+  startPemilikBaruListener();
+} else {
+  window.addEventListener('gudang-firebase-ready', startPemilikBaruListener, { once: true });
+}
+
+/* ==========================================================================
    DATALIST LOKASI GLOBAL
 ========================================================================== */
 (function populateLokasiDatalist() {
@@ -518,12 +986,14 @@ function setJenis(j) {
   btnKeluar.classList.toggle('is-active', j === 'keluar');
 }
 
-const selBarang = setupSearchableSelect({
+selBarang = setupSearchableSelect({
   id: 'sel-barang',
-  options: MASTER_DATA.barang,
+  options: BARANG_OPTIONS,
   getLabel: o => o.nama,
   getSub: o => o.kode,
   placeholder: 'Pilih barang...',
+  allowAdd: true,
+  onAdd: tambahBarangBaru,
   onSelect: (o) => {
     document.getElementById('kode-box').hidden = false;
     document.getElementById('kode-value').textContent = o.kode;
@@ -538,11 +1008,14 @@ const selSupplier = setupSearchableSelect({
   onSelect: () => {},
 });
 
-const selPemilik = setupSearchableSelect({
+selPemilik = setupSearchableSelect({
   id: 'sel-pemilik',
-  options: MASTER_DATA.pemilik,
+  options: rebuildPemilikOptions(),
   getLabel: o => o,
   placeholder: 'Pilih pemilik barang...',
+  allowAdd: true,
+  addMode: 'simple',
+  onAdd: tambahPemilikBaru,
   onSelect: () => {},
 });
 
@@ -805,17 +1278,31 @@ function setAdjArah(a) {
   btnAdjKurang.classList.toggle('is-active', a === 'kurang');
 }
 
-const selAdjBarang = setupSearchableSelect({
+selAdjBarang = setupSearchableSelect({
   id: 'sel-adj-barang',
-  options: MASTER_DATA.barang,
+  options: BARANG_OPTIONS,
   getLabel: o => o.nama,
   getSub: o => o.kode,
   placeholder: 'Pilih barang...',
+  allowAdd: true,
+  onAdd: tambahBarangBaru,
   onSelect: (o) => {
     document.getElementById('adj-kode-box').hidden = false;
     document.getElementById('adj-kode-value').textContent = o.kode;
   },
 });
+
+selAdjPemilik = setupSearchableSelect({
+  id: 'sel-adj-pemilik',
+  options: rebuildPemilikOptions(),
+  getLabel: o => o,
+  placeholder: 'Pilih pemilik barang...',
+  allowAdd: true,
+  addMode: 'simple',
+  onAdd: tambahPemilikBaru,
+  onSelect: () => {},
+});
+
 
 const selAdjLokasi = setupSearchableSelect({
   id: 'sel-adj-lokasi',
@@ -845,6 +1332,7 @@ function hideAdjError() {
 
 function resetAdjForm() {
   selAdjBarang.reset();
+  selAdjPemilik.reset();
   selAdjLokasi.reset();
   document.getElementById('adj-kode-box').hidden = true;
   adjJumlah.value = '';
@@ -862,12 +1350,14 @@ if (formPenyesuaian) {
     if (!firestoreReady) return showAdjError('Database belum terhubung.');
 
     const barang = selAdjBarang.getValue();
+    const pemilik = selAdjPemilik.getValue();
     const lokasi = selAdjLokasi.getValue();
     const tanggal = adjTanggal.value;
     const jumlah = parseInt(adjJumlah.value, 10);
     const keterangan = adjKeterangan.value.trim();
 
     if (!barang) return showAdjError('Pilih nama barang terlebih dahulu.');
+    if (!pemilik) return showAdjError('Pilih pemilik barang terlebih dahulu.');
     if (!lokasi) return showAdjError('Pilih lokasi terlebih dahulu.');
     if (!tanggal) return showAdjError('Tanggal wajib diisi.');
     if (!jumlah || jumlah <= 0) return showAdjError('Jumlah harus berupa angka lebih dari 0.');
@@ -889,7 +1379,7 @@ if (formPenyesuaian) {
         kodeBarang: barang.kode,
         namaBarang: barang.nama,
         supplier: '-',
-        pemilik: '-',
+        pemilik,
         lokasi,
         jumlah,
         keterangan: keterangan || (adjArah === 'tambah' ? 'Penyesuaian stok (tambah)' : 'Penyesuaian stok (kurangi)'),
@@ -911,9 +1401,9 @@ if (formPenyesuaian) {
 
 /* ==========================================================================
    PERIODE LAPORAN — ADMIN ONLY
+   (periodMode & periodDate dideklarasikan lebih awal di atas, dekat
+   currentEntries — lihat catatan di sana)
 ========================================================================== */
-let periodMode = 'harian';
-let periodDate = todayISO();
 
 function getPeriodRange(mode, dateISO) {
   const d = new Date(dateISO + 'T00:00:00');
@@ -1221,6 +1711,66 @@ function renderLokasi() {
 }
 
 if (searchLokasi) searchLokasi.addEventListener('input', renderLokasi);
+
+/* ==========================================================================
+   AKUN OPERATOR TERDAFTAR (admin)
+========================================================================== */
+const akunOperatorListEl = document.getElementById('akun-operator-list');
+const akunOperatorEmptyEl = document.getElementById('akun-operator-empty');
+const searchAkunOperator = document.getElementById('search-akun-operator');
+
+function renderAkunOperator() {
+  if (!akunOperatorListEl || currentRole() !== 'admin') return;
+
+  const all = currentOperatorAccounts.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const q = searchAkunOperator ? searchAkunOperator.value.trim().toLowerCase() : '';
+  const filtered = q
+    ? all.filter(a => (a.nama || '').toLowerCase().includes(q) || (a.idKaryawan || '').toLowerCase().includes(q))
+    : all;
+
+  akunOperatorListEl.innerHTML = '';
+  if (all.length === 0) {
+    akunOperatorEmptyEl.hidden = false;
+    akunOperatorEmptyEl.textContent = 'Belum ada operator yang mendaftar.';
+    return;
+  }
+  if (filtered.length === 0) {
+    akunOperatorEmptyEl.hidden = false;
+    akunOperatorEmptyEl.textContent = 'Tidak ada akun yang cocok dengan pencarian.';
+    return;
+  }
+  akunOperatorEmptyEl.hidden = true;
+
+  filtered.forEach(a => {
+    const row = document.createElement('div');
+    row.className = 'akun-operator-item';
+    row.innerHTML = `
+      <div class="akun-operator-main">
+        <span class="akun-operator-nama">${escapeHtml(a.nama || '-')}</span>
+        <span class="akun-operator-meta">ID Karyawan: <span class="mono">${escapeHtml(a.idKaryawan || '-')}</span></span>
+      </div>
+      <div class="akun-operator-actions">
+        <span class="akun-operator-date">Daftar: ${a.createdAt ? formatWaktu(a.createdAt) : '-'}</span>
+        <button type="button" class="icon-btn danger btn-hapus-akun" title="Hapus akun ini" aria-label="Hapus">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </div>
+    `;
+    row.querySelector('.btn-hapus-akun').addEventListener('click', async () => {
+      if (!confirm(`Hapus akun operator "${a.nama}"? Operator ini tidak akan bisa masuk lagi sampai mendaftar ulang.`)) return;
+      try {
+        const fb = window.gudangFirebase;
+        await fb.deleteDoc(fb.doc(fb.db, 'operator', a.id));
+        showToast('Akun operator dihapus.');
+      } catch (err) {
+        showToast('Gagal menghapus akun: ' + err.message, 'error');
+      }
+    });
+    akunOperatorListEl.appendChild(row);
+  });
+}
+
+if (searchAkunOperator) searchAkunOperator.addEventListener('input', renderAkunOperator);
 
 /* ---- Modal detail lokasi ---- */
 function openLokasiModal(lokasi) {

@@ -204,6 +204,7 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 .login-form-desc { font-size: 13.5px; color: var(--text-muted); line-height: 1.5; margin: 0 0 18px; text-align: left; }
 .login-form { text-align: left; }
 .login-form .field { margin-bottom: 16px; }
+.field-hint { font-size: 11.5px; color: var(--text-muted); line-height: 1.4; margin: 6px 2px 0; }
 .login-form label {
   display: block; font-family: var(--font-display); font-weight: 600;
   font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase;
@@ -516,6 +517,28 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 .opt-sub { font-family: var(--font-mono); font-size: 11px; color: var(--navy); flex-shrink: 0; }
 .no-result, .more-hint { padding: 20px 14px; text-align: center; font-size: 13px; color: var(--kraft-muted); }
 
+/* Form "Tambah barang/pemilik baru" di dalam dropdown pencarian */
+.option-item-add-trigger {
+  color: var(--merah); font-weight: 600; border-bottom: none;
+}
+.option-item-add-trigger:hover { background: var(--merah-soft); }
+.option-item-add-form { padding: 14px; background: var(--kraft); }
+.add-form-title {
+  font-size: 12.5px; color: var(--text-muted); line-height: 1.4; margin-bottom: 10px;
+}
+.add-form-lbl {
+  display: block; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--navy); margin-bottom: 4px;
+}
+.add-form-nama, .add-form-kode, .add-form-simple {
+  width: 100%; border: 1px solid var(--kraft-line); outline: none; background: var(--white);
+  border-radius: 8px; padding: 9px 12px; font-size: 13.5px; color: var(--ink-soft);
+  font-family: var(--font-body); margin-bottom: 12px;
+}
+.add-form-nama:focus, .add-form-kode:focus, .add-form-simple:focus { border-color: var(--merah); }
+.add-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+
 /* Error box */
 .error-box {
   display: flex; align-items: center; gap: 8px;
@@ -811,6 +834,28 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 
 @media (max-width: 640px) {
   .lokasi-list { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   AKUN OPERATOR TERDAFTAR (admin)
+========================================================================== */
+.akun-operator { margin-bottom: 28px; }
+.akun-operator-list { display: flex; flex-direction: column; gap: 10px; }
+.akun-operator-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 11px;
+  padding: 12px 14px;
+}
+.akun-operator-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.akun-operator-nama { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
+.akun-operator-meta { font-size: 11.5px; color: var(--text-muted); }
+.akun-operator-meta .mono { font-family: var(--font-mono); }
+.akun-operator-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.akun-operator-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .akun-operator-item { flex-direction: column; align-items: flex-start; }
+  .akun-operator-actions { width: 100%; justify-content: flex-end; }
 }
 
 /* ==========================================================================
