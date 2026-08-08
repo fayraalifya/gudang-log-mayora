@@ -56,9 +56,26 @@ const OPERATOR_COLLECTION = "operator";
 const BARANG_BARU_COLLECTION = "barangBaru";
 const PEMILIK_BARU_COLLECTION = "pemilikBaru";
 
+// ---- Promise "auth siap" ----
+// Alih-alih memaksa setiap pemanggil mendengarkan event manual
+// (addEventListener + cleanup), kita sediakan satu Promise yang bisa
+// langsung di-`await`. Promise "mengingat" hasilnya sendiri: kalau
+// dipanggil setelah auth sudah selesai, dia langsung resolve — tidak
+// perlu logika "if (sudahSiap) ... else dengarkan event".
+//
+// Contoh pemakaian di script.js:
+//   await window.gudangFirebase.authReady;
+//   // di sini auth sudah pasti siap, aman baca/tulis Firestore
+let resolveAuthReady, rejectAuthReady;
+const authReady = new Promise((resolve, reject) => {
+  resolveAuthReady = resolve;
+  rejectAuthReady = reject;
+});
+
 window.gudangFirebase = {
   db,
   auth,
+  authReady,
   laporanCol: collection(db, LAPORAN_COLLECTION),
   operatorCol: collection(db, OPERATOR_COLLECTION),
   barangBaruCol: collection(db, BARANG_BARU_COLLECTION),
@@ -76,18 +93,20 @@ window.gudangFirebase = {
 };
 
 // ---- Autentikasi anonim ----
-// script.js menunggu event 'gudang-firebase-ready' sebelum mulai
-// mendengarkan (onSnapshot) koleksi 'laporan'. Event ini sekarang baru
-// ditembakkan SETELAH proses sign-in anonim berhasil, bukan langsung
-// setelah Firebase App diinisialisasi.
+// script.js bisa `await window.gudangFirebase.authReady` ATAU tetap
+// mendengarkan event 'gudang-firebase-ready' di bawah ini (dipertahankan
+// supaya kode lama yang masih pakai event tidak perlu diubah). Keduanya
+// ditembakkan bersamaan, SETELAH proses sign-in anonim berhasil.
 onAuthStateChanged(auth, (user) => {
   if (user) {
     window.gudangFirebase.currentUser = user;
+    resolveAuthReady(user);
     window.dispatchEvent(new Event("gudang-firebase-ready"));
   }
 });
 
 signInAnonymously(auth).catch((err) => {
   console.error("Gagal sign-in anonim ke Firebase:", err);
+  rejectAuthReady(err);
   window.dispatchEvent(new CustomEvent("gudang-firebase-auth-error", { detail: err }));
 });

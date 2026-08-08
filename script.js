@@ -1,6 +1,16 @@
 /* ==========================================================================
    UTILITY FUNCTIONS
 ========================================================================== */
+
+// Hitung stok barang tertentu di SATU lokasi spesifik saja (bukan total
+// gabungan semua lokasi). Dipakai untuk mencegah barang keluar / penyesuaian
+// kurang membuat stok minus di lokasi tersebut, walau total stok barang itu
+// di lokasi lain masih banyak.
+function getStokAtLokasi(entries, kodeBarang, lokasi) {
+  return entries
+    .filter(t => t.kodeBarang === kodeBarang && t.lokasi === lokasi)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlah : -t.jumlah), 0);
+}
 const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 const BULAN_PANJANG = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
@@ -357,26 +367,35 @@ function normalizeNamaKey(nama) {
 }
 
 // Halaman login bisa tampil sebelum proses sign-in anonim ke Firebase
-// selesai. Fungsi ini menunggu event 'gudang-firebase-ready' (ditembakkan
-// oleh firebase-config.js setelah auth siap) sebelum kita mencoba
-// membaca/menulis koleksi 'operator'.
-let firebaseAuthReady = false;
-window.addEventListener('gudang-firebase-ready', () => { firebaseAuthReady = true; });
-
+// selesai — bahkan sebelum firebase-config.js (dimuat sebagai <script
+// type="module">, jadi dieksekusi belakangan dan butuh waktu fetch SDK
+// dari internet) sempat membuat window.gudangFirebase sama sekali.
+// Fungsi ini menunggu (polling tiap 50ms) sampai window.gudangFirebase
+// ada, lalu menunggu Promise 'authReady'-nya — semua dalam satu batas
+// waktu total (timeoutMs).
 function waitForFirebaseAuth(timeoutMs = 12000) {
-  return new Promise((resolve, reject) => {
-    if (firebaseAuthReady && window.gudangFirebase) return resolve();
-    let settled = false;
-    const onReady = () => { if (settled) return; settled = true; cleanup(); resolve(); };
-    const onError = () => { if (settled) return; settled = true; cleanup(); reject(new Error('auth-error')); };
-    const timer = setTimeout(() => { if (settled) return; settled = true; cleanup(); reject(new Error('timeout')); }, timeoutMs);
-    function cleanup() {
-      clearTimeout(timer);
-      window.removeEventListener('gudang-firebase-ready', onReady);
-      window.removeEventListener('gudang-firebase-auth-error', onError);
-    }
-    window.addEventListener('gudang-firebase-ready', onReady);
-    window.addEventListener('gudang-firebase-auth-error', onError);
+  const deadline = Date.now() + timeoutMs;
+
+  function waitForGudangFirebase() {
+    return new Promise((resolve, reject) => {
+      (function check() {
+        if (window.gudangFirebase && window.gudangFirebase.authReady) {
+          resolve(window.gudangFirebase.authReady);
+        } else if (Date.now() > deadline) {
+          reject(new Error('timeout: firebase-config.js belum termuat'));
+        } else {
+          setTimeout(check, 50);
+        }
+      })();
+    });
+  }
+
+  return waitForGudangFirebase().then((authReady) => {
+    const sisaWaktu = Math.max(0, deadline - Date.now());
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), sisaWaktu)
+    );
+    return Promise.race([authReady, timeout]);
   });
 }
 
@@ -1227,11 +1246,9 @@ form.addEventListener('submit', async (e) => {
   if (qtyPerPalletRaw && (!qtyPerPallet || qtyPerPallet <= 0)) return showError('Qty per pallet harus berupa angka lebih dari 0.');
 
   if (jenis === 'keluar') {
-    const stokTersedia = currentEntries
-      .filter(t => t.kodeBarang === barang.kode)
-      .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlah : -t.jumlah), 0);
-    if (jumlah > stokTersedia) {
-      return showError(`Jumlah keluar (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok yang tersedia (${stokTersedia.toLocaleString('id-ID')} pcs) untuk barang ini.`);
+    const stokDiLokasi = getStokAtLokasi(currentEntries, barang.kode, lokasi);
+    if (jumlah > stokDiLokasi) {
+      return showError(`Jumlah keluar (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok barang ini di lokasi ${lokasi} (${stokDiLokasi.toLocaleString('id-ID')} pcs). Cek lokasi lain kalau stok barang ini memang ada di tempat lain.`);
     }
   }
 
@@ -1360,6 +1377,13 @@ if (formPenyesuaian) {
     if (!lokasi) return showAdjError('Pilih lokasi terlebih dahulu.');
     if (!tanggal) return showAdjError('Tanggal wajib diisi.');
     if (!jumlah || jumlah <= 0) return showAdjError('Jumlah harus berupa angka lebih dari 0.');
+
+    if (adjArah === 'kurang') {
+      const stokDiLokasi = getStokAtLokasi(currentEntries, barang.kode, lokasi);
+      if (jumlah > stokDiLokasi) {
+        return showAdjError(`Jumlah pengurangan (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok barang ini di lokasi ${lokasi} (${stokDiLokasi.toLocaleString('id-ID')} pcs).`);
+      }
+    }
 
     const submitBtn = document.getElementById('btn-adj-submit');
     const submitText = document.getElementById('btn-adj-submit-text');
@@ -2061,6 +2085,20 @@ function renderRiwayat() {
       const newKeterangan = card.querySelector('.edit-keterangan').value.trim();
       if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
       if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
+
+      // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
+      // lalu pastikan stok di lokasi lama MAUPUN lokasi baru (kalau beda)
+      // tidak jadi minus akibat perubahan ini.
+      const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
+      const entriesSimulasi = [...entriesTanpaIni, { ...t, lokasi: newLokasi, jumlah: newJumlah }];
+      const lokasiTerdampak = new Set([t.lokasi, newLokasi]);
+      for (const lok of lokasiTerdampak) {
+        const stokSimulasi = getStokAtLokasi(entriesSimulasi, t.kodeBarang, lok);
+        if (stokSimulasi < 0) {
+          return showToast(`Perubahan ini membuat stok "${t.namaBarang}" di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah atau lokasinya.`, 'error');
+        }
+      }
+
       try {
         await updateEntryInFirestore(t.id, { lokasi: newLokasi, jumlah: newJumlah, keterangan: newKeterangan, updatedAt: Date.now() });
         showToast('Laporan berhasil diperbarui.');
