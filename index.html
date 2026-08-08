@@ -49,13 +49,7 @@
         <!-- HEADER RINGKAS — hanya tampil di layar kecil (HP), menggantikan panel biru -->
         <div class="login-mobile-header">
           <div class="brand-logo-mark brand-logo-mark-mobile">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="#D31A20"/>
-              <path d="M12 2.5V21.5" stroke="#FFFDF7" stroke-width="1.6"/>
-              <path d="M2.5 12H21.5" stroke="#FFFDF7" stroke-width="1.6"/>
-              <path d="M9 2.5C9 5 10.2 6.4 12 6.4C13.8 6.4 15 5 15 2.5" stroke="#FFFDF7" stroke-width="1.4" stroke-linecap="round"/>
-            </svg>
-            <span class="brand-logo-text brand-logo-text-mobile">MAYORA</span>
+            <img src="LOGO MAYORA2.png" alt="Mayora" class="brand-logo-img brand-logo-img-mobile">
           </div>
           <div class="login-mobile-gdpm">GDPM</div>
           <div class="login-mobile-gdpm-sub">CENTRAL WAREHOUSE</div>
@@ -242,223 +236,6 @@
         <span>Sistem belum siap menerima laporan. Periksa koneksi internet Anda.</span>
       </div>
 
-      <!-- PILIHAN PERIODE LAPORAN — hanya admin -->
-      <div class="period-tabs admin-only" id="period-tabs">
-        <div class="period-tab-group">
-          <button type="button" class="period-tab is-active" data-mode="harian">Harian</button>
-          <button type="button" class="period-tab" data-mode="mingguan">Mingguan</button>
-          <button type="button" class="period-tab" data-mode="bulanan">Bulanan</button>
-          <button type="button" class="period-tab" data-mode="semua">Semua</button>
-        </div>
-        <input type="date" id="period-date-picker" class="period-date">
-      </div>
-
-      <!-- RINGKASAN — hanya admin -->
-      <section id="ringkasan" class="ringkasan admin-only">
-        <div class="ringkasan-head">
-          <h3>Ringkasan Laporan</h3>
-          <span class="ringkasan-date" id="ringkasan-date">-</span>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-card stat-masuk">
-            <span class="stat-label">Barang Masuk</span>
-            <span class="stat-value" id="stat-masuk-qty">0</span>
-            <span class="stat-sub" id="stat-masuk-count">0 laporan</span>
-          </div>
-          <div class="stat-card stat-keluar">
-            <span class="stat-label">Barang Keluar</span>
-            <span class="stat-value" id="stat-keluar-qty">0</span>
-            <span class="stat-sub" id="stat-keluar-count">0 laporan</span>
-          </div>
-          <div class="stat-card stat-total">
-            <span class="stat-label">Total Laporan Tercatat</span>
-            <span class="stat-value" id="stat-total-count">0</span>
-            <span class="stat-sub" id="stat-total-range">sepanjang waktu</span>
-          </div>
-          <div class="stat-card stat-operator">
-            <span class="stat-label">Operator Teraktif (7 hari)</span>
-            <span class="stat-value stat-value-text" id="stat-top-operator">-</span>
-            <span class="stat-sub" id="stat-top-operator-sub">belum ada data</span>
-          </div>
-        </div>
-
-        <!-- Dashboard visual: Arus Barang, Barang Terlaris, Lokasi Terpadat -->
-        <div class="vis-grid">
-
-          <div class="vis-card">
-            <div class="vis-card-title">Arus Barang <span class="vis-card-sub" id="arus-trend-wrap"><span class="vis-trend" id="arus-trend" hidden></span></span></div>
-            <div id="arus-empty" class="vis-empty">Belum ada transaksi pada periode ini.</div>
-            <div id="arus-split" class="arus-split" hidden>
-              <div class="arus-bar">
-                <div class="arus-seg arus-seg-masuk" id="arus-seg-masuk" style="width:0%"></div>
-                <div class="arus-seg arus-seg-keluar" id="arus-seg-keluar" style="width:0%"></div>
-              </div>
-              <div class="arus-legend">
-                <span class="arus-legend-item"><i class="dot dot-masuk"></i>Masuk <b id="arus-pct-masuk">0%</b></span>
-                <span class="arus-legend-item"><i class="dot dot-keluar"></i>Keluar <b id="arus-pct-keluar">0%</b></span>
-              </div>
-            </div>
-          </div>
-
-          <div class="vis-card">
-            <div class="vis-card-title">Barang Paling Sering Dicatat (30 hari)</div>
-            <div id="top-barang-empty" class="vis-empty">Belum ada data barang.</div>
-            <div class="bar-list" id="top-barang-list"></div>
-          </div>
-
-          <div class="vis-card">
-            <div class="vis-card-title">Lokasi Terpadat (stok saat ini)</div>
-            <div id="top-lokasi-empty" class="vis-empty">Belum ada stok di lokasi manapun.</div>
-            <div class="bar-list" id="top-lokasi-list"></div>
-          </div>
-
-        </div>
-      </section>
-
-      <!-- KATALOG BARANG & STOK — admin & operator (read-only untuk operator) -->
-      <section id="katalog" class="katalog">
-        <div class="katalog-header">
-          <h3>Katalog Barang &amp; Stok</h3>
-          <div class="search-inline">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" id="search-katalog" placeholder="Cari nama / kode barang...">
-          </div>
-        </div>
-        <p class="katalog-hint">Klik salah satu barang untuk melihat lokasi, stok saat ini, dan riwayat lengkapnya.</p>
-        <div id="katalog-empty" class="empty-state">Belum ada barang yang tercatat.</div>
-        <div id="katalog-list" class="katalog-list"></div>
-      </section>
-
-      <!-- STOK PER LOKASI — admin & operator (read-only untuk operator) -->
-      <section id="stok-lokasi" class="stok-lokasi">
-        <div class="katalog-header">
-          <h3>Stok per Lokasi</h3>
-          <div class="search-inline">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" id="search-lokasi" placeholder="Cari lokasi (mis. B-05)...">
-          </div>
-        </div>
-        <p class="katalog-hint" id="lokasi-hint">Klik salah satu lokasi untuk melihat barang apa saja yang ada di sana.</p>
-        <div id="lokasi-empty" class="empty-state">Belum ada stok tercatat di lokasi manapun.</div>
-        <div id="lokasi-list" class="lokasi-list"></div>
-      </section>
-
-      <!-- AKUN OPERATOR TERDAFTAR — hanya admin -->
-      <section id="akun-operator" class="akun-operator admin-only">
-        <div class="katalog-header">
-          <h3>Akun Operator Terdaftar</h3>
-          <div class="search-inline">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" id="search-akun-operator" placeholder="Cari nama / ID karyawan...">
-          </div>
-        </div>
-        <p class="katalog-hint">Daftar semua orang yang berhasil mendaftar sebagai operator. Hapus akun yang tidak dikenali / mencurigakan.</p>
-        <div id="akun-operator-empty" class="empty-state">Belum ada operator yang mendaftar.</div>
-        <div id="akun-operator-list" class="akun-operator-list"></div>
-      </section>
-
-      <!-- SESUAIKAN STOK — hanya admin (stok awal / koreksi stock opname / pindah lokasi) -->
-      <form id="form-penyesuaian" class="card admin-only">
-        <h2 class="card-title">Sesuaikan Stok</h2>
-        <p class="katalog-hint" style="margin-top:-12px;">Dipakai untuk mengisi stok awal, koreksi hasil stock opname, atau mencatat penyesuaian lain. Setiap penyesuaian tercatat terpisah dari transaksi biasa di riwayat &amp; laporan.</p>
-
-        <div class="jenis-toggle" style="margin-bottom:20px;">
-          <button type="button" id="btn-adj-tambah" class="jenis-btn jenis-masuk is-active">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/></svg>
-            TAMBAH STOK
-          </button>
-          <button type="button" id="btn-adj-kurang" class="jenis-btn jenis-keluar">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/></svg>
-            KURANGI STOK
-          </button>
-        </div>
-
-        <div class="field-grid">
-
-          <div class="field field-full">
-            <label>Nama Barang <span class="req">*</span></label>
-            <div class="searchable" id="sel-adj-barang">
-              <button type="button" class="select-btn" id="sel-adj-barang-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
-                <span class="select-value" id="sel-adj-barang-value" data-placeholder="Pilih barang...">Pilih barang...</span>
-                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="dropdown-panel" id="sel-adj-barang-panel" hidden>
-                <div class="search-box"><input type="text" id="sel-adj-barang-search" placeholder="Ketik untuk mencari..."></div>
-                <div class="options-list" id="sel-adj-barang-list"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="field field-full kode-box" id="adj-kode-box" hidden>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/></svg>
-            <span class="kode-label">KODE BARANG</span>
-            <span class="kode-value" id="adj-kode-value">-</span>
-          </div>
-
-          <div class="field">
-            <label>Lokasi <span class="req">*</span></label>
-            <div class="searchable" id="sel-adj-lokasi">
-              <button type="button" class="select-btn" id="sel-adj-lokasi-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                <span class="select-value" id="sel-adj-lokasi-value" data-placeholder="Pilih lokasi...">Pilih lokasi...</span>
-                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="dropdown-panel" id="sel-adj-lokasi-panel" hidden>
-                <div class="search-box"><input type="text" id="sel-adj-lokasi-search" placeholder="Ketik untuk mencari..."></div>
-                <div class="options-list" id="sel-adj-lokasi-list"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="field">
-            <label>Pemilik Barang <span class="req">*</span></label>
-            <div class="searchable" id="sel-adj-pemilik">
-              <button type="button" class="select-btn" id="sel-adj-pemilik-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                <span class="select-value" id="sel-adj-pemilik-value" data-placeholder="Pilih pemilik barang...">Pilih pemilik barang...</span>
-                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="dropdown-panel" id="sel-adj-pemilik-panel" hidden>
-                <div class="search-box"><input type="text" id="sel-adj-pemilik-search" placeholder="Ketik untuk mencari..."></div>
-                <div class="options-list" id="sel-adj-pemilik-list"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="adj-tanggal">Tanggal <span class="req">*</span></label>
-            <div class="input-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-              <input type="date" id="adj-tanggal">
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="adj-jumlah">Jumlah <span class="req">*</span></label>
-            <div class="input-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
-              <input type="number" id="adj-jumlah" min="1" placeholder="0">
-            </div>
-          </div>
-
-          <div class="field field-full">
-            <label for="adj-keterangan">Keterangan</label>
-            <div class="input-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-              <input type="text" id="adj-keterangan" placeholder="Contoh: hasil stock opname, koreksi lokasi, dsb.">
-            </div>
-          </div>
-
-        </div>
-
-        <div id="adj-error" class="error-box" hidden></div>
-
-        <button type="submit" class="btn-submit" id="btn-adj-submit" disabled>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          <span id="btn-adj-submit-text">SIMPAN PENYESUAIAN</span>
-        </button>
-      </form>
 
       <!-- TOGGLE JENIS — operator only -->
       <div class="jenis-toggle operator-only">
@@ -591,6 +368,221 @@
           <span id="btn-submit-text">KIRIM &amp; CATAT LAPORAN</span>
         </button>
       </form>
+
+      <!-- PILIHAN PERIODE LAPORAN — hanya admin -->
+      <div class="period-tabs admin-only" id="period-tabs">
+        <div class="period-tab-group">
+          <button type="button" class="period-tab is-active" data-mode="harian">Harian</button>
+          <button type="button" class="period-tab" data-mode="mingguan">Mingguan</button>
+          <button type="button" class="period-tab" data-mode="bulanan">Bulanan</button>
+          <button type="button" class="period-tab" data-mode="semua">Semua</button>
+        </div>
+        <input type="date" id="period-date-picker" class="period-date">
+      </div>
+
+      <!-- RINGKASAN — hanya admin -->
+      <section id="ringkasan" class="ringkasan admin-only">
+        <div class="ringkasan-head">
+          <h3>Ringkasan Laporan</h3>
+          <span class="ringkasan-date" id="ringkasan-date">-</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-card stat-masuk">
+            <span class="stat-label">Barang Masuk</span>
+            <span class="stat-value" id="stat-masuk-qty">0</span>
+            <span class="stat-sub" id="stat-masuk-count">0 laporan</span>
+          </div>
+          <div class="stat-card stat-keluar">
+            <span class="stat-label">Barang Keluar</span>
+            <span class="stat-value" id="stat-keluar-qty">0</span>
+            <span class="stat-sub" id="stat-keluar-count">0 laporan</span>
+          </div>
+          <div class="stat-card stat-total">
+            <span class="stat-label">Total Laporan Tercatat</span>
+            <span class="stat-value" id="stat-total-count">0</span>
+            <span class="stat-sub" id="stat-total-range">sepanjang waktu</span>
+          </div>
+          <div class="stat-card stat-operator">
+            <span class="stat-label">Operator Teraktif (7 hari)</span>
+            <span class="stat-value stat-value-text" id="stat-top-operator">-</span>
+            <span class="stat-sub" id="stat-top-operator-sub">belum ada data</span>
+          </div>
+        </div>
+
+        <!-- Dashboard visual: Arus Barang, Barang Terlaris, Lokasi Terpadat -->
+        <div class="vis-grid">
+
+          <div class="vis-card">
+            <div class="vis-card-title">Arus Barang <span class="vis-card-sub" id="arus-trend-wrap"><span class="vis-trend" id="arus-trend" hidden></span></span></div>
+            <div id="arus-empty" class="vis-empty">Belum ada transaksi pada periode ini.</div>
+            <div id="arus-split" class="arus-split" hidden>
+              <div class="arus-bar">
+                <div class="arus-seg arus-seg-masuk" id="arus-seg-masuk" style="width:0%"></div>
+                <div class="arus-seg arus-seg-keluar" id="arus-seg-keluar" style="width:0%"></div>
+              </div>
+              <div class="arus-legend">
+                <span class="arus-legend-item"><i class="dot dot-masuk"></i>Masuk <b id="arus-pct-masuk">0%</b></span>
+                <span class="arus-legend-item"><i class="dot dot-keluar"></i>Keluar <b id="arus-pct-keluar">0%</b></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="vis-card">
+            <div class="vis-card-title">Barang Paling Sering Dicatat (30 hari)</div>
+            <div id="top-barang-empty" class="vis-empty">Belum ada data barang.</div>
+            <div class="bar-list" id="top-barang-list"></div>
+          </div>
+
+          <div class="vis-card">
+            <div class="vis-card-title">Lokasi Terpadat (stok saat ini)</div>
+            <div id="top-lokasi-empty" class="vis-empty">Belum ada stok di lokasi manapun.</div>
+            <div class="bar-list" id="top-lokasi-list"></div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- KATALOG & STOK — admin & operator (read-only untuk operator).
+           Satu tempat jelajah: bisa dicari/di-browse dari sisi Barang,
+           Lokasi, Supplier, atau Pemilik Barang. Klik salah satu folder
+           untuk lihat detail lengkapnya lewat modal. -->
+      <section id="katalog" class="katalog">
+        <div class="katalog-header">
+          <h3>Katalog &amp; Stok</h3>
+          <div class="search-inline">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="search-katalog" placeholder="Cari...">
+          </div>
+        </div>
+        <div class="period-tab-group katalog-mode-tabs" id="katalog-mode-tabs">
+          <button type="button" class="period-tab is-active" data-mode="barang">📦 Barang</button>
+          <button type="button" class="period-tab" data-mode="lokasi">📍 Lokasi</button>
+          <button type="button" class="period-tab" data-mode="supplier">🚚 Supplier</button>
+          <button type="button" class="period-tab" data-mode="pemilik">🏭 Pemilik</button>
+        </div>
+        <p class="katalog-hint" id="katalog-hint">📁 Klik salah satu barang untuk membuka detailnya — stok, supplier, pemilik, lokasi, dan riwayat lengkap.</p>
+        <div id="katalog-empty" class="empty-state">Belum ada barang yang tercatat.</div>
+        <div id="katalog-list" class="folder-grid"></div>
+      </section>
+
+      <!-- AKUN OPERATOR TERDAFTAR — hanya admin -->
+      <!-- (bagian Stok per Lokasi lama sudah digabung ke atas, lihat section#katalog) -->
+      <section id="akun-operator" class="akun-operator admin-only">
+        <div class="katalog-header">
+          <h3>Akun Operator Terdaftar</h3>
+          <div class="search-inline">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="search-akun-operator" placeholder="Cari nama / ID karyawan...">
+          </div>
+        </div>
+        <p class="katalog-hint">Daftar semua orang yang berhasil mendaftar sebagai operator. Hapus akun yang tidak dikenali / mencurigakan.</p>
+        <div id="akun-operator-empty" class="empty-state">Belum ada operator yang mendaftar.</div>
+        <div id="akun-operator-list" class="akun-operator-list"></div>
+      </section>
+
+      <!-- SESUAIKAN STOK — hanya admin (stok awal / koreksi stock opname / pindah lokasi) -->
+      <form id="form-penyesuaian" class="card admin-only">
+        <h2 class="card-title">Sesuaikan Stok</h2>
+        <p class="katalog-hint" style="margin-top:-12px;">Dipakai untuk mengisi stok awal, koreksi hasil stock opname, atau mencatat penyesuaian lain. Setiap penyesuaian tercatat terpisah dari transaksi biasa di riwayat &amp; laporan.</p>
+
+        <div class="jenis-toggle" style="margin-bottom:20px;">
+          <button type="button" id="btn-adj-tambah" class="jenis-btn jenis-masuk is-active">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/></svg>
+            TAMBAH STOK
+          </button>
+          <button type="button" id="btn-adj-kurang" class="jenis-btn jenis-keluar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/></svg>
+            KURANGI STOK
+          </button>
+        </div>
+
+        <div class="field-grid">
+
+          <div class="field field-full">
+            <label>Nama Barang <span class="req">*</span></label>
+            <div class="searchable" id="sel-adj-barang">
+              <button type="button" class="select-btn" id="sel-adj-barang-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
+                <span class="select-value" id="sel-adj-barang-value" data-placeholder="Pilih barang...">Pilih barang...</span>
+                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="dropdown-panel" id="sel-adj-barang-panel" hidden>
+                <div class="search-box"><input type="text" id="sel-adj-barang-search" placeholder="Ketik untuk mencari..."></div>
+                <div class="options-list" id="sel-adj-barang-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field field-full kode-box" id="adj-kode-box" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/></svg>
+            <span class="kode-label">KODE BARANG</span>
+            <span class="kode-value" id="adj-kode-value">-</span>
+          </div>
+
+          <div class="field">
+            <label>Lokasi <span class="req">*</span></label>
+            <div class="searchable" id="sel-adj-lokasi">
+              <button type="button" class="select-btn" id="sel-adj-lokasi-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                <span class="select-value" id="sel-adj-lokasi-value" data-placeholder="Pilih lokasi...">Pilih lokasi...</span>
+                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="dropdown-panel" id="sel-adj-lokasi-panel" hidden>
+                <div class="search-box"><input type="text" id="sel-adj-lokasi-search" placeholder="Ketik untuk mencari..."></div>
+                <div class="options-list" id="sel-adj-lokasi-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Pemilik Barang <span class="req">*</span></label>
+            <div class="searchable" id="sel-adj-pemilik">
+              <button type="button" class="select-btn" id="sel-adj-pemilik-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span class="select-value" id="sel-adj-pemilik-value" data-placeholder="Pilih pemilik barang...">Pilih pemilik barang...</span>
+                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="dropdown-panel" id="sel-adj-pemilik-panel" hidden>
+                <div class="search-box"><input type="text" id="sel-adj-pemilik-search" placeholder="Ketik untuk mencari..."></div>
+                <div class="options-list" id="sel-adj-pemilik-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="adj-tanggal">Tanggal <span class="req">*</span></label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              <input type="date" id="adj-tanggal">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="adj-jumlah">Jumlah <span class="req">*</span></label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
+              <input type="number" id="adj-jumlah" min="1" placeholder="0">
+            </div>
+          </div>
+
+          <div class="field field-full">
+            <label for="adj-keterangan">Keterangan</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+              <input type="text" id="adj-keterangan" placeholder="Contoh: hasil stock opname, koreksi lokasi, dsb.">
+            </div>
+          </div>
+
+        </div>
+
+        <div id="adj-error" class="error-box" hidden></div>
+
+        <button type="submit" class="btn-submit" id="btn-adj-submit" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <span id="btn-adj-submit-text">SIMPAN PENYESUAIAN</span>
+        </button>
+      </form>
+
 
       <!-- RIWAYAT — hanya admin -->
       <section class="riwayat-section admin-only">

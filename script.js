@@ -713,7 +713,6 @@ function setConnectUI(state) {
 function renderAll() {
   renderRingkasan();
   renderKatalog();
-  renderLokasi();
   renderRiwayat();
   renderAkunOperator();
 }
@@ -1613,104 +1612,142 @@ function renderRingkasan() {
 }
 
 /* ==========================================================================
-   KATALOG BARANG & STOK (admin)
+   KATALOG & STOK — jelajah gabungan (admin & operator)
+   Satu daftar "folder" yang bisa dilihat dari 4 sisi berbeda:
+   - barang    -> pakai buildStokList()      (sudah ada)
+   - lokasi    -> pakai buildLocationStock() (sudah ada)
+   - supplier  -> pakai buildAttributeBreakdown(entries, 'supplier')
+   - pemilik   -> pakai buildAttributeBreakdown(entries, 'pemilik')
+   Klik folder mana pun akan membuka modal detail yang sesuai.
 ========================================================================== */
 const katalogList = document.getElementById('katalog-list');
 const katalogEmpty = document.getElementById('katalog-empty');
 const searchKatalog = document.getElementById('search-katalog');
+const katalogHint = document.getElementById('katalog-hint');
+const katalogModeTabs = document.getElementById('katalog-mode-tabs');
+
+let katalogMode = 'barang';
+
+// Kelompokkan transaksi berdasarkan satu field (supplier / pemilik), dan
+// hitung barang apa saja + berapa stok saat ini yang berkaitan dengan tiap
+// nilai field tersebut. Dipakai untuk mode "Supplier" & "Pemilik".
+function buildAttributeBreakdown(entries, field) {
+  const map = {};
+  entries.forEach(t => {
+    const key = t[field];
+    if (!key || key === '-') return;
+    if (!map[key]) map[key] = {};
+    const itemKey = t.kodeBarang || t.namaBarang;
+    if (!map[key][itemKey]) map[key][itemKey] = { kode: t.kodeBarang, nama: t.namaBarang, masuk: 0, keluar: 0 };
+    if (t.jenis === 'masuk') map[key][itemKey].masuk += t.jumlah;
+    else map[key][itemKey].keluar += t.jumlah;
+  });
+  return Object.entries(map).map(([nama, itemsMap]) => {
+    const items = Object.values(itemsMap)
+      .map(it => ({ ...it, stok: it.masuk - it.keluar }))
+      .sort((a, b) => b.stok - a.stok);
+    const totalStok = items.reduce((s, it) => s + it.stok, 0);
+    return { nama, items, itemCount: items.length, totalStok };
+  }).sort((a, b) => a.nama.localeCompare(b.nama));
+}
+
+function folderIconSvg() {
+  return '<svg class="folder-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 7a2 2 0 0 1 2-2h4.17a2 2 0 0 1 1.42.59L12 7h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" fill="currentColor"/></svg>';
+}
+
+function appendFolderCard(container, { label, sub, dotClass, dotTitle, countBadge, countTitle, extraClass, onClick }) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'folder-card' + (extraClass ? ' ' + extraClass : '');
+  const dotHtml = dotClass ? `<span class="folder-dot ${dotClass}"${dotTitle ? ` title="${escapeHtml(dotTitle)}"` : ''}></span>` : '';
+  const countHtml = countBadge != null ? `<span class="folder-count"${countTitle ? ` title="${escapeHtml(countTitle)}"` : ''}>${countBadge}</span>` : '';
+  card.innerHTML = `
+    <div class="folder-icon-wrap">
+      ${folderIconSvg()}
+      ${dotHtml}${countHtml}
+    </div>
+    <div class="folder-label" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+    <div class="folder-sub mono">${escapeHtml(sub)}</div>
+  `;
+  card.addEventListener('click', onClick);
+  container.appendChild(card);
+}
+
+function setKatalogEmpty(msg) {
+  katalogEmpty.hidden = false;
+  katalogEmpty.textContent = msg;
+}
 
 function renderKatalog() {
-  const items = buildStokList(currentEntries);
   const q = searchKatalog.value.trim().toLowerCase();
-  const filtered = q
-    ? items.filter(it => it.nama.toLowerCase().includes(q) || String(it.kode).toLowerCase().includes(q))
-    : items;
-
   katalogList.innerHTML = '';
-  if (items.length === 0) {
-    katalogEmpty.hidden = false;
-    katalogEmpty.textContent = 'Belum ada barang yang tercatat.';
-    return;
-  }
-  if (filtered.length === 0) {
-    katalogEmpty.hidden = false;
-    katalogEmpty.textContent = 'Tidak ada barang yang cocok dengan pencarian.';
-    return;
-  }
-  katalogEmpty.hidden = true;
 
-  filtered.forEach(it => {
-    const stok = it.masuk - it.keluar;
-    const badgeClass = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'katalog-item';
-    const lokasiTxt = Array.from(it.lokasi).slice(0, 3).join(', ') + (it.lokasi.size > 3 ? `, +${it.lokasi.size - 3} lagi` : '');
-    card.innerHTML = `
-      <div class="katalog-item-top">
-        <div>
-          <div class="katalog-item-nama">${escapeHtml(it.nama)}</div>
-          <div class="katalog-item-kode mono">${escapeHtml(it.kode)}</div>
-        </div>
-        <span class="stok-badge ${badgeClass}">${stok.toLocaleString('id-ID')} pcs</span>
-      </div>
-      <div class="katalog-item-loc">📍 ${it.lokasi.size ? escapeHtml(lokasiTxt) : 'Belum ada lokasi aktif'}</div>
-    `;
-    card.addEventListener('click', () => openItemModal(it.kode));
-    katalogList.appendChild(card);
+  if (katalogMode === 'barang') {
+    const items = buildStokList(currentEntries);
+    const filtered = q ? items.filter(it => it.nama.toLowerCase().includes(q) || String(it.kode).toLowerCase().includes(q)) : items;
+    if (items.length === 0) return setKatalogEmpty('Belum ada barang yang tercatat.');
+    if (filtered.length === 0) return setKatalogEmpty('Tidak ada barang yang cocok dengan pencarian.');
+    katalogEmpty.hidden = true;
+    katalogHint.textContent = `📁 ${items.length} barang. Klik untuk lihat stok, lokasi, supplier, pemilik & riwayat.`;
+    filtered.forEach(it => {
+      const stok = it.masuk - it.keluar;
+      const dotClass = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
+      appendFolderCard(katalogList, {
+        label: it.nama, sub: it.kode, dotClass,
+        dotTitle: `Stok saat ini: ${stok.toLocaleString('id-ID')} pcs`,
+        onClick: () => openItemModal(it.kode),
+      });
+    });
+
+  } else if (katalogMode === 'lokasi') {
+    const all = buildLocationStock(currentEntries);
+    const filtered = q ? all.filter(l => l.lokasi.toLowerCase().includes(q)) : all;
+    if (all.length === 0) return setKatalogEmpty('Belum ada stok tercatat di lokasi manapun.');
+    if (filtered.length === 0) return setKatalogEmpty('Tidak ada lokasi yang cocok dengan pencarian.');
+    katalogEmpty.hidden = true;
+    katalogHint.textContent = `📁 ${all.length} lokasi terisi. Klik untuk lihat barang apa saja di dalamnya.`;
+    filtered.forEach(l => {
+      appendFolderCard(katalogList, {
+        label: l.lokasi, sub: `${l.totalQty.toLocaleString('id-ID')} pcs`,
+        extraClass: 'folder-card-lokasi',
+        countBadge: l.itemCount, countTitle: `${l.itemCount} jenis barang`,
+        onClick: () => openLokasiModal(l.lokasi),
+      });
+    });
+
+  } else if (katalogMode === 'supplier' || katalogMode === 'pemilik') {
+    const field = katalogMode === 'supplier' ? 'supplier' : 'pemilik';
+    const all = buildAttributeBreakdown(currentEntries, field);
+    const filtered = q ? all.filter(d => d.nama.toLowerCase().includes(q)) : all;
+    const labelJenis = katalogMode === 'supplier' ? 'supplier' : 'pemilik barang';
+    if (all.length === 0) return setKatalogEmpty(`Belum ada data ${labelJenis}.`);
+    if (filtered.length === 0) return setKatalogEmpty(`Tidak ada ${labelJenis} yang cocok dengan pencarian.`);
+    katalogEmpty.hidden = true;
+    katalogHint.textContent = `📁 ${all.length} ${labelJenis}. Klik untuk lihat barang apa saja yang terkait.`;
+    filtered.forEach(d => {
+      appendFolderCard(katalogList, {
+        label: d.nama, sub: `${d.totalStok.toLocaleString('id-ID')} pcs`,
+        extraClass: katalogMode === 'supplier' ? 'folder-card-supplier' : 'folder-card-pemilik',
+        countBadge: d.itemCount, countTitle: `${d.itemCount} jenis barang`,
+        onClick: () => openAttributeModal(katalogMode, d.nama),
+      });
+    });
+  }
+}
+
+if (katalogModeTabs) {
+  katalogModeTabs.querySelectorAll('.period-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      katalogModeTabs.querySelectorAll('.period-tab').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      katalogMode = btn.dataset.mode;
+      searchKatalog.value = '';
+      renderKatalog();
+    });
   });
 }
 
 searchKatalog.addEventListener('input', renderKatalog);
-
-/* ==========================================================================
-   STOK PER LOKASI (admin)
-========================================================================== */
-const lokasiListEl = document.getElementById('lokasi-list');
-const lokasiEmptyEl = document.getElementById('lokasi-empty');
-const lokasiHintEl = document.getElementById('lokasi-hint');
-const searchLokasi = document.getElementById('search-lokasi');
-
-function renderLokasi() {
-  const all = buildLocationStock(currentEntries);
-  const q = searchLokasi.value.trim().toLowerCase();
-  const filtered = q ? all.filter(l => l.lokasi.toLowerCase().includes(q)) : all;
-
-  lokasiListEl.innerHTML = '';
-  if (all.length === 0) {
-    lokasiEmptyEl.hidden = false;
-    lokasiEmptyEl.textContent = 'Belum ada stok tercatat di lokasi manapun.';
-    lokasiHintEl.textContent = 'Klik salah satu lokasi untuk melihat barang apa saja yang ada di sana.';
-    return;
-  }
-  if (filtered.length === 0) {
-    lokasiEmptyEl.hidden = false;
-    lokasiEmptyEl.textContent = 'Tidak ada lokasi yang cocok dengan pencarian.';
-    return;
-  }
-  lokasiEmptyEl.hidden = true;
-  lokasiHintEl.textContent = `${all.length} lokasi terisi. Klik salah satu untuk detail.`;
-
-  filtered.forEach(l => {
-    const preview = l.items.slice(0, 3).map(it => `${escapeHtml(it.nama)} <b>${it.qty}</b>`).join(', ');
-    const more = l.items.length > 3 ? `, +${l.items.length - 3} barang lagi` : '';
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'lokasi-item';
-    card.innerHTML = `
-      <div class="lokasi-item-top">
-        <span class="lokasi-item-kode">${escapeHtml(l.lokasi)}</span>
-        <span class="lokasi-item-count">${l.itemCount} jenis barang</span>
-      </div>
-      <div class="lokasi-item-preview">${preview}${more}</div>
-      <div class="lokasi-item-total">${l.totalQty.toLocaleString('id-ID')} pcs total</div>
-    `;
-    card.addEventListener('click', () => openLokasiModal(l.lokasi));
-    lokasiListEl.appendChild(card);
-  });
-}
-
-if (searchLokasi) searchLokasi.addEventListener('input', renderLokasi);
 
 /* ==========================================================================
    AKUN OPERATOR TERDAFTAR (admin)
@@ -1798,6 +1835,46 @@ function openLokasiModal(lokasi) {
               <span class="li-kode">${escapeHtml(it.kode)}</span>
             </span>
             <span class="li-qty">${it.qty.toLocaleString('id-ID')} pcs</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  modalBody.querySelectorAll('.modal-lokasi-item-row').forEach(row => {
+    row.addEventListener('click', () => openItemModal(row.dataset.kode));
+  });
+  itemModal.hidden = false;
+}
+
+/* ---- Modal detail supplier / pemilik barang ---- */
+function openAttributeModal(kind, nama) {
+  const field = kind === 'supplier' ? 'supplier' : 'pemilik';
+  const all = buildAttributeBreakdown(currentEntries, field);
+  const data = all.find(d => d.nama === nama);
+  if (!data) return;
+
+  const labelJenis = kind === 'supplier' ? 'SUPPLIER' : 'PEMILIK BARANG (PABRIK)';
+
+  modalBody.innerHTML = `
+    <div class="modal-item-head">
+      <div class="modal-item-kode">${labelJenis}</div>
+      <h2 class="modal-item-nama">${escapeHtml(data.nama)}</h2>
+    </div>
+    <div class="modal-stat-grid">
+      <div class="modal-stat"><span>Jenis Barang</span><strong>${data.itemCount}</strong></div>
+      <div class="modal-stat"><span>Total Stok Terkait</span><strong>${data.totalStok.toLocaleString('id-ID')}</strong></div>
+      <div class="modal-stat"><span>&nbsp;</span><strong>&nbsp;</strong></div>
+    </div>
+    <div class="modal-section">
+      <h4>Barang Terkait</h4>
+      <div class="modal-history-list">
+        ${data.items.map(it => `
+          <div class="modal-lokasi-item-row" data-kode="${escapeHtml(it.kode)}">
+            <span>
+              <span class="li-nama">${escapeHtml(it.nama)}</span>
+              <span class="li-kode">${escapeHtml(it.kode)}</span>
+            </span>
+            <span class="li-qty">${it.stok.toLocaleString('id-ID')} pcs</span>
           </div>
         `).join('')}
       </div>
