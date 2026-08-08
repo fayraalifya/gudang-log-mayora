@@ -565,6 +565,7 @@ function enterApp(session) {
 
   if (session.role === 'operator') {
     inputOperator.value = session.nama;
+    switchOperatorPanel('laporan');
   }
 
   initFirestoreConnection();
@@ -615,6 +616,7 @@ function buildStokList(entries) {
       map[key] = {
         kode: t.kodeBarang, nama: t.namaBarang,
         masuk: 0, keluar: 0, lokasi: new Set(),
+        supplierSet: new Set(), pemilikSet: new Set(),
         lastMasuk: null, lastKeluar: null, updated: 0,
         history: [],
       };
@@ -622,6 +624,8 @@ function buildStokList(entries) {
     const item = map[key];
     item.history.push(t);
     if (t.lokasi) item.lokasi.add(t.lokasi);
+    if (t.supplier) item.supplierSet.add(t.supplier);
+    if (t.pemilik) item.pemilikSet.add(t.pemilik);
     if (t.jenis === 'masuk') {
       item.masuk += t.jumlah;
       if (!item.lastMasuk || t.createdAt > item.lastMasuk.at) {
@@ -643,14 +647,25 @@ function buildLocationStock(entries) {
   entries.forEach(t => {
     if (!t.lokasi) return;
     const key = t.kodeBarang || t.namaBarang;
-    if (!map[t.lokasi]) map[t.lokasi] = {};
-    if (!map[t.lokasi][key]) map[t.lokasi][key] = { kode: t.kodeBarang, nama: t.namaBarang, qty: 0 };
-    map[t.lokasi][key].qty += (t.jenis === 'masuk' ? t.jumlah : -t.jumlah);
+    if (!map[t.lokasi]) map[t.lokasi] = { items: {}, lastActivity: 0 };
+    const loc = map[t.lokasi];
+    if (!loc.items[key]) {
+      loc.items[key] = {
+        kode: t.kodeBarang, nama: t.namaBarang, qty: 0,
+        supplierSet: new Set(), pemilikSet: new Set(), lastActivity: 0,
+      };
+    }
+    const it = loc.items[key];
+    it.qty += (t.jenis === 'masuk' ? t.jumlah : -t.jumlah);
+    if (t.supplier) it.supplierSet.add(t.supplier);
+    if (t.pemilik) it.pemilikSet.add(t.pemilik);
+    if (t.createdAt > it.lastActivity) it.lastActivity = t.createdAt;
+    if (t.createdAt > loc.lastActivity) loc.lastActivity = t.createdAt;
   });
-  const result = Object.entries(map).map(([lokasi, items]) => {
-    const list = Object.values(items).filter(it => it.qty !== 0).sort((a, b) => b.qty - a.qty);
+  const result = Object.entries(map).map(([lokasi, locData]) => {
+    const list = Object.values(locData.items).filter(it => it.qty !== 0).sort((a, b) => b.qty - a.qty);
     const totalQty = list.reduce((s, it) => s + it.qty, 0);
-    return { lokasi, items: list, totalQty, itemCount: list.length };
+    return { lokasi, items: list, totalQty, itemCount: list.length, lastActivity: locData.lastActivity };
   }).filter(l => l.itemCount > 0).sort((a, b) => a.lokasi.localeCompare(b.lokasi));
   return result;
 }
@@ -707,6 +722,37 @@ const elConnected = document.getElementById('connect-connected');
 const elConnectError = document.getElementById('connect-error');
 const operatorNotReady = document.getElementById('operator-not-ready');
 
+/* ==========================================================================
+   MENU NAVIGASI OPERATOR — pindah antar panel (Buat Laporan / Katalog
+   Barang / Riwayat Laporan) tanpa perlu scroll panjang. Hanya berlaku
+   untuk role operator; tampilan admin tidak dipengaruhi fungsi ini.
+========================================================================== */
+const opNav = document.getElementById('op-nav');
+const opPanels = {
+  laporan: document.getElementById('op-panel-laporan'),
+  katalog: document.getElementById('op-panel-katalog'),
+  riwayat: document.getElementById('op-panel-riwayat'),
+};
+
+function switchOperatorPanel(panel) {
+  if (!opPanels[panel]) return;
+  Object.keys(opPanels).forEach(key => {
+    if (opPanels[key]) opPanels[key].hidden = key !== panel;
+  });
+  if (opNav) {
+    opNav.querySelectorAll('.op-nav-btn').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.opPanel === panel);
+    });
+  }
+  if (panel === 'riwayat') renderRiwayatOperator();
+}
+
+if (opNav) {
+  opNav.querySelectorAll('.op-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchOperatorPanel(btn.dataset.opPanel));
+  });
+}
+
 function currentRole() {
   const s = getSession();
   return s ? s.role : null;
@@ -733,6 +779,7 @@ function renderAll() {
   renderRingkasan();
   renderKatalog();
   renderRiwayat();
+  renderRiwayatOperator();
   renderAkunOperator();
 }
 
@@ -1675,6 +1722,47 @@ function buildAttributeBreakdown(entries, field) {
   }).sort((a, b) => a.nama.localeCompare(b.nama));
 }
 
+// Ubah Set (lokasi / supplier / pemilik) jadi teks singkat yang gampang
+// dibaca, contoh: "Gudang A, Gudang B +2 lainnya". Dipakai supaya baris
+// tabel katalog tidak penuh sesak kalau satu barang tersebar di banyak
+// lokasi/supplier/pemilik.
+function formatSetList(set, max = 2) {
+  const arr = Array.from(set || []).filter(Boolean);
+  if (arr.length === 0) return '-';
+  if (arr.length <= max) return arr.join(', ');
+  return `${arr.slice(0, max).join(', ')} +${arr.length - max} lainnya`;
+}
+
+// Baris tabel katalog — versi "gampang dibaca" untuk operator: nama/judul,
+// subjudul kecil (kode barang ATAU label lain), stok/total saat ini (dengan
+// status jelas) langsung terlihat, plus baris info tambahan yang fleksibel
+// (meta) sesuai konteksnya. Dipakai bareng oleh katalog Barang, katalog
+// Lokasi, dan modal detail lokasi supaya tampilannya konsisten & gampang
+// dipahami. Klik baris tetap membuka modal detail untuk lihat lebih lanjut.
+function appendStokRow(container, { nama, sub, subMono = true, stok, statusClass, statusLabel, meta, onClick }) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = `stok-row stok-row-${statusClass}`;
+  const metaHtml = (meta || []).map(m => `
+    <div class="stok-meta-item"><span class="stok-meta-label">${m.icon} ${escapeHtml(m.label)}</span><span class="stok-meta-val" title="${escapeHtml(m.value)}">${escapeHtml(m.value)}</span></div>
+  `).join('');
+  row.innerHTML = `
+    <div class="stok-row-top">
+      <div class="stok-row-info">
+        <div class="stok-row-nama" title="${escapeHtml(nama)}">${escapeHtml(nama)}</div>
+        <div class="stok-row-kode${subMono ? ' mono' : ''}">${escapeHtml(sub || '-')}</div>
+      </div>
+      <div class="stok-row-qty">
+        <span class="stok-qty-num ${statusClass}">${stok.toLocaleString('id-ID')}</span>
+        <span class="stok-qty-status ${statusClass}">${statusLabel}</span>
+      </div>
+    </div>
+    <div class="stok-row-meta">${metaHtml}</div>
+  `;
+  row.addEventListener('click', onClick);
+  container.appendChild(row);
+}
+
 function folderIconSvg() {
   return '<svg class="folder-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 7a2 2 0 0 1 2-2h4.17a2 2 0 0 1 1.42.59L12 7h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" fill="currentColor"/></svg>';
 }
@@ -1705,6 +1793,12 @@ function setKatalogEmpty(msg) {
 function renderKatalog() {
   const q = searchKatalog.value.trim().toLowerCase();
   katalogList.innerHTML = '';
+  // Mode "barang" & "lokasi" pakai tabel/baris yang langsung menampilkan
+  // info lengkap tanpa perlu klik. Mode "supplier"/"pemilik" tetap pakai
+  // grid folder seperti semula.
+  const useStokTable = katalogMode === 'barang' || katalogMode === 'lokasi';
+  katalogList.classList.toggle('stok-table', useStokTable);
+  katalogList.classList.toggle('folder-grid', !useStokTable);
 
   if (katalogMode === 'barang') {
     const items = buildStokList(currentEntries);
@@ -1712,13 +1806,18 @@ function renderKatalog() {
     if (items.length === 0) return setKatalogEmpty('Belum ada barang yang tercatat.');
     if (filtered.length === 0) return setKatalogEmpty('Tidak ada barang yang cocok dengan pencarian.');
     katalogEmpty.hidden = true;
-    katalogHint.textContent = `📁 ${items.length} barang. Klik untuk lihat stok, lokasi, supplier, pemilik & riwayat.`;
+    katalogHint.textContent = `📁 ${items.length} barang. Klik baris untuk lihat riwayat transaksi lengkap.`;
     filtered.forEach(it => {
       const stok = it.masuk - it.keluar;
-      const dotClass = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
-      appendFolderCard(katalogList, {
-        label: it.nama, sub: it.kode, dotClass,
-        dotTitle: `Stok saat ini: ${stok.toLocaleString('id-ID')} pcs`,
+      const statusClass = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
+      const statusLabel = stok > 0 ? 'Stok Tersedia' : (stok < 0 ? 'Stok Minus' : 'Stok Kosong');
+      appendStokRow(katalogList, {
+        nama: it.nama, sub: it.kode, subMono: true, stok, statusClass, statusLabel,
+        meta: [
+          { icon: '📍', label: 'Lokasi', value: formatSetList(it.lokasi) },
+          { icon: '🚚', label: 'Supplier', value: formatSetList(it.supplierSet) },
+          { icon: '🏭', label: 'Pemilik', value: formatSetList(it.pemilikSet) },
+        ],
         onClick: () => openItemModal(it.kode),
       });
     });
@@ -1729,12 +1828,18 @@ function renderKatalog() {
     if (all.length === 0) return setKatalogEmpty('Belum ada stok tercatat di lokasi manapun.');
     if (filtered.length === 0) return setKatalogEmpty('Tidak ada lokasi yang cocok dengan pencarian.');
     katalogEmpty.hidden = true;
-    katalogHint.textContent = `📁 ${all.length} lokasi terisi. Klik untuk lihat barang apa saja di dalamnya.`;
+    katalogHint.textContent = `📁 ${all.length} lokasi terisi. Klik baris untuk lihat barang apa saja di dalamnya.`;
     filtered.forEach(l => {
-      appendFolderCard(katalogList, {
-        label: l.lokasi, sub: `${l.totalQty.toLocaleString('id-ID')} pcs`,
-        extraClass: 'folder-card-lokasi',
-        countBadge: l.itemCount, countTitle: `${l.itemCount} jenis barang`,
+      const statusClass = l.totalQty > 0 ? 'pos' : (l.totalQty < 0 ? 'neg' : 'zero');
+      const statusLabel = l.totalQty > 0 ? 'Stok Tersedia' : (l.totalQty < 0 ? 'Stok Minus' : 'Stok Kosong');
+      const barangUtama = l.items[0] ? l.items[0].nama : '-';
+      appendStokRow(katalogList, {
+        nama: l.lokasi, sub: 'Lokasi Penyimpanan', subMono: false, stok: l.totalQty, statusClass, statusLabel,
+        meta: [
+          { icon: '📦', label: 'Jenis Barang', value: `${l.itemCount} jenis` },
+          { icon: '⭐', label: 'Barang Utama', value: barangUtama },
+          { icon: '🕒', label: 'Terakhir', value: l.lastActivity ? formatWaktu(l.lastActivity) : '-' },
+        ],
         onClick: () => openLokasiModal(l.lokasi),
       });
     });
@@ -1847,25 +1952,26 @@ function openLokasiModal(lokasi) {
     <div class="modal-stat-grid">
       <div class="modal-stat"><span>Jenis Barang</span><strong>${data.itemCount}</strong></div>
       <div class="modal-stat"><span>Total Stok</span><strong>${data.totalQty.toLocaleString('id-ID')}</strong></div>
-      <div class="modal-stat"><span>&nbsp;</span><strong>&nbsp;</strong></div>
+      <div class="modal-stat"><span>Terakhir Diperbarui</span><strong class="modal-stat-small">${data.lastActivity ? formatWaktu(data.lastActivity) : '-'}</strong></div>
     </div>
     <div class="modal-section">
       <h4>Barang di Lokasi Ini</h4>
-      <div class="modal-history-list">
-        ${data.items.map(it => `
-          <div class="modal-lokasi-item-row" data-kode="${escapeHtml(it.kode)}">
-            <span>
-              <span class="li-nama">${escapeHtml(it.nama)}</span>
-              <span class="li-kode">${escapeHtml(it.kode)}</span>
-            </span>
-            <span class="li-qty">${it.qty.toLocaleString('id-ID')} pcs</span>
-          </div>
-        `).join('')}
-      </div>
+      <div id="modal-lokasi-stok-table" class="stok-table stok-table-modal"></div>
     </div>
   `;
-  modalBody.querySelectorAll('.modal-lokasi-item-row').forEach(row => {
-    row.addEventListener('click', () => openItemModal(row.dataset.kode));
+  const container = modalBody.querySelector('#modal-lokasi-stok-table');
+  data.items.forEach(it => {
+    const statusClass = it.qty > 0 ? 'pos' : (it.qty < 0 ? 'neg' : 'zero');
+    const statusLabel = it.qty > 0 ? 'Stok Tersedia' : (it.qty < 0 ? 'Stok Minus' : 'Stok Kosong');
+    appendStokRow(container, {
+      nama: it.nama, sub: it.kode, subMono: true, stok: it.qty, statusClass, statusLabel,
+      meta: [
+        { icon: '🚚', label: 'Supplier', value: formatSetList(it.supplierSet) },
+        { icon: '🏭', label: 'Pemilik', value: formatSetList(it.pemilikSet) },
+        { icon: '🕒', label: 'Terakhir', value: it.lastActivity ? formatWaktu(it.lastActivity) : '-' },
+      ],
+      onClick: () => openItemModal(it.kode),
+    });
   });
   itemModal.hidden = false;
 }
@@ -2122,6 +2228,64 @@ function renderRiwayat() {
 }
 
 searchRiwayat.addEventListener('input', renderRiwayat);
+
+/* ==========================================================================
+   RIWAYAT LAPORAN SAYA (operator) — versi ringkas & baca-saja dari
+   renderRiwayat() di atas. Hanya menampilkan laporan yang "operator"-nya
+   sama dengan nama operator yang sedang login (tidak dibatasi periode
+   seperti punya admin, supaya operator tetap bisa lihat laporan lamanya).
+========================================================================== */
+const riwayatOpList = document.getElementById('riwayat-op-list');
+const riwayatOpEmpty = document.getElementById('riwayat-op-empty');
+const searchRiwayatOp = document.getElementById('search-riwayat-op');
+
+function renderRiwayatOperator() {
+  if (currentRole() !== 'operator' || !riwayatOpList) return;
+  const session = getSession();
+  const namaSaya = (session && session.nama || '').trim().toLowerCase();
+
+  let mine = currentEntries.filter(t => (t.operator || '').trim().toLowerCase() === namaSaya);
+  mine = mine.sort((a, b) => b.createdAt - a.createdAt);
+
+  const q = (searchRiwayatOp && searchRiwayatOp.value.trim().toLowerCase()) || '';
+  const filtered = q
+    ? mine.filter(t => t.namaBarang.toLowerCase().includes(q) || t.kodeBarang.toLowerCase().includes(q))
+    : mine;
+
+  riwayatOpList.innerHTML = '';
+  if (filtered.length === 0) {
+    riwayatOpEmpty.hidden = false;
+    riwayatOpEmpty.textContent = mine.length === 0 ? 'Anda belum memasukkan laporan apapun.' : 'Tidak ada laporan yang cocok dengan pencarian.';
+    return;
+  }
+  riwayatOpEmpty.hidden = true;
+
+  filtered.forEach(t => {
+    const isAdjustment = t.tipe === 'penyesuaian';
+    const card = document.createElement('div');
+    card.className = 'ticket';
+    card.innerHTML = `
+      <div class="ticket-top">
+        <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">
+          ${t.jenis === 'masuk' ? 'BARANG MASUK' : 'BARANG KELUAR'}
+        </span>
+        ${isAdjustment ? '<span class="badge-jenis badge-penyesuaian">PENYESUAIAN</span>' : ''}
+        <span class="ticket-time">${formatWaktu(t.createdAt)}</span>
+      </div>
+      <div class="ticket-grid">
+        <div><span class="lbl">Barang: </span>${escapeHtml(t.namaBarang)}</div>
+        <div><span class="lbl">Kode: </span><span class="mono">${escapeHtml(t.kodeBarang)}</span></div>
+        <div><span class="lbl">Lokasi: </span>${escapeHtml(t.lokasi)}</div>
+        <div><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
+        <div><span class="lbl">Tanggal: </span>${formatTanggal(t.tanggal)}</div>
+      </div>
+      ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
+    `;
+    riwayatOpList.appendChild(card);
+  });
+}
+
+if (searchRiwayatOp) searchRiwayatOp.addEventListener('input', renderRiwayatOperator);
 
 /* ==========================================================================
    EXPORT EXCEL & HAPUS SEMUA (admin)

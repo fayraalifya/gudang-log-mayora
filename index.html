@@ -236,6 +236,17 @@
         <span>Sistem belum siap menerima laporan. Periksa koneksi internet Anda.</span>
       </div>
 
+      <!-- MENU NAVIGASI — operator only. Klik untuk pindah antar tampilan
+           (Buat Laporan / Katalog Barang / Riwayat Laporan) supaya halaman
+           operator tidak perlu di-scroll panjang. -->
+      <div class="period-tab-group op-nav operator-only" id="op-nav">
+        <button type="button" class="period-tab op-nav-btn is-active" data-op-panel="laporan">📝 Buat Laporan</button>
+        <button type="button" class="period-tab op-nav-btn" data-op-panel="katalog">📦 Katalog Barang</button>
+        <button type="button" class="period-tab op-nav-btn" data-op-panel="riwayat">🕒 Riwayat Laporan</button>
+      </div>
+
+      <!-- PANEL: BUAT LAPORAN — operator only -->
+      <div class="op-panel" id="op-panel-laporan" data-op-panel="laporan">
 
       <!-- TOGGLE JENIS — operator only -->
       <div class="jenis-toggle operator-only">
@@ -369,6 +380,9 @@
         </button>
       </form>
 
+      </div>
+      <!-- /PANEL: BUAT LAPORAN -->
+
       <!-- PILIHAN PERIODE LAPORAN — hanya admin -->
       <div class="period-tabs admin-only" id="period-tabs">
         <div class="period-tab-group">
@@ -442,10 +456,17 @@
         </div>
       </section>
 
+      <!-- PANEL: KATALOG BARANG — operator only (section di dalamnya tetap
+           dipakai admin juga, jadi wrapper ini TIDAK diberi class
+           operator-only; visibilitasnya untuk operator diatur lewat JS
+           saat pindah tab menu di atas). -->
+      <div class="op-panel" id="op-panel-katalog" data-op-panel="katalog">
+
       <!-- KATALOG & STOK — admin & operator (read-only untuk operator).
            Satu tempat jelajah: bisa dicari/di-browse dari sisi Barang,
-           Lokasi, Supplier, atau Pemilik Barang. Klik salah satu folder
-           untuk lihat detail lengkapnya lewat modal. -->
+           Lokasi, Supplier, atau Pemilik Barang (Supplier & Pemilik hanya
+           tampil untuk admin). Klik salah satu folder untuk lihat detail
+           lengkapnya lewat modal. -->
       <section id="katalog" class="katalog">
         <div class="katalog-header">
           <h3>Katalog &amp; Stok</h3>
@@ -464,6 +485,31 @@
         <div id="katalog-empty" class="empty-state">Belum ada barang yang tercatat.</div>
         <div id="katalog-list" class="folder-grid"></div>
       </section>
+
+      </div>
+      <!-- /PANEL: KATALOG BARANG -->
+
+      <!-- PANEL: RIWAYAT LAPORAN SAYA — operator only. Menampilkan hanya
+           laporan yang dimasukkan oleh operator yang sedang login
+           (dibandingkan Riwayat Laporan admin di bawah yang menampilkan
+           laporan SEMUA operator). -->
+      <div class="op-panel operator-only" id="op-panel-riwayat" data-op-panel="riwayat">
+        <section class="riwayat-section">
+          <div class="riwayat-header">
+            <h3>Riwayat Laporan Saya</h3>
+            <div class="riwayat-actions">
+              <div class="search-inline">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input type="text" id="search-riwayat-op" placeholder="Cari barang...">
+              </div>
+            </div>
+          </div>
+          <p class="riwayat-hint">Menampilkan laporan yang Anda masukkan sendiri, terbaru di atas.</p>
+          <div id="riwayat-op-empty" class="empty-state">Anda belum memasukkan laporan apapun.</div>
+          <div id="riwayat-op-list" class="riwayat-list"></div>
+        </section>
+      </div>
+      <!-- /PANEL: RIWAYAT LAPORAN SAYA -->
 
       <!-- AKUN OPERATOR TERDAFTAR — hanya admin -->
       <!-- (bagian Stok per Lokasi lama sudah digabung ke atas, lihat section#katalog) -->
