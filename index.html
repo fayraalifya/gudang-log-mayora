@@ -7,7 +7,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20260809">
+<link rel="manifest" href="manifest.json?v=20260809">
+<meta name="theme-color" content="#0F2038">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script>
+(function () {
+  try {
+    if (localStorage.getItem('gudang-theme') === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 
@@ -213,9 +225,17 @@
               <span class="role-pill" id="role-pill">Operator</span>
             </div>
           </div>
+          <button type="button" id="btn-install-app" class="btn-install-app" hidden>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v13"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Install App
+          </button>
           <button type="button" id="btn-logout" class="btn-logout" title="Keluar">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
             Keluar
+          </button>
+          <button type="button" id="btn-theme-toggle" class="btn-theme-toggle" title="Ganti tema terang/gelap" aria-label="Ganti mode terang/gelap">
+            <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
           </button>
         </div>
       </div>
@@ -485,7 +505,10 @@
             </div>
             <span class="stat-label">Barang Masuk</span>
             <span class="stat-value" id="stat-masuk-qty">0</span>
-            <span class="stat-sub" id="stat-masuk-count">0 laporan</span>
+            <span class="stat-sub">
+              <span id="stat-masuk-count">0 laporan</span>
+              <span class="stat-trend" id="stat-masuk-trend" hidden></span>
+            </span>
           </div>
           <div class="stat-card stat-keluar">
             <div class="stat-icon-wrap">
@@ -493,7 +516,10 @@
             </div>
             <span class="stat-label">Barang Keluar</span>
             <span class="stat-value" id="stat-keluar-qty">0</span>
-            <span class="stat-sub" id="stat-keluar-count">0 laporan</span>
+            <span class="stat-sub">
+              <span id="stat-keluar-count">0 laporan</span>
+              <span class="stat-trend" id="stat-keluar-trend" hidden></span>
+            </span>
           </div>
           <div class="stat-card stat-total">
             <div class="stat-icon-wrap">

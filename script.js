@@ -292,6 +292,55 @@ const userNameLabel = document.getElementById('user-name-label');
 const headerAvatar = document.getElementById('header-avatar');
 const tabOperator = document.getElementById('tab-operator');
 const tabAdmin = document.getElementById('tab-admin');
+
+/* ==========================================================================
+   MODE GELAP — tema tersimpan di localStorage supaya diingat lain kali
+   dibuka. Diterapkan sedini mungkin lewat inline script di <head> (biar
+   tidak kedip), tombol di header cuma toggle + simpan ulang preferensinya.
+========================================================================== */
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('gudang-theme', theme); } catch (e) {}
+}
+if (btnThemeToggle) {
+  btnThemeToggle.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    applyTheme(isDark ? 'light' : 'dark');
+  });
+}
+
+/* ==========================================================================
+   PWA — supaya bisa "diinstall" ke home screen HP dan tetap bisa dibuka
+   (tampilannya) walau sinyal internet lagi lemah. Service worker cuma
+   nge-cache TAMPILAN (HTML/CSS/JS), bukan data laporan — data laporan
+   tetap butuh koneksi ke Firestore seperti biasa.
+========================================================================== */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+  });
+}
+
+let deferredInstallPrompt = null;
+const btnInstallApp = document.getElementById('btn-install-app');
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (btnInstallApp) btnInstallApp.hidden = false;
+});
+if (btnInstallApp) {
+  btnInstallApp.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    btnInstallApp.hidden = true;
+  });
+}
+window.addEventListener('appinstalled', () => {
+  if (btnInstallApp) btnInstallApp.hidden = true;
+});
 const formLoginOperator = document.getElementById('form-login-operator');
 const formLoginAdmin = document.getElementById('form-login-admin');
 const loginOperatorNama = document.getElementById('login-operator-nama');
@@ -1762,11 +1811,31 @@ function renderRingkasan() {
 
   const trendEl = document.getElementById('arus-trend');
   const prevRange = getPreviousPeriodRange(periodMode, periodDate);
+  const trendMasukEl = document.getElementById('stat-masuk-trend');
+  const trendKeluarEl = document.getElementById('stat-keluar-trend');
+
+  function setTrend(el, current, previous) {
+    if (!el) return;
+    if (!prevRange || (current === 0 && previous === 0)) { el.hidden = true; return; }
+    el.hidden = false;
+    const pct = previous === 0 ? 100 : Math.round(((current - previous) / previous) * 100);
+    if (pct > 0) { el.className = 'stat-trend up'; el.textContent = `▲ ${pct}%`; }
+    else if (pct < 0) { el.className = 'stat-trend down'; el.textContent = `▼ ${Math.abs(pct)}%`; }
+    else { el.className = 'stat-trend flat'; el.textContent = 'sama'; }
+  }
+
   if (!prevRange) {
     trendEl.hidden = true;
+    if (trendMasukEl) trendMasukEl.hidden = true;
+    if (trendKeluarEl) trendKeluarEl.hidden = true;
   } else {
-    let prevTotal = 0;
-    currentEntries.forEach(t => { if (inPeriod(t, prevRange)) prevTotal += t.jumlah; });
+    let prevTotal = 0, prevMasukQty = 0, prevKeluarQty = 0;
+    currentEntries.forEach(t => {
+      if (inPeriod(t, prevRange)) {
+        prevTotal += t.jumlah;
+        if (t.jenis === 'masuk') prevMasukQty += t.jumlah; else prevKeluarQty += t.jumlah;
+      }
+    });
     if (prevTotal === 0 && totalArus === 0) {
       trendEl.hidden = true;
     } else {
@@ -1776,6 +1845,8 @@ function renderRingkasan() {
       else if (pct < 0) { trendEl.className = 'vis-trend down'; trendEl.textContent = `▼ ${Math.abs(pct)}%`; }
       else { trendEl.className = 'vis-trend flat'; trendEl.textContent = `= sama`; }
     }
+    setTrend(trendMasukEl, masukQty, prevMasukQty);
+    setTrend(trendKeluarEl, keluarQty, prevKeluarQty);
   }
 
   const barangCount = {};
