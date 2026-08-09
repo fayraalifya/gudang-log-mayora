@@ -383,15 +383,51 @@
       </div>
       <!-- /PANEL: BUAT LAPORAN -->
 
-      <!-- MENU NAVIGASI ADMIN — pindah antar panel (Dashboard / Katalog & Stok /
-           Operator / Riwayat) supaya halaman admin tidak jadi satu scroll
-           panjang berisi semua section sekaligus. -->
-      <div class="period-tab-group op-nav admin-only" id="admin-nav">
-        <button type="button" class="period-tab op-nav-btn is-active" data-admin-panel="dashboard">📊 Dashboard</button>
-        <button type="button" class="period-tab op-nav-btn" data-admin-panel="katalog">📦 Katalog &amp; Stok</button>
-        <button type="button" class="period-tab op-nav-btn" data-admin-panel="operator">👥 Operator</button>
-        <button type="button" class="period-tab op-nav-btn" data-admin-panel="riwayat">🕒 Riwayat</button>
-      </div>
+      <!-- ======================================================================
+           TATA LETAK ADMIN — sidebar menu di kiri + konten di kanan, biar
+           kelihatan seperti dashboard admin sungguhan dan gampang pindah
+           antar bagian tanpa scroll panjang.
+      ======================================================================= -->
+      <div class="admin-shell">
+
+        <nav class="admin-sidebar admin-only" id="admin-nav">
+          <div class="admin-sidebar-eyebrow">MENU ADMIN</div>
+
+          <button type="button" class="admin-nav-btn is-active" data-admin-panel="dashboard">
+            <span class="admin-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="12" width="5" height="8" rx="1"/><rect x="10" y="7" width="5" height="13" rx="1"/><rect x="17" y="3" width="4" height="17" rx="1"/></svg>
+            </span>
+            <span class="admin-nav-label">Dashboard</span>
+          </button>
+
+          <button type="button" class="admin-nav-btn" data-admin-panel="katalog">
+            <span class="admin-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
+            </span>
+            <span class="admin-nav-label">Katalog &amp; Stok</span>
+          </button>
+
+          <button type="button" class="admin-nav-btn" data-admin-panel="operator">
+            <span class="admin-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <span class="admin-nav-label">Operator</span>
+          </button>
+
+          <button type="button" class="admin-nav-btn" data-admin-panel="riwayat">
+            <span class="admin-nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+            </span>
+            <span class="admin-nav-label">Riwayat</span>
+          </button>
+
+          <div class="admin-sidebar-foot">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3Z"/></svg>
+            <span>Panel Admin</span>
+          </div>
+        </nav>
+
+        <div class="admin-content">
 
       <!-- PANEL: DASHBOARD — hanya admin -->
       <div class="op-panel admin-panel" id="admin-panel-dashboard" data-admin-panel="dashboard">
@@ -686,6 +722,11 @@
       </section>
       </div>
       <!-- /PANEL: RIWAYAT LAPORAN -->
+
+        </div>
+        <!-- /admin-content -->
+      </div>
+      <!-- /admin-shell -->
 
       <datalist id="dl-lokasi"></datalist>
 

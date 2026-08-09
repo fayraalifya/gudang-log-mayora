@@ -776,7 +776,7 @@ function switchAdminPanel(panel) {
     if (adminPanels[key]) adminPanels[key].hidden = key !== panel;
   });
   if (adminNav) {
-    adminNav.querySelectorAll('.op-nav-btn').forEach(btn => {
+    adminNav.querySelectorAll('.admin-nav-btn').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.adminPanel === panel);
     });
   }
@@ -785,7 +785,7 @@ function switchAdminPanel(panel) {
 }
 
 if (adminNav) {
-  adminNav.querySelectorAll('.op-nav-btn').forEach(btn => {
+  adminNav.querySelectorAll('.admin-nav-btn').forEach(btn => {
     btn.addEventListener('click', () => switchAdminPanel(btn.dataset.adminPanel));
   });
 }

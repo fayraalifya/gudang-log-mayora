@@ -1070,6 +1070,48 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 }
 .op-panel { display: block; }
 
+/* ==========================================================================
+   TATA LETAK ADMIN — sidebar menu di kiri + konten di kanan
+========================================================================== */
+.admin-shell { display: flex; align-items: flex-start; gap: 22px; }
+
+.admin-sidebar {
+  flex: 0 0 210px; display: flex; flex-direction: column; gap: 3px;
+  background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 14px;
+  padding: 14px 10px; position: sticky; top: 16px;
+}
+.admin-sidebar-eyebrow {
+  font-family: var(--font-display); font-weight: 700; font-size: 10.5px; letter-spacing: 1.2px;
+  color: var(--text-muted); text-transform: uppercase; padding: 2px 10px 10px;
+}
+.admin-nav-btn {
+  display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 10px;
+  font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--ink-soft);
+  text-align: left; width: 100%; transition: background-color .12s ease, color .12s ease, transform .12s ease;
+}
+.admin-nav-btn:hover { background: var(--kraft); }
+.admin-nav-btn:active { transform: scale(0.98); }
+.admin-nav-btn.is-active { background: var(--navy); color: var(--text-on-dark); box-shadow: 0 3px 10px rgba(11,31,58,0.25); }
+.admin-nav-icon { display: flex; align-items: center; flex-shrink: 0; opacity: 0.75; }
+.admin-nav-btn.is-active .admin-nav-icon { opacity: 1; }
+.admin-nav-label { white-space: nowrap; }
+.admin-sidebar-foot {
+  margin-top: 8px; padding: 12px 10px 2px; border-top: 1px solid var(--kraft-line);
+  display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-muted);
+}
+
+.admin-content { flex: 1 1 0%; min-width: 0; }
+
+@media (max-width: 900px) {
+  .admin-shell { flex-direction: column; }
+  .admin-sidebar {
+    flex-direction: row; flex: 0 0 auto; width: 100%; overflow-x: auto;
+    position: static; gap: 6px; padding: 10px; top: auto;
+  }
+  .admin-sidebar-eyebrow, .admin-sidebar-foot { display: none; }
+  .admin-nav-btn { flex: 0 0 auto; }
+}
+
 .operator-mode-tabs {
   display: grid; grid-template-columns: 1fr 1fr;
   background: var(--kraft); border-radius: 9px; padding: 3px; margin-bottom: 18px;
