@@ -202,8 +202,17 @@
           </div>
         </div>
         <div class="header-user">
-          <span class="role-pill" id="role-pill">Operator</span>
-          <span class="user-name" id="user-name-label">-</span>
+          <div class="header-status-pill" id="header-status-pill" data-state="connecting">
+            <span class="dot-live dot-connecting" id="header-status-dot"></span>
+            <span id="header-status-text">Menyambungkan...</span>
+          </div>
+          <div class="header-avatar-block">
+            <div class="header-avatar" id="header-avatar">-</div>
+            <div class="header-avatar-info">
+              <span class="user-name" id="user-name-label">-</span>
+              <span class="role-pill" id="role-pill">Operator</span>
+            </div>
+          </div>
           <button type="button" id="btn-logout" class="btn-logout" title="Keluar">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
             Keluar
@@ -384,7 +393,27 @@
       <!-- /PANEL: BUAT LAPORAN -->
 
       <!-- ======================================================================
-           TATA LETAK ADMIN — sidebar menu di kiri + konten di kanan, biar
+           PENCARIAN CEPAT — cari barang atau lokasi di seluruh database,
+           hasilnya langsung buka modal detail (barang/lokasi) tanpa perlu
+           pindah tab dulu.
+      ======================================================================= -->
+      <div class="scan-search admin-only" id="admin-scan-search">
+        <div class="scan-search-eyebrow">CARI CEPAT DI SELURUH DATABASE</div>
+        <div class="scan-search-wrap">
+          <div class="scan-search-bar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" id="admin-scan-input" class="scan-search-input" placeholder="Cari nama barang, kode, atau lokasi rak...">
+            <span class="scan-search-kbd">/</span>
+          </div>
+          <div class="scan-search-suggest" id="admin-scan-suggest"></div>
+        </div>
+        <div class="scan-search-chips">
+          <button type="button" class="scan-search-chip" data-preset="stok-kosong">📦 Stok kosong</button>
+        </div>
+      </div>
+
+      <!-- ======================================================================
+           TATA LETAK ADMIN — menu tab di atas + konten di bawah, biar
            kelihatan seperti dashboard admin sungguhan dan gampang pindah
            antar bagian tanpa scroll panjang.
       ======================================================================= -->
@@ -484,8 +513,9 @@
           </div>
         </div>
 
-        <!-- Dashboard visual: Arus Barang, Barang Terlaris, Lokasi Terpadat -->
-        <div class="vis-grid">
+        <!-- Dashboard visual: Arus Barang + Lokasi Terpadat berdampingan,
+             Barang Paling Sering Dicatat full-width di bawahnya. -->
+        <div class="vis-row-top">
 
           <div class="vis-card">
             <div class="vis-card-title"><span class="vis-card-icon">📈</span>Arus Barang <span class="vis-card-sub" id="arus-trend-wrap"><span class="vis-trend" id="arus-trend" hidden></span></span></div>
@@ -503,17 +533,17 @@
           </div>
 
           <div class="vis-card">
-            <div class="vis-card-title"><span class="vis-card-icon">🏆</span>Barang Paling Sering Dicatat (30 hari)</div>
-            <div id="top-barang-empty" class="vis-empty">Belum ada data barang.</div>
-            <div class="bar-list" id="top-barang-list"></div>
-          </div>
-
-          <div class="vis-card">
             <div class="vis-card-title"><span class="vis-card-icon">📍</span>Lokasi Terpadat (stok saat ini)</div>
             <div id="top-lokasi-empty" class="vis-empty">Belum ada stok di lokasi manapun.</div>
             <div class="bar-list" id="top-lokasi-list"></div>
           </div>
 
+        </div>
+
+        <div class="vis-card vis-card-full">
+          <div class="vis-card-title"><span class="vis-card-icon">🏆</span>Barang Paling Sering Dicatat (30 hari)</div>
+          <div id="top-barang-empty" class="vis-empty">Belum ada data barang.</div>
+          <div class="bar-list" id="top-barang-list"></div>
         </div>
       </section>
 

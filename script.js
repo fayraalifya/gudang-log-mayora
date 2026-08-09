@@ -289,6 +289,7 @@ const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
 const rolePill = document.getElementById('role-pill');
 const userNameLabel = document.getElementById('user-name-label');
+const headerAvatar = document.getElementById('header-avatar');
 const tabOperator = document.getElementById('tab-operator');
 const tabAdmin = document.getElementById('tab-admin');
 const formLoginOperator = document.getElementById('form-login-operator');
@@ -554,6 +555,15 @@ formLoginAdmin.addEventListener('submit', (e) => {
   enterApp({ role: 'admin', nama: akun.nama });
 });
 
+// Ambil inisial dari nama (maks 2 huruf) untuk ditampilkan di lingkaran
+// avatar header, contoh: "Budi Santoso" -> "BS", "Admin" -> "AD".
+function getInitials(nama) {
+  if (!nama) return '-';
+  const parts = nama.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
 function enterApp(session) {
   loginScreen.hidden = true;
   appScreen.hidden = false;
@@ -562,6 +572,7 @@ function enterApp(session) {
   rolePill.textContent = session.role === 'admin' ? 'Admin' : 'Operator';
   rolePill.classList.toggle('is-admin', session.role === 'admin');
   userNameLabel.textContent = session.nama;
+  if (headerAvatar) headerAvatar.textContent = getInitials(session.nama);
 
   if (session.role === 'operator') {
     inputOperator.value = session.nama;
@@ -723,6 +734,9 @@ const elConnecting = document.getElementById('connect-connecting');
 const elConnected = document.getElementById('connect-connected');
 const elConnectError = document.getElementById('connect-error');
 const operatorNotReady = document.getElementById('operator-not-ready');
+const headerStatusPill = document.getElementById('header-status-pill');
+const headerStatusDot = document.getElementById('header-status-dot');
+const headerStatusText = document.getElementById('header-status-text');
 
 /* ==========================================================================
    MENU NAVIGASI OPERATOR — pindah antar panel (Buat Laporan / Katalog
@@ -790,6 +804,99 @@ if (adminNav) {
   });
 }
 
+/* ---- Pencarian cepat (admin) ---- */
+const adminScanInput = document.getElementById('admin-scan-input');
+const adminScanSuggest = document.getElementById('admin-scan-suggest');
+const adminScanSearchEl = document.getElementById('admin-scan-search');
+
+const scanSearchIconBox = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>';
+const scanSearchIconPin = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
+
+function renderAdminScanSuggest(q, mode) {
+  if (!adminScanSuggest) return;
+  const items = buildStokList(currentEntries);
+  let rows = '';
+
+  if (mode === 'stok-kosong') {
+    const kosong = items.filter(it => (it.masuk - it.keluar) <= 0);
+    if (kosong.length === 0) {
+      adminScanSuggest.innerHTML = '<div class="scan-search-empty">Semua barang masih ada stoknya. 🎉</div>';
+    } else {
+      rows = kosong.slice(0, 20).map(it => scanSearchBarangRow(it)).join('');
+      adminScanSuggest.innerHTML = rows;
+    }
+    adminScanSuggest.classList.add('is-open');
+    return;
+  }
+
+  if (!q) { adminScanSuggest.classList.remove('is-open'); return; }
+  const ql = q.toLowerCase();
+
+  const barangMatch = items.filter(it =>
+    (it.nama || '').toLowerCase().includes(ql) || String(it.kode || '').toLowerCase().includes(ql)
+  ).slice(0, 6);
+
+  const lokasiSet = new Set();
+  currentEntries.forEach(t => { if (t.lokasi && t.lokasi.toLowerCase().includes(ql)) lokasiSet.add(t.lokasi); });
+  const lokasiMatch = Array.from(lokasiSet).slice(0, 4);
+
+  if (barangMatch.length === 0 && lokasiMatch.length === 0) {
+    adminScanSuggest.innerHTML = `<div class="scan-search-empty">Tidak ditemukan hasil untuk "${escapeHtml(q)}"</div>`;
+  } else {
+    rows += barangMatch.map(it => scanSearchBarangRow(it)).join('');
+    rows += lokasiMatch.map(lok => `
+      <button type="button" class="scan-search-row" data-lokasi="${escapeHtml(lok)}">
+        <span class="scan-search-row-icon">${scanSearchIconPin}</span>
+        <span class="scan-search-row-main"><div class="scan-search-row-nama">${escapeHtml(lok)}</div><div class="scan-search-row-sub">Lokasi rak</div></span>
+      </button>
+    `).join('');
+    adminScanSuggest.innerHTML = rows;
+  }
+  adminScanSuggest.classList.add('is-open');
+}
+
+function scanSearchBarangRow(it) {
+  const stok = it.masuk - it.keluar;
+  const st = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
+  return `
+    <button type="button" class="scan-search-row" data-kode="${escapeHtml(it.kode || '')}">
+      <span class="scan-search-row-icon">${scanSearchIconBox}</span>
+      <span class="scan-search-row-main"><div class="scan-search-row-nama">${escapeHtml(it.nama)}</div><div class="scan-search-row-sub">${escapeHtml(it.kode || '-')}</div></span>
+      <span class="scan-search-row-badge ${st}">${stok.toLocaleString('id-ID')} pcs</span>
+    </button>
+  `;
+}
+
+if (adminScanInput) {
+  adminScanInput.addEventListener('input', () => renderAdminScanSuggest(adminScanInput.value.trim(), null));
+  adminScanInput.addEventListener('focus', () => { if (adminScanInput.value.trim()) renderAdminScanSuggest(adminScanInput.value.trim(), null); });
+}
+if (adminScanSuggest) {
+  adminScanSuggest.addEventListener('click', (e) => {
+    const row = e.target.closest('.scan-search-row');
+    if (!row) return;
+    adminScanSuggest.classList.remove('is-open');
+    switchAdminPanel('katalog');
+    if (row.dataset.kode) openItemModal(row.dataset.kode);
+    else if (row.dataset.lokasi) openLokasiModal(row.dataset.lokasi);
+  });
+}
+document.querySelectorAll('.scan-search-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    if (adminScanInput) adminScanInput.value = '';
+    renderAdminScanSuggest('', chip.dataset.preset);
+  });
+});
+document.addEventListener('click', (e) => {
+  if (adminScanSearchEl && !e.target.closest('.scan-search-wrap')) adminScanSuggest.classList.remove('is-open');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && adminScanInput && document.activeElement !== adminScanInput && currentRole() === 'admin') {
+    e.preventDefault();
+    adminScanInput.focus();
+  }
+});
+
 function currentRole() {
   const s = getSession();
   return s ? s.role : null;
@@ -799,6 +906,17 @@ function setConnectUI(state) {
   elConnecting.hidden = state !== 'connecting';
   elConnected.hidden = state !== 'connected';
   elConnectError.hidden = state !== 'error';
+
+  // Pil status ringkas di header (selalu terlihat, semua peran) — dot &
+  // teksnya ikut berubah sesuai status yang sama dengan panel di bawah.
+  if (headerStatusPill) {
+    headerStatusPill.dataset.state = state;
+    headerStatusDot.classList.toggle('dot-connecting', state === 'connecting');
+    headerStatusDot.classList.toggle('dot-error', state === 'error');
+    headerStatusText.textContent = state === 'connected' ? 'Tersambung real-time'
+      : state === 'error' ? 'Gagal tersambung'
+      : 'Menyambungkan...';
+  }
 
   const submitBtn = document.getElementById('btn-submit');
   if (submitBtn) submitBtn.disabled = state !== 'connected';
@@ -1945,12 +2063,19 @@ function renderAkunOperator() {
   akunOperatorEmptyEl.hidden = true;
 
   filtered.forEach(a => {
+    const jumlahLaporan = currentEntries.filter(t => (t.operator || '').trim().toLowerCase() === (a.nama || '').trim().toLowerCase()).length;
+    const inisial = (a.nama || '-').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const row = document.createElement('div');
     row.className = 'akun-operator-item';
     row.innerHTML = `
+      <div class="akun-operator-avatar">${escapeHtml(inisial || '?')}</div>
       <div class="akun-operator-main">
         <span class="akun-operator-nama">${escapeHtml(a.nama || '-')}</span>
         <span class="akun-operator-meta">ID Karyawan: <span class="mono">${escapeHtml(a.idKaryawan || '-')}</span></span>
+      </div>
+      <div class="akun-operator-stats">
+        <span class="akun-operator-stat-num">${jumlahLaporan.toLocaleString('id-ID')}</span>
+        <span class="akun-operator-stat-label">Laporan</span>
       </div>
       <div class="akun-operator-actions">
         <span class="akun-operator-date">Daftar: ${a.createdAt ? formatWaktu(a.createdAt) : '-'}</span>

@@ -257,14 +257,43 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 .brand-title .accent { color: var(--emas); }
 .brand-sub { font-size: 10.5px; color: #A9B0BC; margin-top: 1px; letter-spacing: 0.3px; }
 
-.header-user { display: flex; align-items: center; gap: 10px; }
-.role-pill {
-  font-family: var(--font-display); font-weight: 700; font-size: 10.5px; letter-spacing: 0.6px;
-  padding: 5px 10px; border-radius: 6px; background: var(--emas); color: var(--navy);
-  text-transform: uppercase;
+.header-user { display: flex; align-items: center; gap: 12px; }
+
+/* Pil status koneksi ringkas di header (selalu terlihat, semua peran).
+   Warna pakai variabel yang sudah ada: hijau = tersambung, navy = lagi
+   nyambung, merah = gagal — sama seperti panel status di bawah header. */
+.header-status-pill {
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(244,239,226,0.08); border: 1px solid rgba(244,239,226,0.16);
+  border-radius: 20px; padding: 6px 12px 6px 10px;
+  font-size: 11.5px; color: #C7CCD6; font-weight: 500; white-space: nowrap;
 }
-.role-pill.is-admin { background: var(--merah); color: var(--text-on-dark); }
-.user-name { font-size: 13px; color: var(--text-on-dark); font-weight: 600; }
+.header-status-pill[data-state="connected"] { color: #B7E4C7; }
+.header-status-pill[data-state="error"] { color: #F3B4AE; }
+.header-status-pill .dot-live.dot-error {
+  background: var(--merah-flag); box-shadow: 0 0 0 0 rgba(179,38,30,0.5); animation: pulseDotError 1.4s infinite;
+}
+@keyframes pulseDotError {
+  0% { box-shadow: 0 0 0 0 rgba(179,38,30,0.5); }
+  70% { box-shadow: 0 0 0 7px rgba(179,38,30,0); }
+  100% { box-shadow: 0 0 0 0 rgba(179,38,30,0); }
+}
+
+.header-avatar-block { display: flex; align-items: center; gap: 9px; }
+.header-avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  background: var(--emas); color: var(--navy);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 800; font-size: 13px; letter-spacing: 0.2px;
+}
+.header-avatar-info { display: flex; flex-direction: column; line-height: 1.25; }
+.header-avatar-info .user-name { font-size: 13px; color: var(--text-on-dark); font-weight: 700; }
+.header-avatar-info .role-pill {
+  font-family: var(--font-display); font-weight: 600; font-size: 10.5px; letter-spacing: 0.3px;
+  color: #A9B0BC; background: none; padding: 0; text-transform: none;
+}
+.header-avatar-info .role-pill.is-admin { color: var(--emas); }
+
 .btn-logout {
   display: flex; align-items: center; gap: 6px;
   font-family: var(--font-display); font-weight: 600; font-size: 12px;
@@ -847,9 +876,10 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 /* ==========================================================================
    DASHBOARD VISUAL (admin) — Arus Barang, Barang Terlaris, Lokasi Terpadat
 ========================================================================== */
-.vis-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+.vis-row-top {
+  display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; margin-bottom: 12px;
 }
+.vis-card-full { width: 100%; }
 .vis-card {
   background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 12px;
   padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
@@ -904,7 +934,7 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 .bar-row:hover .bar-row-name { color: var(--merah); text-decoration: underline; }
 
 @media (max-width: 900px) {
-  .vis-grid { grid-template-columns: 1fr; }
+  .vis-row-top { grid-template-columns: 1fr; }
 }
 
 /* ==========================================================================
@@ -927,22 +957,32 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
    AKUN OPERATOR TERDAFTAR (admin)
 ========================================================================== */
 .akun-operator { margin-bottom: 28px; }
-.akun-operator-list { display: flex; flex-direction: column; gap: 10px; }
+.akun-operator-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
 .akun-operator-item {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 11px;
-  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 14px;
+  padding: 16px;
+}
+.akun-operator-avatar {
+  width: 40px; height: 40px; border-radius: 50%; background: var(--navy-pale); color: var(--navy);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; font-size: 14px; flex-shrink: 0;
 }
 .akun-operator-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.akun-operator-nama { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
+.akun-operator-nama { font-size: 14px; font-weight: 700; color: var(--ink-soft); }
 .akun-operator-meta { font-size: 11.5px; color: var(--text-muted); }
 .akun-operator-meta .mono { font-family: var(--font-mono); }
-.akun-operator-date { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-.akun-operator-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.akun-operator-stats {
+  display: flex; align-items: baseline; gap: 6px; border-top: 1px dashed var(--kraft-line);
+  padding-top: 10px;
+}
+.akun-operator-stat-num { font-family: var(--font-display); font-weight: 800; font-size: 20px; color: var(--emas); }
+.akun-operator-stat-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.akun-operator-date { font-size: 11px; color: var(--text-muted); }
+.akun-operator-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
 @media (max-width: 640px) {
-  .akun-operator-item { flex-direction: column; align-items: flex-start; }
-  .akun-operator-actions { width: 100%; justify-content: flex-end; }
+  .akun-operator-list { grid-template-columns: 1fr; }
 }
 
 /* ==========================================================================
@@ -1040,7 +1080,8 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
   .search-inline input { width: auto; flex: 1; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .header-inner { justify-content: flex-start; }
-  .header-user { width: 100%; justify-content: space-between; }
+  .header-user { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  .header-status-pill { order: 3; flex: 1 1 100%; justify-content: center; }
   .modal-section-grid { grid-template-columns: 1fr; }
   .modal-history-row { grid-template-columns: auto 1fr auto; }
   .modal-history-row span:nth-child(5) { display: none; }
@@ -1073,21 +1114,18 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 /* ==========================================================================
    TATA LETAK ADMIN — sidebar menu di kiri + konten di kanan
 ========================================================================== */
-.admin-shell { display: flex; align-items: flex-start; gap: 22px; }
+.admin-shell { display: flex; flex-direction: column; gap: 18px; }
 
 .admin-sidebar {
-  flex: 0 0 210px; display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: row; gap: 4px; flex-wrap: wrap;
   background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 14px;
-  padding: 14px 10px; position: sticky; top: 16px;
+  padding: 8px; position: static; top: auto;
 }
-.admin-sidebar-eyebrow {
-  font-family: var(--font-display); font-weight: 700; font-size: 10.5px; letter-spacing: 1.2px;
-  color: var(--text-muted); text-transform: uppercase; padding: 2px 10px 10px;
-}
+.admin-sidebar-eyebrow { display: none; }
 .admin-nav-btn {
-  display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 10px;
+  display: flex; align-items: center; gap: 9px; padding: 11px 16px; border-radius: 10px;
   font-family: var(--font-display); font-weight: 600; font-size: 13px; color: var(--ink-soft);
-  text-align: left; width: 100%; transition: background-color .12s ease, color .12s ease, transform .12s ease;
+  text-align: left; flex: 0 0 auto; transition: background-color .12s ease, color .12s ease, transform .12s ease;
 }
 .admin-nav-btn:hover { background: var(--kraft); }
 .admin-nav-btn:active { transform: scale(0.98); }
@@ -1095,20 +1133,12 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .admin-nav-icon { display: flex; align-items: center; flex-shrink: 0; opacity: 0.75; }
 .admin-nav-btn.is-active .admin-nav-icon { opacity: 1; }
 .admin-nav-label { white-space: nowrap; }
-.admin-sidebar-foot {
-  margin-top: 8px; padding: 12px 10px 2px; border-top: 1px solid var(--kraft-line);
-  display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-muted);
-}
+.admin-sidebar-foot { display: none; }
 
 .admin-content { flex: 1 1 0%; min-width: 0; }
 
 @media (max-width: 900px) {
-  .admin-shell { flex-direction: column; }
-  .admin-sidebar {
-    flex-direction: row; flex: 0 0 auto; width: 100%; overflow-x: auto;
-    position: static; gap: 6px; padding: 10px; top: auto;
-  }
-  .admin-sidebar-eyebrow, .admin-sidebar-foot { display: none; }
+  .admin-sidebar { overflow-x: auto; flex-wrap: nowrap; }
   .admin-nav-btn { flex: 0 0 auto; }
 }
 
@@ -1121,3 +1151,61 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   padding: 9px; border-radius: 7px; color: var(--text-muted); text-align: center;
 }
 .mode-tab.is-active { background: var(--merah); color: var(--text-on-dark); }
+/* ==========================================================================
+   PENCARIAN CEPAT (admin) — search besar di atas + saran hasil real-time,
+   memakai warna kraft/emas/navy yang sama seperti bagian lain aplikasi.
+========================================================================== */
+.scan-search { margin-bottom: 22px; }
+.scan-search-eyebrow {
+  text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 11px;
+  letter-spacing: 2px; color: var(--text-muted); margin-bottom: 10px;
+}
+.scan-search-wrap { max-width: 640px; margin: 0 auto; position: relative; }
+.scan-search-bar {
+  display: flex; align-items: center; gap: 12px; background: var(--kertas);
+  border: 2px solid var(--kraft-line); border-radius: 12px; padding: 0 14px; height: 54px;
+  transition: border-color .15s;
+}
+.scan-search-bar:focus-within { border-color: var(--emas); }
+.scan-search-bar svg { flex-shrink: 0; color: var(--emas); }
+.scan-search-input {
+  flex: 1; background: transparent; border: none; outline: none; height: 100%;
+  font-family: var(--font-mono); font-size: 14.5px; color: var(--ink-soft);
+}
+.scan-search-input::placeholder { color: var(--kraft-muted); font-family: var(--font-body); }
+.scan-search-kbd {
+  flex-shrink: 0; border: 1px solid var(--kraft-line); border-radius: 6px; color: var(--text-muted);
+  font-size: 11px; padding: 4px 8px; font-family: var(--font-mono);
+}
+.scan-search-suggest {
+  position: absolute; left: 0; right: 0; top: calc(100% + 8px); background: var(--white);
+  border: 2px solid var(--kraft-line); border-radius: 12px; padding: 6px; display: none;
+  max-height: 340px; overflow-y: auto; z-index: 50; box-shadow: 0 16px 36px rgba(11,31,58,0.18);
+}
+.scan-search-suggest.is-open { display: block; }
+.scan-search-empty { padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.scan-search-row {
+  display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px;
+  width: 100%; background: transparent; border: none; text-align: left; color: inherit;
+}
+.scan-search-row:hover { background: var(--kraft); }
+.scan-search-row-icon {
+  width: 30px; height: 30px; border-radius: 7px; background: var(--kraft); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: var(--navy);
+}
+.scan-search-row-main { flex: 1; min-width: 0; }
+.scan-search-row-nama { font-size: 13.5px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scan-search-row-sub { font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono); }
+.scan-search-row-badge {
+  flex-shrink: 0; font-size: 11px; font-family: var(--font-mono); font-weight: 700;
+  padding: 3px 9px; border-radius: 999px;
+}
+.scan-search-row-badge.pos { background: var(--hijau-soft); color: var(--hijau); }
+.scan-search-row-badge.zero { background: var(--kraft); color: var(--text-muted); }
+.scan-search-row-badge.neg { background: var(--merah-flag-soft); color: var(--merah-flag); }
+.scan-search-chips { display: flex; justify-content: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.scan-search-chip {
+  background: var(--white); border: 2px solid var(--kraft-line); color: var(--text-muted);
+  border-radius: 999px; padding: 6px 14px; font-size: 12px; font-family: var(--font-display); font-weight: 600;
+}
+.scan-search-chip:hover { border-color: var(--emas); color: var(--ink-soft); }
