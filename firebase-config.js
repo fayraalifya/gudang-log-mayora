@@ -20,7 +20,9 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
   collection,
   addDoc,
   updateDoc,
@@ -48,7 +50,34 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+
+// ---- Firestore dengan PERSISTENSI OFFLINE ----
+// Sebelumnya pakai getFirestore(app) biasa, yang butuh koneksi internet
+// setiap kali baca/tulis. Sekarang pakai initializeFirestore dengan
+// persistentLocalCache supaya:
+//  1. Data laporan yang sudah pernah dimuat tetap bisa dibaca walau HP
+//     lagi offline (disimpan di IndexedDB perangkat).
+//  2. Laporan baru yang dikirim operator saat offline TETAP tersimpan ke
+//     cache lokal secara instan (langsung muncul di daftar), dan Firestore
+//     SDK otomatis mengirimkannya ke server begitu koneksi kembali —
+//     operator tidak perlu input ulang atau bolak-balik cek.
+// persistentSingleTabManager dipakai karena aplikasi ini biasanya dibuka
+// satu tab/perangkat per operator (bukan banyak tab sekaligus).
+//
+// Fallback: kalau browser tidak mendukung IndexedDB persistence (mode
+// penyamaran/incognito di beberapa browser, atau browser sangat lama),
+// initializeFirestore bisa melempar error — kita fallback ke cache memori
+// biasa (tanpa persistensi offline) supaya aplikasi tetap jalan normal
+// selagi online, daripada aplikasi jadi blank/error total.
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
+  });
+} catch (err) {
+  console.warn("Persistensi offline tidak didukung di browser ini, memakai cache memori biasa:", err);
+  db = initializeFirestore(app, {});
+}
 const auth = getAuth(app);
 
 const LAPORAN_COLLECTION = "laporan";

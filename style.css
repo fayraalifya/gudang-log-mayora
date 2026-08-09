@@ -321,8 +321,12 @@ input:focus-visible, button:focus-visible, textarea:focus-visible {
 }
 .header-status-pill[data-state="connected"] { color: #B7E4C7; }
 .header-status-pill[data-state="error"] { color: #F3B4AE; }
+.header-status-pill[data-state="offline"] { color: #F5D9A8; }
 .header-status-pill .dot-live.dot-error {
   background: var(--merah-flag); box-shadow: 0 0 0 0 rgba(179,38,30,0.5); animation: pulseDotError 1.4s infinite;
+}
+.header-status-pill .dot-live.dot-offline {
+  background: var(--emas); box-shadow: none; animation: none;
 }
 @keyframes pulseDotError {
   0% { box-shadow: 0 0 0 0 rgba(179,38,30,0.5); }
@@ -423,6 +427,29 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
   padding: 16px; border-radius: 10px; margin-bottom: 20px; font-size: 14px; line-height: 1.5;
 }
 .operator-not-ready svg { flex-shrink: 0; }
+
+/* Badge "N laporan menunggu sinkron" di header, di sebelah pil status */
+.pending-sync-badge {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--emas); color: var(--navy);
+  font-family: var(--font-display); font-weight: 700; font-size: 11px; letter-spacing: 0.2px;
+  padding: 5px 10px; border-radius: 20px; white-space: nowrap;
+  animation: pulseBadge 1.6s ease-in-out infinite;
+}
+.pending-sync-badge::before { content: '⏳'; font-size: 11px; }
+@keyframes pulseBadge {
+  0%, 100% { opacity: 1; } 50% { opacity: 0.7; }
+}
+@media (prefers-reduced-motion: reduce) { .pending-sync-badge { animation: none; } }
+
+/* Banner mode offline / sedang menyinkronkan — semua peran, tidak
+   memblokir apa pun, cuma info supaya operator tenang laporannya aman. */
+.offline-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--emas-soft); border: 2px solid var(--emas); color: var(--text-warning-soft);
+  padding: 13px 16px; border-radius: 10px; margin-bottom: 18px;
+  font-size: 13.5px; line-height: 1.5; font-weight: 500;
+}
 
 /* ==========================================================================
    PERIOD TABS (admin) — pilih Harian / Mingguan / Bulanan / Semua
@@ -942,6 +969,7 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
   animation: toastIn .25s ease-out;
 }
 .toast.error { background: var(--merah-flag-soft); border-color: var(--merah-flag); }
+.toast.info { background: var(--emas-soft); border-color: var(--emas); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(12px);} to { opacity: 1; transform: translateY(0);} }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1284,3 +1312,108 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   border-radius: 999px; padding: 6px 14px; font-size: 12px; font-family: var(--font-display); font-weight: 600;
 }
 .scan-search-chip:hover { border-color: var(--emas); color: var(--ink-soft); }
+/* ==========================================================================
+   PERINGATAN STOK — banner di Dashboard, muncul otomatis kalau ada barang
+   kosong/menipis. Warna pakai token yang sudah ada (merah-flag untuk
+   kosong, emas untuk menipis) — konsisten sama bagian lain aplikasi.
+========================================================================== */
+.stok-warning {
+  background: var(--merah-flag-soft); border: 2px solid var(--merah-flag);
+  border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;
+}
+.stok-warning-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.stok-warning-icon { font-size: 15px; }
+.stok-warning-title { font-family: var(--font-display); font-weight: 700; font-size: 13.5px; color: var(--merah-flag); }
+.stok-warning-list { display: flex; flex-direction: column; gap: 6px; }
+.stok-warning-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  background: var(--white); border: 1px solid var(--kraft-line); border-radius: 9px;
+  padding: 8px 12px;
+}
+.stok-warning-item:hover { border-color: var(--merah-flag); }
+.stok-warning-item-nama { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stok-warning-item-kode { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.stok-warning-item-qty { font-size: 12.5px; font-weight: 700; color: var(--emas-deep, var(--ink-soft)); flex-shrink: 0; }
+.stok-warning-item.kosong .stok-warning-item-qty { color: var(--merah-flag); }
+.stok-warning-more { font-size: 11.5px; color: var(--text-muted); padding: 4px 4px 0; }
+
+/* Badge angka kecil di tombol menu admin */
+.admin-nav-btn, .bottom-nav-btn { position: relative; }
+.admin-nav-badge {
+  position: absolute; top: 3px; right: 6px; background: var(--merah-flag); color: var(--white);
+  font-family: var(--font-mono); font-weight: 700; font-size: 9.5px; line-height: 1;
+  padding: 3px 5px; border-radius: 999px; min-width: 15px; text-align: center;
+}
+.bottom-nav-btn .admin-nav-badge { top: 2px; right: 14px; }
+
+/* ==========================================================================
+   MENU BAWAH (khusus HP) — disembunyikan di layar lebar (admin-sidebar di
+   atas sudah cukup), baru muncul di layar sempit biar gampang dijangkau
+   jempol. Warna sama seperti admin-nav-btn (kraft/navy/emas).
+========================================================================== */
+.bottom-nav { display: none; }
+
+@media (max-width: 900px) {
+  .bottom-nav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+    background: var(--kertas); border-top: 2px solid var(--kraft-line);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    box-shadow: 0 -6px 18px rgba(11,31,58,0.10);
+  }
+  .bottom-nav-btn {
+    flex: 1 1 0%; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 7px 2px; border-radius: 10px; color: var(--text-muted);
+    font-family: var(--font-display); font-weight: 600; font-size: 10.5px;
+  }
+  .bottom-nav-btn.is-active { color: var(--navy); }
+  .bottom-nav-btn.is-active svg { color: var(--emas); }
+  .bottom-nav-btn:active { background: var(--kraft); }
+
+  /* Sidebar tab horizontal di atas disembunyikan di HP, biar gak dobel
+     sama menu bawah — dan kasih ruang di bawah biar konten terakhir
+     gak ketutupan bottom-nav yang fixed. */
+  body.role-admin .admin-sidebar { display: none; }
+  body.role-admin .admin-content { padding-bottom: 78px; }
+}
+
+/* Tombol "Muat lebih banyak" di Riwayat Laporan */
+.btn-load-more {
+  display: block; width: 100%; margin-top: 10px; padding: 12px;
+  background: var(--kertas); border: 2px dashed var(--kraft-line); border-radius: 12px;
+  font-family: var(--font-display); font-weight: 600; font-size: 12.5px; color: var(--navy);
+  text-align: center;
+}
+.btn-load-more:hover { border-color: var(--emas); background: var(--white); }
+.btn-load-more:active { transform: scale(0.99); }
+
+/* ==========================================================================
+   JEJAK EDIT/HAPUS — akuntabilitas: siapa mengedit/menghapus laporan apa
+   dan kapan. Warna pakai token yang sudah ada (merah-flag utk dihapus,
+   emas utk diedit), konsisten sama badge-penyesuaian yang sudah ada.
+========================================================================== */
+.btn-toggle-jejak, #btn-toggle-jejak { position: relative; }
+#btn-toggle-jejak.is-active { background: var(--navy); color: var(--text-on-dark); border-color: var(--navy); }
+.jejak-count-badge {
+  background: var(--merah-flag); color: var(--white); font-family: var(--font-mono); font-weight: 700;
+  font-size: 10px; line-height: 1; padding: 2px 6px; border-radius: 999px; margin-left: 6px;
+}
+
+.ticket-edited-note { background: var(--emas-soft); color: var(--emas-deep, var(--ink-soft)); }
+
+.badge-dihapus { color: var(--merah-flag); background: var(--merah-flag-soft); }
+
+.ticket-jejak { border-style: dashed; }
+.ticket-dihapus { opacity: 0.85; background: var(--merah-flag-soft); border-color: var(--merah-flag); }
+
+.jejak-dihapus-note {
+  margin-top: 10px; padding: 9px 12px; background: var(--merah-flag-soft); border: 1px solid var(--merah-flag);
+  border-radius: 9px; font-size: 12.5px; color: var(--merah-flag);
+}
+.jejak-log-list { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.jejak-log-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--emas-soft); border-radius: 8px; padding: 7px 10px; font-size: 12px;
+}
+.jejak-log-oleh { font-weight: 700; color: var(--emas-deep, var(--ink-soft)); flex-shrink: 0; }
+.jejak-log-waktu { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
+.jejak-log-detail { color: var(--ink-soft); flex: 1 1 auto; min-width: 160px; }

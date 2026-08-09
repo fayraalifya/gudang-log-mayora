@@ -10,13 +10,14 @@
 // bawah ini setiap kali deploy perubahan, supaya cache lama otomatis
 // dibersihkan dan tidak menumpuk.
 // ==========================================================================
-const CACHE_VERSION = 'gdpm-log-v1';
+const CACHE_VERSION = 'gdpm-log-v2';
 const APP_SHELL = [
   './',
   './index.html',
   './style.css',
   './script.js',
   './data.js',
+  './firebase-config.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

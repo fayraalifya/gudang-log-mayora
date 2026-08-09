@@ -645,6 +645,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 const RINGKASAN_SHEET = 'Ringkasan Stok';
 
 let currentEntries = [];
+let currentEntriesRaw = [];
 let unsubscribeLaporan = null;
 let firestoreReady = false;
 
@@ -838,20 +839,16 @@ function switchAdminPanel(panel) {
   Object.keys(adminPanels).forEach(key => {
     if (adminPanels[key]) adminPanels[key].hidden = key !== panel;
   });
-  if (adminNav) {
-    adminNav.querySelectorAll('.admin-nav-btn').forEach(btn => {
-      btn.classList.toggle('is-active', btn.dataset.adminPanel === panel);
-    });
-  }
+  document.querySelectorAll('.admin-nav-btn, .bottom-nav-btn').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.adminPanel === panel);
+  });
   if (panel === 'operator') renderAkunOperator();
   if (panel === 'riwayat') renderRiwayat();
 }
 
-if (adminNav) {
-  adminNav.querySelectorAll('.admin-nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchAdminPanel(btn.dataset.adminPanel));
-  });
-}
+document.querySelectorAll('.admin-nav-btn, .bottom-nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchAdminPanel(btn.dataset.adminPanel));
+});
 
 /* ---- Pencarian cepat (admin) ---- */
 const adminScanInput = document.getElementById('admin-scan-input');
@@ -951,22 +948,32 @@ function currentRole() {
   return s ? s.role : null;
 }
 
+let lastConnectState = 'connecting';
+
+function applyHeaderStatusPill(state) {
+  if (!headerStatusPill) return;
+  headerStatusPill.dataset.state = state;
+  headerStatusDot.classList.toggle('dot-connecting', state === 'connecting');
+  headerStatusDot.classList.toggle('dot-error', state === 'error');
+  headerStatusText.textContent = state === 'connected' ? 'Tersambung real-time'
+    : state === 'error' ? 'Gagal tersambung'
+    : 'Menyambungkan...';
+}
+
 function setConnectUI(state) {
   elConnecting.hidden = state !== 'connecting';
   elConnected.hidden = state !== 'connected';
   elConnectError.hidden = state !== 'error';
 
-  // Pil status ringkas di header (selalu terlihat, semua peran) — dot &
-  // teksnya ikut berubah sesuai status yang sama dengan panel di bawah.
-  if (headerStatusPill) {
-    headerStatusPill.dataset.state = state;
-    headerStatusDot.classList.toggle('dot-connecting', state === 'connecting');
-    headerStatusDot.classList.toggle('dot-error', state === 'error');
-    headerStatusText.textContent = state === 'connected' ? 'Tersambung real-time'
-      : state === 'error' ? 'Gagal tersambung'
-      : 'Menyambungkan...';
-  }
+  lastConnectState = state;
+  applyHeaderStatusPill(state);
 
+  // Firestore boleh dianggap "siap" (bisa dipakai untuk kirim laporan)
+  // begitu listener pertama berhasil — baik itu langsung dari server
+  // (online) MAUPUN dari cache lokal (offline, tapi pernah online
+  // sebelumnya). Makanya tombol kirim TIDAK lagi diblok cuma karena HP
+  // sedang offline; laporan tetap boleh dikirim dan otomatis tersimpan
+  // dulu ke perangkat (lihat updatePendingSyncUI & submit handler).
   const submitBtn = document.getElementById('btn-submit');
   if (submitBtn) submitBtn.disabled = state !== 'connected';
   const adjSubmitBtn = document.getElementById('btn-adj-submit');
@@ -977,10 +984,138 @@ function setConnectUI(state) {
   } else {
     operatorNotReady.hidden = true;
   }
+
+  updatePendingSyncUI();
+}
+
+/* ==========================================================================
+   MODE OFFLINE & ANTRIAN SINKRONISASI
+   Firestore (dengan persistentLocalCache, lihat firebase-config.js) tetap
+   menyimpan laporan baru ke perangkat walau internet mati, lalu otomatis
+   mengirimkannya ke server begitu koneksi kembali. Bagian ini cuma
+   mengurus TAMPILANNYA: kasih tahu operator/admin kalau lagi offline, dan
+   berapa banyak laporan yang masih menunggu terkirim.
+========================================================================== */
+const pendingSyncBadge = document.getElementById('pending-sync-badge');
+const offlineBanner = document.getElementById('offline-banner');
+
+function updatePendingSyncUI() {
+  const isOnline = navigator.onLine;
+
+  if (pendingSyncBadge) {
+    if (pendingSyncCount > 0) {
+      pendingSyncBadge.hidden = false;
+      pendingSyncBadge.textContent = `${pendingSyncCount} laporan menunggu sinkron`;
+    } else {
+      pendingSyncBadge.hidden = true;
+    }
+  }
+
+  if (offlineBanner) {
+    if (!isOnline) {
+      offlineBanner.hidden = false;
+      offlineBanner.textContent = pendingSyncCount > 0
+        ? `📡 Mode offline — ${pendingSyncCount} laporan tersimpan di perangkat, akan otomatis terkirim saat internet kembali.`
+        : '📡 Mode offline — laporan yang dikirim tetap tersimpan di perangkat dan otomatis terkirim saat internet kembali.';
+    } else if (pendingSyncCount > 0) {
+      offlineBanner.hidden = false;
+      offlineBanner.textContent = `🔄 Menyinkronkan ${pendingSyncCount} laporan ke server...`;
+    } else {
+      offlineBanner.hidden = true;
+    }
+  }
+
+  // Pil status di header: kalau lagi offline, tampilkan itu dulu
+  // (lebih relevan buat operator daripada status listener Firestore).
+  // Begitu online lagi, kembalikan ke status koneksi Firestore yang
+  // sebenarnya (connected/connecting/error).
+  if (!isOnline) {
+    if (headerStatusPill) {
+      headerStatusPill.dataset.state = 'offline';
+      headerStatusDot.classList.remove('dot-connecting', 'dot-error');
+      headerStatusDot.classList.add('dot-offline');
+      headerStatusText.textContent = pendingSyncCount > 0 ? `Offline · ${pendingSyncCount} menunggu` : 'Mode offline';
+    }
+  } else {
+    if (headerStatusDot) headerStatusDot.classList.remove('dot-offline');
+    applyHeaderStatusPill(lastConnectState);
+  }
+}
+
+window.addEventListener('online', updatePendingSyncUI);
+window.addEventListener('offline', updatePendingSyncUI);
+
+
+// Ambang batas "stok menipis" — barang dengan stok di bawah angka ini
+// (tapi masih di atas 0) dianggap perlu diperhatikan. Barang dengan stok
+// pas 0 selalu dianggap "kosong" apapun ambang batasnya. Gampang diubah
+// kalau nanti mau beda per jenis barang — untuk sekarang satu angka global.
+const AMBANG_STOK_MENIPIS = 20;
+
+function renderStokWarning() {
+  if (currentRole() !== 'admin') return;
+  const wrap = document.getElementById('stok-warning');
+  const listEl = document.getElementById('stok-warning-list');
+  const countEl = document.getElementById('stok-warning-count');
+  if (!wrap || !listEl || !countEl) return;
+
+  const items = buildStokList(currentEntries);
+  const perluPerhatian = items
+    .map(it => ({ ...it, stok: it.masuk - it.keluar }))
+    .filter(it => it.stok <= AMBANG_STOK_MENIPIS)
+    .sort((a, b) => a.stok - b.stok);
+
+  updateAdminNavBadge('katalog', perluPerhatian.length);
+
+  if (perluPerhatian.length === 0) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  countEl.textContent = perluPerhatian.length.toLocaleString('id-ID');
+  listEl.innerHTML = perluPerhatian.slice(0, 8).map(it => {
+    const kosong = it.stok <= 0;
+    return `
+      <button type="button" class="stok-warning-item${kosong ? ' kosong' : ''}" data-kode="${escapeHtml(it.kode || '')}">
+        <span class="stok-warning-item-nama">${escapeHtml(it.nama)}</span>
+        <span class="stok-warning-item-kode mono">${escapeHtml(it.kode || '-')}</span>
+        <span class="stok-warning-item-qty">${it.stok.toLocaleString('id-ID')} pcs</span>
+      </button>
+    `;
+  }).join('');
+  if (perluPerhatian.length > 8) {
+    listEl.innerHTML += `<div class="stok-warning-more">+${(perluPerhatian.length - 8).toLocaleString('id-ID')} barang lainnya — buka tab Katalog & Stok untuk lihat semua.</div>`;
+  }
+  listEl.querySelectorAll('.stok-warning-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      switchAdminPanel('katalog');
+      openItemModal(btn.dataset.kode);
+    });
+  });
+}
+
+// Badge angka kecil di tombol menu admin (mis. "Katalog & Stok 3") —
+// dipakai buat nunjukin ada berapa barang yang perlu perhatian tanpa
+// admin harus buka tabnya dulu.
+function updateAdminNavBadge(panel, count) {
+  document.querySelectorAll(`.admin-nav-btn[data-admin-panel="${panel}"], .bottom-nav-btn[data-admin-panel="${panel}"]`).forEach(btn => {
+    let badge = btn.querySelector('.admin-nav-badge');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'admin-nav-badge';
+        btn.appendChild(badge);
+      }
+      badge.textContent = count > 99 ? '99+' : count;
+    } else if (badge) {
+      badge.remove();
+    }
+  });
 }
 
 function renderAll() {
   renderRingkasan();
+  renderStokWarning();
   renderKatalog();
   renderRiwayat();
   renderRiwayatOperator();
@@ -989,6 +1124,7 @@ function renderAll() {
 
 let currentOperatorAccounts = [];
 let unsubscribeOperatorAccounts = null;
+let pendingSyncCount = 0;
 
 function initFirestoreConnection() {
   setConnectUI('connecting');
@@ -999,15 +1135,31 @@ function initFirestoreConnection() {
 
     if (unsubscribeLaporan) unsubscribeLaporan();
 
+    // includeMetadataChanges: true — supaya kita juga dapat notifikasi saat
+    // status "pending write" sebuah dokumen berubah (misalnya barusan
+    // tersinkron ke server), bukan cuma saat isi datanya berubah. Ini yang
+    // dipakai untuk menghitung & menampilkan badge "N laporan menunggu
+    // sinkron" saat operator sedang offline.
     unsubscribeLaporan = fb.onSnapshot(
       fb.laporanCol,
+      { includeMetadataChanges: true },
       (snapshot) => {
-        currentEntries = snapshot.docs.map(d => {
+        const semuaDokumen = snapshot.docs.map(d => {
           const data = d.data();
-          return { id: d.id, ...data };
+          return { id: d.id, ...data, _pending: d.metadata.hasPendingWrites };
         });
+        // "dihapus" itu SOFT DELETE (bukan beneran dihapus dari Firestore) —
+        // dokumennya tetap ada, cuma ditandai + dikeluarkan dari
+        // currentEntries (dipakai di seluruh perhitungan stok & tampilan
+        // normal). currentEntriesRaw menyimpan SEMUA dokumen (termasuk yang
+        // ditandai terhapus) khusus untuk panel "Jejak Edit/Hapus", supaya
+        // riwayat siapa-menghapus-apa tetap bisa ditelusuri.
+        currentEntriesRaw = semuaDokumen;
+        currentEntries = semuaDokumen.filter(t => !t.dihapus);
+        pendingSyncCount = currentEntries.filter(t => t._pending).length;
         firestoreReady = true;
         setConnectUI('connected');
+        updatePendingSyncUI();
         renderAll();
       },
       (err) => {
@@ -1054,9 +1206,17 @@ async function updateEntryInFirestore(id, changes) {
   await fb.updateDoc(fb.doc(fb.db, 'laporan', id), changes);
 }
 
-async function deleteEntryFromFirestore(id) {
+// SOFT DELETE — dokumennya TIDAK dihapus dari Firestore, cuma ditandai
+// dihapus + dicatat siapa & kapan. Ini penting untuk akuntabilitas gudang:
+// kalau suatu saat ada selisih stok yang harus ditelusuri, riwayat siapa
+// yang menghapus laporan apa tetap ada, gak hilang begitu saja.
+async function softDeleteEntryFromFirestore(id, oleh) {
   const fb = window.gudangFirebase;
-  await fb.deleteDoc(fb.doc(fb.db, 'laporan', id));
+  await fb.updateDoc(fb.doc(fb.db, 'laporan', id), {
+    dihapus: true,
+    dihapusOleh: oleh,
+    dihapusAt: Date.now(),
+  });
 }
 
 async function clearAllEntriesInFirestore() {
@@ -1074,7 +1234,7 @@ let toastTimer = null;
 function showToast(message, type = 'success') {
   const el = document.getElementById('toast');
   el.textContent = message;
-  el.className = 'toast' + (type === 'error' ? ' error' : '');
+  el.className = 'toast' + (type === 'error' ? ' error' : type === 'info' ? ' info' : '');
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 3400);
@@ -1471,11 +1631,19 @@ function resetForm() {
   hideError();
 }
 
+let isSubmittingLaporan = false;
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideError();
 
-  if (!firestoreReady) return showError('Sistem belum siap menerima laporan. Periksa koneksi internet.');
+  // Guard anti-submit-dobel: kalau ada proses kirim yang masih berjalan
+  // (misalnya operator nge-tap tombol "Kirim" 2x cepat), abaikan tap
+  // kedua sepenuhnya. Ini dicek PALING AWAL, sebelum validasi apa pun,
+  // supaya benar-benar tidak ada celah dua laporan identik tercatat.
+  if (isSubmittingLaporan) return;
+
+  if (!firestoreReady) return showError('Sistem belum siap menerima laporan. Coba lagi sebentar.');
 
   const operator = inputOperator.value.trim();
   const barang = selBarang.getValue();
@@ -1504,6 +1672,7 @@ form.addEventListener('submit', async (e) => {
     }
   }
 
+  isSubmittingLaporan = true;
   const submitBtn = document.getElementById('btn-submit');
   const submitText = document.getElementById('btn-submit-text');
   submitBtn.disabled = true;
@@ -1512,17 +1681,39 @@ form.addEventListener('submit', async (e) => {
 
   try {
     const now = Date.now();
-    await addEntryToFirestore({
+    const entryData = {
       jenis, tipe: 'transaksi', operator, kodeBarang: barang.kode, namaBarang: barang.nama,
       supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, keterangan: '', tanggal, createdAt: now, updatedAt: now,
-    });
+    };
+
+    // PENTING soal offline: addEntryToFirestore() menyimpan laporan ke
+    // cache lokal SECARA INSTAN (langsung muncul di daftar via listener
+    // real-time), tapi promise-nya baru benar-benar resolve setelah
+    // server membalas — kalau sedang offline itu bisa lama sekali/
+    // menggantung sampai koneksi kembali. Makanya di sini kita TIDAK
+    // menunggu (await) promise itu untuk memberi feedback ke operator;
+    // form langsung direset & toast langsung muncul begitu tersimpan di
+    // perangkat. Kegagalan asli (misalnya izin ditolak) tetap ditangani
+    // di belakang layar lewat .catch() dan operator diberi tahu lewat toast.
+    const writePromise = addEntryToFirestore(entryData);
 
     resetForm();
     inputOperator.value = operator;
-    showToast('Laporan berhasil disimpan.');
+
+    if (navigator.onLine) {
+      showToast('Laporan berhasil disimpan.');
+    } else {
+      showToast('Laporan tersimpan di perangkat. Akan otomatis terkirim saat internet kembali.', 'info');
+    }
+
+    writePromise.catch((err) => {
+      console.error('Gagal menyinkronkan laporan ke server:', err);
+      showToast('Salah satu laporan gagal terkirim ke server: ' + err.message, 'error');
+    });
   } catch (err) {
     showError('Gagal menyimpan laporan: ' + err.message);
   } finally {
+    isSubmittingLaporan = false;
     submitBtn.disabled = !firestoreReady;
     submitText.textContent = originalText;
   }
@@ -1610,11 +1801,14 @@ function resetAdjForm() {
   hideAdjError();
 }
 
+let isSubmittingAdj = false;
+
 if (formPenyesuaian) {
   formPenyesuaian.addEventListener('submit', async (e) => {
     e.preventDefault();
     hideAdjError();
 
+    if (isSubmittingAdj) return;
     if (!firestoreReady) return showAdjError('Database belum terhubung.');
 
     const barang = selAdjBarang.getValue();
@@ -1637,6 +1831,7 @@ if (formPenyesuaian) {
       }
     }
 
+    isSubmittingAdj = true;
     const submitBtn = document.getElementById('btn-adj-submit');
     const submitText = document.getElementById('btn-adj-submit-text');
     submitBtn.disabled = true;
@@ -1647,7 +1842,7 @@ if (formPenyesuaian) {
       const session = getSession();
       const now = Date.now();
 
-      await addEntryToFirestore({
+      const writePromise = addEntryToFirestore({
         jenis: adjArah === 'tambah' ? 'masuk' : 'keluar',
         tipe: 'penyesuaian',
         operator: session ? session.nama : 'Admin',
@@ -1664,10 +1859,16 @@ if (formPenyesuaian) {
       });
 
       resetAdjForm();
-      showToast('Penyesuaian stok berhasil disimpan.');
+      showToast(navigator.onLine ? 'Penyesuaian stok berhasil disimpan.' : 'Penyesuaian tersimpan di perangkat, akan tersinkron otomatis.', navigator.onLine ? 'success' : 'info');
+
+      writePromise.catch((err) => {
+        console.error('Gagal menyinkronkan penyesuaian ke server:', err);
+        showToast('Gagal menyinkronkan penyesuaian: ' + err.message, 'error');
+      });
     } catch (err) {
       showAdjError('Gagal menyimpan penyesuaian: ' + err.message);
     } finally {
+      isSubmittingAdj = false;
       submitBtn.disabled = !firestoreReady;
       submitText.textContent = originalText;
     }
@@ -2329,32 +2530,15 @@ const riwayatEmpty = document.getElementById('riwayat-empty');
 const riwayatHint = document.getElementById('riwayat-hint');
 const searchRiwayat = document.getElementById('search-riwayat');
 
-function renderRiwayat() {
-  if (currentRole() !== 'admin') return;
-  const range = getPeriodRange(periodMode, periodDate);
-  riwayatHint.textContent = `Menampilkan laporan periode: ${range.label}`;
+const RIWAYAT_PAGE_SIZE = 50;
+let riwayatQuerySignature = '';
+let riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
 
-  let all = currentEntries.filter(t => inPeriod(t, range));
-  all = all.sort((a, b) => b.createdAt - a.createdAt);
-
-  const q = searchRiwayat.value.trim().toLowerCase();
-  const filtered = q
-    ? all.filter(t => t.operator.toLowerCase().includes(q) || t.namaBarang.toLowerCase().includes(q) || t.kodeBarang.includes(q))
-    : all;
-
-  riwayatList.innerHTML = '';
-  if (filtered.length === 0) {
-    riwayatEmpty.hidden = false;
-    riwayatEmpty.textContent = all.length === 0 ? 'Belum ada laporan pada periode ini.' : 'Tidak ada laporan yang cocok dengan pencarian.';
-    return;
-  }
-  riwayatEmpty.hidden = true;
-
-  filtered.forEach(t => {
-    const isAdjustment = t.tipe === 'penyesuaian';
-    const card = document.createElement('div');
-    card.className = 'ticket';
-    card.innerHTML = `
+function buildTicketCard(t) {
+  const isAdjustment = t.tipe === 'penyesuaian';
+  const card = document.createElement('div');
+  card.className = 'ticket';
+  card.innerHTML = `
       <div class="ticket-top">
         <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">
           ${t.jenis === 'masuk' ? 'BARANG MASUK' : 'BARANG KELUAR'}
@@ -2383,6 +2567,7 @@ function renderRiwayat() {
         <div><span class="lbl">Tanggal: </span>${formatTanggal(t.tanggal)}</div>
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
+      ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
       <div class="ticket-edit" hidden>
         <div class="field">
           <label>Lokasi</label>
@@ -2402,58 +2587,202 @@ function renderRiwayat() {
         </div>
       </div>
     `;
-    card.querySelector('.link-barang:not(.link-lokasi)').addEventListener('click', () => openItemModal(t.kodeBarang));
-    card.querySelector('.link-lokasi').addEventListener('click', () => openLokasiModal(t.lokasi));
+  card.querySelector('.link-barang:not(.link-lokasi)').addEventListener('click', () => openItemModal(t.kodeBarang));
+  card.querySelector('.link-lokasi').addEventListener('click', () => openLokasiModal(t.lokasi));
 
-    const editPanel = card.querySelector('.ticket-edit');
-    card.querySelector('.btn-edit').addEventListener('click', () => {
-      editPanel.hidden = !editPanel.hidden;
-    });
-    card.querySelector('.btn-mini-cancel').addEventListener('click', () => { editPanel.hidden = true; });
-    card.querySelector('.btn-mini-save').addEventListener('click', async () => {
-      if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
-      const newLokasi = card.querySelector('.edit-lokasi').value.trim();
-      const newJumlah = parseInt(card.querySelector('.edit-jumlah').value, 10);
-      const newKeterangan = card.querySelector('.edit-keterangan').value.trim();
-      if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
-      if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
-
-      // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
-      // lalu pastikan stok di lokasi lama MAUPUN lokasi baru (kalau beda)
-      // tidak jadi minus akibat perubahan ini.
-      const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
-      const entriesSimulasi = [...entriesTanpaIni, { ...t, lokasi: newLokasi, jumlah: newJumlah }];
-      const lokasiTerdampak = new Set([t.lokasi, newLokasi]);
-      for (const lok of lokasiTerdampak) {
-        const stokSimulasi = getStokAtLokasi(entriesSimulasi, t.kodeBarang, lok);
-        if (stokSimulasi < 0) {
-          return showToast(`Perubahan ini membuat stok "${t.namaBarang}" di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah atau lokasinya.`, 'error');
-        }
-      }
-
-      try {
-        await updateEntryInFirestore(t.id, { lokasi: newLokasi, jumlah: newJumlah, keterangan: newKeterangan, updatedAt: Date.now() });
-        showToast('Laporan berhasil diperbarui.');
-      } catch (err) {
-        showToast('Gagal menyimpan perubahan: ' + err.message, 'error');
-      }
-    });
-
-    card.querySelector('.btn-delete').addEventListener('click', async () => {
-      if (!confirm('Hapus laporan ini?')) return;
-      if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
-      try {
-        await deleteEntryFromFirestore(t.id);
-        showToast('Laporan dihapus.');
-      } catch (err) {
-        showToast('Gagal menghapus: ' + err.message, 'error');
-      }
-    });
-    riwayatList.appendChild(card);
+  const editPanel = card.querySelector('.ticket-edit');
+  card.querySelector('.btn-edit').addEventListener('click', () => {
+    editPanel.hidden = !editPanel.hidden;
   });
+  card.querySelector('.btn-mini-cancel').addEventListener('click', () => { editPanel.hidden = true; });
+  card.querySelector('.btn-mini-save').addEventListener('click', async () => {
+    if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
+    const newLokasi = card.querySelector('.edit-lokasi').value.trim();
+    const newJumlah = parseInt(card.querySelector('.edit-jumlah').value, 10);
+    const newKeterangan = card.querySelector('.edit-keterangan').value.trim();
+    if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
+    if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
+
+    // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
+    // lalu pastikan stok di lokasi lama MAUPUN lokasi baru (kalau beda)
+    // tidak jadi minus akibat perubahan ini.
+    const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
+    const entriesSimulasi = [...entriesTanpaIni, { ...t, lokasi: newLokasi, jumlah: newJumlah }];
+    const lokasiTerdampak = new Set([t.lokasi, newLokasi]);
+    for (const lok of lokasiTerdampak) {
+      const stokSimulasi = getStokAtLokasi(entriesSimulasi, t.kodeBarang, lok);
+      if (stokSimulasi < 0) {
+        return showToast(`Perubahan ini membuat stok "${t.namaBarang}" di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah atau lokasinya.`, 'error');
+      }
+    }
+
+    try {
+      const session = getSession();
+      const oleh = (session && session.nama) || 'Admin';
+      const waktu = Date.now();
+      const adaPerubahan = t.lokasi !== newLokasi || t.jumlah !== newJumlah || (t.keterangan || '') !== newKeterangan;
+      const editLogBaru = adaPerubahan
+        ? [...(t.editLog || []), {
+            oleh, waktu,
+            lokasiLama: t.lokasi, lokasiBaru: newLokasi,
+            jumlahLama: t.jumlah, jumlahBaru: newJumlah,
+          }]
+        : (t.editLog || []);
+      await updateEntryInFirestore(t.id, {
+        lokasi: newLokasi, jumlah: newJumlah, keterangan: newKeterangan,
+        updatedAt: waktu, editLog: editLogBaru,
+      });
+      showToast('Laporan berhasil diperbarui.');
+    } catch (err) {
+      showToast('Gagal menyimpan perubahan: ' + err.message, 'error');
+    }
+  });
+
+  card.querySelector('.btn-delete').addEventListener('click', async () => {
+    if (!confirm('Hapus laporan ini?')) return;
+    if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
+    const session = getSession();
+    const oleh = (session && session.nama) || 'Admin';
+    try {
+      await softDeleteEntryFromFirestore(t.id, oleh);
+      showToast('Laporan dihapus.');
+    } catch (err) {
+      showToast('Gagal menghapus: ' + err.message, 'error');
+    }
+  });
+  return card;
+}
+
+let riwayatJejakMode = false;
+
+function updateJejakBadge() {
+  const badge = document.getElementById('jejak-count-badge');
+  if (!badge) return;
+  const count = currentEntriesRaw.filter(t => t.dihapus || (t.editLog && t.editLog.length > 0)).length;
+  if (count > 0) { badge.hidden = false; badge.textContent = count > 99 ? '99+' : count; }
+  else badge.hidden = true;
+}
+
+function buildJejakCard(t) {
+  const card = document.createElement('div');
+  card.className = 'ticket ticket-jejak' + (t.dihapus ? ' ticket-dihapus' : '');
+  const editLog = t.editLog || [];
+  const editRows = editLog.slice().reverse().map(e => {
+    const perubahan = [];
+    if (e.lokasiLama !== e.lokasiBaru) perubahan.push(`Lokasi: ${escapeHtml(e.lokasiLama)} → ${escapeHtml(e.lokasiBaru)}`);
+    if (e.jumlahLama !== e.jumlahBaru) perubahan.push(`Jumlah: ${e.jumlahLama} → ${e.jumlahBaru} pcs`);
+    return `
+      <div class="jejak-log-row">
+        <span class="jejak-log-oleh">✏️ ${escapeHtml(e.oleh)}</span>
+        <span class="jejak-log-waktu">${formatWaktu(e.waktu)}</span>
+        <span class="jejak-log-detail">${perubahan.join(' · ') || 'Keterangan diubah'}</span>
+      </div>
+    `;
+  }).join('');
+  card.innerHTML = `
+    <div class="ticket-top">
+      <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'BARANG MASUK' : 'BARANG KELUAR'}</span>
+      ${t.dihapus ? '<span class="badge-jenis badge-dihapus">DIHAPUS</span>' : ''}
+      <span class="ticket-time">Dibuat ${formatWaktu(t.createdAt)}</span>
+    </div>
+    <div class="ticket-grid">
+      <div><span class="lbl">Operator asal: </span>${escapeHtml(t.operator)}</div>
+      <div><span class="lbl">Barang: </span>${escapeHtml(t.namaBarang)}</div>
+      <div><span class="lbl">Kode: </span><span class="mono">${escapeHtml(t.kodeBarang)}</span></div>
+      <div><span class="lbl">Lokasi saat ini: </span>${escapeHtml(t.lokasi)}</div>
+      <div><span class="lbl">Jumlah saat ini: </span>${t.jumlah} pcs</div>
+    </div>
+    ${t.dihapus ? `<div class="jejak-dihapus-note">🗑 Dihapus oleh <b>${escapeHtml(t.dihapusOleh || '-')}</b> · ${formatWaktu(t.dihapusAt)}</div>` : ''}
+    ${editRows ? `<div class="jejak-log-list">${editRows}</div>` : ''}
+  `;
+  return card;
+}
+
+function renderJejak() {
+  const jejak = currentEntriesRaw.filter(t => t.dihapus || (t.editLog && t.editLog.length > 0));
+  jejak.sort((a, b) => {
+    const waktuA = Math.max(a.dihapusAt || 0, a.editLog && a.editLog.length ? a.editLog[a.editLog.length - 1].waktu : 0);
+    const waktuB = Math.max(b.dihapusAt || 0, b.editLog && b.editLog.length ? b.editLog[b.editLog.length - 1].waktu : 0);
+    return waktuB - waktuA;
+  });
+  riwayatHint.textContent = `Jejak edit & hapus — ${jejak.length.toLocaleString('id-ID')} laporan pernah diubah/dihapus (semua periode, tidak dipengaruhi filter periode di atas).`;
+  riwayatList.innerHTML = '';
+  if (jejak.length === 0) {
+    riwayatEmpty.hidden = false;
+    riwayatEmpty.textContent = 'Belum ada laporan yang pernah diedit atau dihapus. 👍';
+    return;
+  }
+  riwayatEmpty.hidden = true;
+  const fragment = document.createDocumentFragment();
+  jejak.forEach(t => fragment.appendChild(buildJejakCard(t)));
+  riwayatList.appendChild(fragment);
+}
+
+function renderRiwayat() {
+  if (currentRole() !== 'admin') return;
+  updateJejakBadge();
+  if (riwayatJejakMode) { renderJejak(); return; }
+
+  const range = getPeriodRange(periodMode, periodDate);
+  riwayatHint.textContent = `Menampilkan laporan periode: ${range.label}`;
+
+  let all = currentEntries.filter(t => inPeriod(t, range));
+  all = all.sort((a, b) => b.createdAt - a.createdAt);
+
+  const q = searchRiwayat.value.trim().toLowerCase();
+  const filtered = q
+    ? all.filter(t => t.operator.toLowerCase().includes(q) || t.namaBarang.toLowerCase().includes(q) || t.kodeBarang.includes(q))
+    : all;
+
+  // Reset ke halaman pertama tiap kali periode/pencarian beda — tapi kalau
+  // cuma data yang berubah (laporan baru masuk real-time) sambil user lagi
+  // scroll di bagian bawah, posisi "sudah dimuat sampai mana" dipertahankan.
+  const signature = range.label + '|' + q;
+  if (signature !== riwayatQuerySignature) {
+    riwayatQuerySignature = signature;
+    riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
+  }
+
+  riwayatList.innerHTML = '';
+  if (filtered.length === 0) {
+    riwayatEmpty.hidden = false;
+    riwayatEmpty.textContent = all.length === 0 ? 'Belum ada laporan pada periode ini.' : 'Tidak ada laporan yang cocok dengan pencarian.';
+    return;
+  }
+  riwayatEmpty.hidden = true;
+
+  // Render sebagian dulu (bukan sekaligus semua) — penting kalau datanya
+  // sudah ribuan baris, biar HP gak lag pas buka periode "Semua".
+  const visible = filtered.slice(0, riwayatVisibleCount);
+  const fragment = document.createDocumentFragment();
+  visible.forEach(t => fragment.appendChild(buildTicketCard(t)));
+  riwayatList.appendChild(fragment);
+
+  if (filtered.length > riwayatVisibleCount) {
+    const sisa = filtered.length - riwayatVisibleCount;
+    const loadMoreBtn = document.createElement('button');
+    loadMoreBtn.type = 'button';
+    loadMoreBtn.className = 'btn-load-more';
+    loadMoreBtn.textContent = `Muat ${Math.min(RIWAYAT_PAGE_SIZE, sisa).toLocaleString('id-ID')} laporan berikutnya — sudah ditampilkan ${riwayatVisibleCount.toLocaleString('id-ID')} dari ${filtered.length.toLocaleString('id-ID')}`;
+    loadMoreBtn.addEventListener('click', () => {
+      riwayatVisibleCount += RIWAYAT_PAGE_SIZE;
+      renderRiwayat();
+    });
+    riwayatList.appendChild(loadMoreBtn);
+  }
 }
 
 searchRiwayat.addEventListener('input', renderRiwayat);
+
+const btnToggleJejak = document.getElementById('btn-toggle-jejak');
+if (btnToggleJejak) {
+  btnToggleJejak.addEventListener('click', () => {
+    riwayatJejakMode = !riwayatJejakMode;
+    btnToggleJejak.classList.toggle('is-active', riwayatJejakMode);
+    riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
+    renderRiwayat();
+  });
+}
 
 /* ==========================================================================
    RIWAYAT LAPORAN SAYA (operator) — versi ringkas & baca-saja dari
