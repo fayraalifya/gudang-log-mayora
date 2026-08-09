@@ -839,14 +839,14 @@ function switchAdminPanel(panel) {
   Object.keys(adminPanels).forEach(key => {
     if (adminPanels[key]) adminPanels[key].hidden = key !== panel;
   });
-  document.querySelectorAll('.admin-nav-btn, .bottom-nav-btn').forEach(btn => {
+  document.querySelectorAll('.admin-nav-btn').forEach(btn => {
     btn.classList.toggle('is-active', btn.dataset.adminPanel === panel);
   });
   if (panel === 'operator') renderAkunOperator();
   if (panel === 'riwayat') renderRiwayat();
 }
 
-document.querySelectorAll('.admin-nav-btn, .bottom-nav-btn').forEach(btn => {
+document.querySelectorAll('.admin-nav-btn').forEach(btn => {
   btn.addEventListener('click', () => switchAdminPanel(btn.dataset.adminPanel));
 });
 
@@ -1098,7 +1098,7 @@ function renderStokWarning() {
 // dipakai buat nunjukin ada berapa barang yang perlu perhatian tanpa
 // admin harus buka tabnya dulu.
 function updateAdminNavBadge(panel, count) {
-  document.querySelectorAll(`.admin-nav-btn[data-admin-panel="${panel}"], .bottom-nav-btn[data-admin-panel="${panel}"]`).forEach(btn => {
+  document.querySelectorAll(`.admin-nav-btn[data-admin-panel="${panel}"]`).forEach(btn => {
     let badge = btn.querySelector('.admin-nav-badge');
     if (count > 0) {
       if (!badge) {

@@ -1338,42 +1338,11 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .stok-warning-more { font-size: 11.5px; color: var(--text-muted); padding: 4px 4px 0; }
 
 /* Badge angka kecil di tombol menu admin */
-.admin-nav-btn, .bottom-nav-btn { position: relative; }
+.admin-nav-btn { position: relative; }
 .admin-nav-badge {
   position: absolute; top: 3px; right: 6px; background: var(--merah-flag); color: var(--white);
   font-family: var(--font-mono); font-weight: 700; font-size: 9.5px; line-height: 1;
   padding: 3px 5px; border-radius: 999px; min-width: 15px; text-align: center;
-}
-.bottom-nav-btn .admin-nav-badge { top: 2px; right: 14px; }
-
-/* ==========================================================================
-   MENU BAWAH (khusus HP) — disembunyikan di layar lebar (admin-sidebar di
-   atas sudah cukup), baru muncul di layar sempit biar gampang dijangkau
-   jempol. Warna sama seperti admin-nav-btn (kraft/navy/emas).
-========================================================================== */
-.bottom-nav { display: none; }
-
-@media (max-width: 900px) {
-  .bottom-nav {
-    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
-    background: var(--kertas); border-top: 2px solid var(--kraft-line);
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
-    box-shadow: 0 -6px 18px rgba(11,31,58,0.10);
-  }
-  .bottom-nav-btn {
-    flex: 1 1 0%; display: flex; flex-direction: column; align-items: center; gap: 3px;
-    padding: 7px 2px; border-radius: 10px; color: var(--text-muted);
-    font-family: var(--font-display); font-weight: 600; font-size: 10.5px;
-  }
-  .bottom-nav-btn.is-active { color: var(--navy); }
-  .bottom-nav-btn.is-active svg { color: var(--emas); }
-  .bottom-nav-btn:active { background: var(--kraft); }
-
-  /* Sidebar tab horizontal di atas disembunyikan di HP, biar gak dobel
-     sama menu bawah — dan kasih ruang di bawah biar konten terakhir
-     gak ketutupan bottom-nav yang fixed. */
-  body.role-admin .admin-sidebar { display: none; }
-  body.role-admin .admin-content { padding-bottom: 78px; }
 }
 
 /* Tombol "Muat lebih banyak" di Riwayat Laporan */
