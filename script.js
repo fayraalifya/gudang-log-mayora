@@ -1114,17 +1114,18 @@ if (window.gudangFirebase) {
 }
 
 /* ==========================================================================
-   PEMILIK BARANG (PABRIK) — sama polanya dengan "Barang Baru" di atas:
-   daftar dasarnya statis (PEMILIK_OPTIONS di bawah, boleh dikosongkan),
-   tapi operator/admin bisa mengetik nama pemilik baru langsung dari
-   dropdown ("+ Tambah baru..."). Begitu ditambahkan, tersimpan ke
-   koleksi Firestore "pemilikBaru" sehingga semua device lain otomatis
-   melihat nama pemilik baru itu juga di dropdown mereka — TIDAK perlu
-   mengedit file data.js secara manual setiap kali ada pabrik baru.
+   PEMILIK BARANG (PABRIK) — diambil dari MASTER_DATA.pemilik (data.js),
+   sama seperti barang/supplier/lokasi. Operator/admin tetap bisa mengetik
+   nama pemilik baru langsung dari dropdown ("+ Tambah baru..."). Begitu
+   ditambahkan, tersimpan ke koleksi Firestore "pemilikBaru" sehingga semua
+   device lain otomatis melihat nama pemilik baru itu juga di dropdown
+   mereka — TIDAK perlu mengedit file data.js secara manual setiap kali
+   ada pabrik baru.
 ========================================================================== */
-// Daftar awal pemilik barang/pabrik. Boleh dikosongkan sepenuhnya —
-// isi manual lewat dropdown form akan otomatis tersimpan & tersinkron.
-const PEMILIK_OPTIONS = (typeof window.PEMILIK_OPTIONS !== 'undefined') ? window.PEMILIK_OPTIONS : [];
+// Daftar awal pemilik barang/pabrik — dari data.js. Boleh dikosongkan
+// sepenuhnya di data.js — isi manual lewat dropdown form akan otomatis
+// tersimpan & tersinkron.
+const PEMILIK_OPTIONS = MASTER_DATA.pemilik || [];
 
 let customPemilik = [];
 
@@ -1844,7 +1845,9 @@ function renderRingkasan() {
    - lokasi    -> pakai buildLocationStock() (sudah ada)
    - supplier  -> pakai buildAttributeBreakdown(entries, 'supplier')
    - pemilik   -> pakai buildAttributeBreakdown(entries, 'pemilik')
-   Klik folder mana pun akan membuka modal detail yang sesuai.
+   Keempat mode dirender dengan gaya baris yang sama (appendStokRow) supaya
+   konsisten & gampang dipahami — klik baris mana pun membuka modal detail
+   yang sesuai.
 ========================================================================== */
 const katalogList = document.getElementById('katalog-list');
 const katalogEmpty = document.getElementById('katalog-empty');
@@ -1855,25 +1858,31 @@ const katalogModeTabs = document.getElementById('katalog-mode-tabs');
 let katalogMode = 'barang';
 
 // Kelompokkan transaksi berdasarkan satu field (supplier / pemilik), dan
-// hitung barang apa saja + berapa stok saat ini yang berkaitan dengan tiap
-// nilai field tersebut. Dipakai untuk mode "Supplier" & "Pemilik".
+// hitung barang apa saja + berapa stok saat ini + di lokasi mana + kapan
+// terakhir ada aktivitas untuk tiap nilai field tersebut. Dipakai untuk
+// mode "Supplier" & "Pemilik" (baik daftar maupun modal detailnya).
 function buildAttributeBreakdown(entries, field) {
   const map = {};
   entries.forEach(t => {
     const key = t[field];
     if (!key || key === '-') return;
-    if (!map[key]) map[key] = {};
+    if (!map[key]) map[key] = { items: {}, lastActivity: 0 };
+    const group = map[key];
     const itemKey = t.kodeBarang || t.namaBarang;
-    if (!map[key][itemKey]) map[key][itemKey] = { kode: t.kodeBarang, nama: t.namaBarang, masuk: 0, keluar: 0 };
-    if (t.jenis === 'masuk') map[key][itemKey].masuk += t.jumlah;
-    else map[key][itemKey].keluar += t.jumlah;
+    if (!group.items[itemKey]) group.items[itemKey] = { kode: t.kodeBarang, nama: t.namaBarang, masuk: 0, keluar: 0, lokasiSet: new Set(), lastActivity: 0 };
+    const it = group.items[itemKey];
+    if (t.jenis === 'masuk') it.masuk += t.jumlah;
+    else it.keluar += t.jumlah;
+    if (t.lokasi) it.lokasiSet.add(t.lokasi);
+    if (t.createdAt > it.lastActivity) it.lastActivity = t.createdAt;
+    if (t.createdAt > group.lastActivity) group.lastActivity = t.createdAt;
   });
-  return Object.entries(map).map(([nama, itemsMap]) => {
-    const items = Object.values(itemsMap)
+  return Object.entries(map).map(([nama, group]) => {
+    const items = Object.values(group.items)
       .map(it => ({ ...it, stok: it.masuk - it.keluar }))
       .sort((a, b) => b.stok - a.stok);
     const totalStok = items.reduce((s, it) => s + it.stok, 0);
-    return { nama, items, itemCount: items.length, totalStok };
+    return { nama, items, itemCount: items.length, totalStok, lastActivity: group.lastActivity };
   }).sort((a, b) => a.nama.localeCompare(b.nama));
 }
 
@@ -1891,9 +1900,10 @@ function formatSetList(set, max = 2) {
 // Baris tabel katalog — versi "gampang dibaca" untuk operator: nama/judul,
 // subjudul kecil (kode barang ATAU label lain), stok/total saat ini (dengan
 // status jelas) langsung terlihat, plus baris info tambahan yang fleksibel
-// (meta) sesuai konteksnya. Dipakai bareng oleh katalog Barang, katalog
-// Lokasi, dan modal detail lokasi supaya tampilannya konsisten & gampang
-// dipahami. Klik baris tetap membuka modal detail untuk lihat lebih lanjut.
+// (meta) sesuai konteksnya. Dipakai bareng oleh keempat mode katalog
+// (Barang/Lokasi/Supplier/Pemilik) dan modal detailnya supaya tampilannya
+// konsisten & gampang dipahami. Klik baris tetap membuka modal detail untuk
+// lihat lebih lanjut.
 function appendStokRow(container, { nama, sub, subMono = true, stok, statusClass, statusLabel, meta, onClick }) {
   const row = document.createElement('button');
   row.type = 'button';
@@ -1918,28 +1928,6 @@ function appendStokRow(container, { nama, sub, subMono = true, stok, statusClass
   container.appendChild(row);
 }
 
-function folderIconSvg() {
-  return '<svg class="folder-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 7a2 2 0 0 1 2-2h4.17a2 2 0 0 1 1.42.59L12 7h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" fill="currentColor"/></svg>';
-}
-
-function appendFolderCard(container, { label, sub, dotClass, dotTitle, countBadge, countTitle, extraClass, onClick }) {
-  const card = document.createElement('button');
-  card.type = 'button';
-  card.className = 'folder-card' + (extraClass ? ' ' + extraClass : '');
-  const dotHtml = dotClass ? `<span class="folder-dot ${dotClass}"${dotTitle ? ` title="${escapeHtml(dotTitle)}"` : ''}></span>` : '';
-  const countHtml = countBadge != null ? `<span class="folder-count"${countTitle ? ` title="${escapeHtml(countTitle)}"` : ''}>${countBadge}</span>` : '';
-  card.innerHTML = `
-    <div class="folder-icon-wrap">
-      ${folderIconSvg()}
-      ${dotHtml}${countHtml}
-    </div>
-    <div class="folder-label" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
-    <div class="folder-sub mono">${escapeHtml(sub)}</div>
-  `;
-  card.addEventListener('click', onClick);
-  container.appendChild(card);
-}
-
 function setKatalogEmpty(msg) {
   katalogEmpty.hidden = false;
   katalogEmpty.textContent = msg;
@@ -1948,12 +1936,10 @@ function setKatalogEmpty(msg) {
 function renderKatalog() {
   const q = searchKatalog.value.trim().toLowerCase();
   katalogList.innerHTML = '';
-  // Mode "barang" & "lokasi" pakai tabel/baris yang langsung menampilkan
-  // info lengkap tanpa perlu klik. Mode "supplier"/"pemilik" tetap pakai
-  // grid folder seperti semula.
-  const useStokTable = katalogMode === 'barang' || katalogMode === 'lokasi';
-  katalogList.classList.toggle('stok-table', useStokTable);
-  katalogList.classList.toggle('folder-grid', !useStokTable);
+  // Keempat mode (Barang/Lokasi/Supplier/Pemilik) sama-sama pakai tabel
+  // baris yang langsung menampilkan info lengkap tanpa perlu klik dulu.
+  katalogList.classList.add('stok-table');
+  katalogList.classList.remove('folder-grid');
 
   if (katalogMode === 'barang') {
     const items = buildStokList(currentEntries);
@@ -2004,15 +1990,22 @@ function renderKatalog() {
     const all = buildAttributeBreakdown(currentEntries, field);
     const filtered = q ? all.filter(d => d.nama.toLowerCase().includes(q)) : all;
     const labelJenis = katalogMode === 'supplier' ? 'supplier' : 'pemilik barang';
+    const subLabel = katalogMode === 'supplier' ? 'Supplier' : 'Pemilik Barang (Pabrik)';
     if (all.length === 0) return setKatalogEmpty(`Belum ada data ${labelJenis}.`);
     if (filtered.length === 0) return setKatalogEmpty(`Tidak ada ${labelJenis} yang cocok dengan pencarian.`);
     katalogEmpty.hidden = true;
-    katalogHint.textContent = `📁 ${all.length} ${labelJenis}. Klik untuk lihat barang apa saja yang terkait.`;
+    katalogHint.textContent = `📁 ${all.length} ${labelJenis}. Klik baris untuk lihat barang apa saja yang terkait.`;
     filtered.forEach(d => {
-      appendFolderCard(katalogList, {
-        label: d.nama, sub: `${d.totalStok.toLocaleString('id-ID')} pcs`,
-        extraClass: katalogMode === 'supplier' ? 'folder-card-supplier' : 'folder-card-pemilik',
-        countBadge: d.itemCount, countTitle: `${d.itemCount} jenis barang`,
+      const statusClass = d.totalStok > 0 ? 'pos' : (d.totalStok < 0 ? 'neg' : 'zero');
+      const statusLabel = d.totalStok > 0 ? 'Stok Tersedia' : (d.totalStok < 0 ? 'Stok Minus' : 'Stok Kosong');
+      const barangUtama = d.items[0] ? d.items[0].nama : '-';
+      appendStokRow(katalogList, {
+        nama: d.nama, sub: subLabel, subMono: false, stok: d.totalStok, statusClass, statusLabel,
+        meta: [
+          { icon: '📦', label: 'Jenis Barang', value: `${d.itemCount} jenis` },
+          { icon: '⭐', label: 'Barang Utama', value: barangUtama },
+          { icon: '🕒', label: 'Terakhir', value: d.lastActivity ? formatWaktu(d.lastActivity) : '-' },
+        ],
         onClick: () => openAttributeModal(katalogMode, d.nama),
       });
     });
@@ -2155,25 +2148,25 @@ function openAttributeModal(kind, nama) {
     <div class="modal-stat-grid">
       <div class="modal-stat"><span>Jenis Barang</span><strong>${data.itemCount}</strong></div>
       <div class="modal-stat"><span>Total Stok Terkait</span><strong>${data.totalStok.toLocaleString('id-ID')}</strong></div>
-      <div class="modal-stat"><span>&nbsp;</span><strong>&nbsp;</strong></div>
+      <div class="modal-stat"><span>Terakhir Diperbarui</span><strong class="modal-stat-small">${data.lastActivity ? formatWaktu(data.lastActivity) : '-'}</strong></div>
     </div>
     <div class="modal-section">
       <h4>Barang Terkait</h4>
-      <div class="modal-history-list">
-        ${data.items.map(it => `
-          <div class="modal-lokasi-item-row" data-kode="${escapeHtml(it.kode)}">
-            <span>
-              <span class="li-nama">${escapeHtml(it.nama)}</span>
-              <span class="li-kode">${escapeHtml(it.kode)}</span>
-            </span>
-            <span class="li-qty">${it.stok.toLocaleString('id-ID')} pcs</span>
-          </div>
-        `).join('')}
-      </div>
+      <div id="modal-attribute-stok-table" class="stok-table stok-table-modal"></div>
     </div>
   `;
-  modalBody.querySelectorAll('.modal-lokasi-item-row').forEach(row => {
-    row.addEventListener('click', () => openItemModal(row.dataset.kode));
+  const container = modalBody.querySelector('#modal-attribute-stok-table');
+  data.items.forEach(it => {
+    const statusClass = it.stok > 0 ? 'pos' : (it.stok < 0 ? 'neg' : 'zero');
+    const statusLabel = it.stok > 0 ? 'Stok Tersedia' : (it.stok < 0 ? 'Stok Minus' : 'Stok Kosong');
+    appendStokRow(container, {
+      nama: it.nama, sub: it.kode, subMono: true, stok: it.stok, statusClass, statusLabel,
+      meta: [
+        { icon: '📍', label: 'Lokasi', value: formatSetList(it.lokasiSet) },
+        { icon: '🕒', label: 'Terakhir', value: it.lastActivity ? formatWaktu(it.lastActivity) : '-' },
+      ],
+      onClick: () => openItemModal(it.kode),
+    });
   });
   itemModal.hidden = false;
 }
