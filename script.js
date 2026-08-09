@@ -566,6 +566,8 @@ function enterApp(session) {
   if (session.role === 'operator') {
     inputOperator.value = session.nama;
     switchOperatorPanel('laporan');
+  } else {
+    switchAdminPanel('dashboard');
   }
 
   initFirestoreConnection();
@@ -750,6 +752,41 @@ function switchOperatorPanel(panel) {
 if (opNav) {
   opNav.querySelectorAll('.op-nav-btn').forEach(btn => {
     btn.addEventListener('click', () => switchOperatorPanel(btn.dataset.opPanel));
+  });
+}
+
+/* ==========================================================================
+   MENU NAVIGASI ADMIN — pindah antar panel (Dashboard / Katalog & Stok /
+   Operator / Riwayat) supaya halaman admin tidak jadi satu scroll panjang
+   berisi semua section sekaligus. Panel "Katalog & Stok" memakai ulang
+   elemen #op-panel-katalog yang sama dengan punya operator (kontennya
+   memang dipakai bersama oleh kedua peran).
+========================================================================== */
+const adminNav = document.getElementById('admin-nav');
+const adminPanels = {
+  dashboard: document.getElementById('admin-panel-dashboard'),
+  katalog: document.getElementById('op-panel-katalog'),
+  operator: document.getElementById('admin-panel-operator'),
+  riwayat: document.getElementById('admin-panel-riwayat'),
+};
+
+function switchAdminPanel(panel) {
+  if (!adminPanels[panel]) return;
+  Object.keys(adminPanels).forEach(key => {
+    if (adminPanels[key]) adminPanels[key].hidden = key !== panel;
+  });
+  if (adminNav) {
+    adminNav.querySelectorAll('.op-nav-btn').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.adminPanel === panel);
+    });
+  }
+  if (panel === 'operator') renderAkunOperator();
+  if (panel === 'riwayat') renderRiwayat();
+}
+
+if (adminNav) {
+  adminNav.querySelectorAll('.op-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchAdminPanel(btn.dataset.adminPanel));
   });
 }
 

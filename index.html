@@ -383,8 +383,21 @@
       </div>
       <!-- /PANEL: BUAT LAPORAN -->
 
-      <!-- PILIHAN PERIODE LAPORAN — hanya admin -->
-      <div class="period-tabs admin-only" id="period-tabs">
+      <!-- MENU NAVIGASI ADMIN — pindah antar panel (Dashboard / Katalog & Stok /
+           Operator / Riwayat) supaya halaman admin tidak jadi satu scroll
+           panjang berisi semua section sekaligus. -->
+      <div class="period-tab-group op-nav admin-only" id="admin-nav">
+        <button type="button" class="period-tab op-nav-btn is-active" data-admin-panel="dashboard">📊 Dashboard</button>
+        <button type="button" class="period-tab op-nav-btn" data-admin-panel="katalog">📦 Katalog &amp; Stok</button>
+        <button type="button" class="period-tab op-nav-btn" data-admin-panel="operator">👥 Operator</button>
+        <button type="button" class="period-tab op-nav-btn" data-admin-panel="riwayat">🕒 Riwayat</button>
+      </div>
+
+      <!-- PANEL: DASHBOARD — hanya admin -->
+      <div class="op-panel admin-panel" id="admin-panel-dashboard" data-admin-panel="dashboard">
+
+      <!-- PILIHAN PERIODE LAPORAN -->
+      <div class="period-tabs" id="period-tabs">
         <div class="period-tab-group">
           <button type="button" class="period-tab is-active" data-mode="harian">Harian</button>
           <button type="button" class="period-tab" data-mode="mingguan">Mingguan</button>
@@ -394,29 +407,41 @@
         <input type="date" id="period-date-picker" class="period-date">
       </div>
 
-      <!-- RINGKASAN — hanya admin -->
-      <section id="ringkasan" class="ringkasan admin-only">
+      <!-- RINGKASAN -->
+      <section id="ringkasan" class="ringkasan">
         <div class="ringkasan-head">
           <h3>Ringkasan Laporan</h3>
           <span class="ringkasan-date" id="ringkasan-date">-</span>
         </div>
         <div class="stat-grid">
           <div class="stat-card stat-masuk">
+            <div class="stat-icon-wrap">
+              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/></svg>
+            </div>
             <span class="stat-label">Barang Masuk</span>
             <span class="stat-value" id="stat-masuk-qty">0</span>
             <span class="stat-sub" id="stat-masuk-count">0 laporan</span>
           </div>
           <div class="stat-card stat-keluar">
+            <div class="stat-icon-wrap">
+              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/></svg>
+            </div>
             <span class="stat-label">Barang Keluar</span>
             <span class="stat-value" id="stat-keluar-qty">0</span>
             <span class="stat-sub" id="stat-keluar-count">0 laporan</span>
           </div>
           <div class="stat-card stat-total">
+            <div class="stat-icon-wrap">
+              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg>
+            </div>
             <span class="stat-label">Total Laporan Tercatat</span>
             <span class="stat-value" id="stat-total-count">0</span>
             <span class="stat-sub" id="stat-total-range">sepanjang waktu</span>
           </div>
           <div class="stat-card stat-operator">
+            <div class="stat-icon-wrap">
+              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/></svg>
+            </div>
             <span class="stat-label">Operator Teraktif (7 hari)</span>
             <span class="stat-value stat-value-text" id="stat-top-operator">-</span>
             <span class="stat-sub" id="stat-top-operator-sub">belum ada data</span>
@@ -427,7 +452,7 @@
         <div class="vis-grid">
 
           <div class="vis-card">
-            <div class="vis-card-title">Arus Barang <span class="vis-card-sub" id="arus-trend-wrap"><span class="vis-trend" id="arus-trend" hidden></span></span></div>
+            <div class="vis-card-title"><span class="vis-card-icon">📈</span>Arus Barang <span class="vis-card-sub" id="arus-trend-wrap"><span class="vis-trend" id="arus-trend" hidden></span></span></div>
             <div id="arus-empty" class="vis-empty">Belum ada transaksi pada periode ini.</div>
             <div id="arus-split" class="arus-split" hidden>
               <div class="arus-bar">
@@ -442,19 +467,22 @@
           </div>
 
           <div class="vis-card">
-            <div class="vis-card-title">Barang Paling Sering Dicatat (30 hari)</div>
+            <div class="vis-card-title"><span class="vis-card-icon">🏆</span>Barang Paling Sering Dicatat (30 hari)</div>
             <div id="top-barang-empty" class="vis-empty">Belum ada data barang.</div>
             <div class="bar-list" id="top-barang-list"></div>
           </div>
 
           <div class="vis-card">
-            <div class="vis-card-title">Lokasi Terpadat (stok saat ini)</div>
+            <div class="vis-card-title"><span class="vis-card-icon">📍</span>Lokasi Terpadat (stok saat ini)</div>
             <div id="top-lokasi-empty" class="vis-empty">Belum ada stok di lokasi manapun.</div>
             <div class="bar-list" id="top-lokasi-list"></div>
           </div>
 
         </div>
       </section>
+
+      </div>
+      <!-- /PANEL: DASHBOARD -->
 
       <!-- PANEL: KATALOG BARANG — operator only (section di dalamnya tetap
            dipakai admin juga, jadi wrapper ini TIDAK diberi class
@@ -511,9 +539,12 @@
       </div>
       <!-- /PANEL: RIWAYAT LAPORAN SAYA -->
 
-      <!-- AKUN OPERATOR TERDAFTAR — hanya admin -->
+      <!-- PANEL: OPERATOR — hanya admin (akun operator terdaftar + sesuaikan stok) -->
+      <div class="op-panel admin-panel" id="admin-panel-operator" data-admin-panel="operator">
+
+      <!-- AKUN OPERATOR TERDAFTAR -->
       <!-- (bagian Stok per Lokasi lama sudah digabung ke atas, lihat section#katalog) -->
-      <section id="akun-operator" class="akun-operator admin-only">
+      <section id="akun-operator" class="akun-operator">
         <div class="katalog-header">
           <h3>Akun Operator Terdaftar</h3>
           <div class="search-inline">
@@ -526,8 +557,8 @@
         <div id="akun-operator-list" class="akun-operator-list"></div>
       </section>
 
-      <!-- SESUAIKAN STOK — hanya admin (stok awal / koreksi stock opname / pindah lokasi) -->
-      <form id="form-penyesuaian" class="card admin-only">
+      <!-- SESUAIKAN STOK — stok awal / koreksi stock opname / pindah lokasi -->
+      <form id="form-penyesuaian" class="card">
         <h2 class="card-title">Sesuaikan Stok</h2>
         <p class="katalog-hint" style="margin-top:-12px;">Dipakai untuk mengisi stok awal, koreksi hasil stock opname, atau mencatat penyesuaian lain. Setiap penyesuaian tercatat terpisah dari transaksi biasa di riwayat &amp; laporan.</p>
 
@@ -629,9 +660,12 @@
         </button>
       </form>
 
+      </div>
+      <!-- /PANEL: OPERATOR -->
 
-      <!-- RIWAYAT — hanya admin -->
-      <section class="riwayat-section admin-only">
+      <!-- PANEL: RIWAYAT LAPORAN — hanya admin -->
+      <div class="op-panel admin-panel" id="admin-panel-riwayat" data-admin-panel="riwayat">
+      <section class="riwayat-section">
         <div class="riwayat-header">
           <h3>Riwayat Laporan</h3>
           <div class="riwayat-actions">
@@ -650,6 +684,8 @@
         <div id="riwayat-empty" class="empty-state">Belum ada laporan yang dicatat.</div>
         <div id="riwayat-list" class="riwayat-list"></div>
       </section>
+      </div>
+      <!-- /PANEL: RIWAYAT LAPORAN -->
 
       <datalist id="dl-lokasi"></datalist>
 
