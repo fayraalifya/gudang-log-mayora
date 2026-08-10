@@ -867,6 +867,7 @@ class KatalogManager {
 }
 
 const katalogManager = new KatalogManager();
+katalogManager.init();
 
 /* ==========================================================================
    SESSION & ROLE MANAGEMENT (LOGIN)
@@ -1490,6 +1491,7 @@ const adminPanels = {
   katalog: document.getElementById('op-panel-katalog'),
   operator: document.getElementById('admin-panel-operator'),
   riwayat: document.getElementById('admin-panel-riwayat'),
+  kelola: document.getElementById('admin-panel-katalog'),
 };
 
 function switchAdminPanel(panel) {
