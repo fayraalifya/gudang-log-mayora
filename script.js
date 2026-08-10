@@ -2080,8 +2080,11 @@ selBarang = setupSearchableSelect({
   getLabel: o => o.nama,
   getSub: o => o.kode,
   placeholder: 'Pilih barang...',
-  allowAdd: true,
-  onAdd: tambahBarangBaru,
+  // "+ Tambah baru" khusus DIHAPUS dari form input laporan (dipakai
+  // operator) — operator tidak boleh menambah barang baru sendiri.
+  // Kalau ada barang yang belum ada di daftar, operator harus minta admin
+  // menambahkannya lewat menu Katalog (atau lewat form Sesuaikan Stok yang
+  // memang khusus admin). allowAdd/onAdd sengaja TIDAK diisi di sini.
   onSelect: (o) => {
     document.getElementById('kode-box').hidden = false;
     document.getElementById('kode-value').textContent = o.kode;
@@ -2101,9 +2104,9 @@ selPemilik = setupSearchableSelect({
   options: rebuildPemilikOptions(),
   getLabel: o => o,
   placeholder: 'Pilih pemilik barang...',
-  allowAdd: true,
-  addMode: 'simple',
-  onAdd: tambahPemilikBaru,
+  // Sama seperti sel-barang di atas: operator TIDAK boleh menambah pemilik
+  // barang/pabrik baru sendiri dari form input laporan. Hanya admin yang
+  // bisa (lewat menu Katalog).
   onSelect: () => {},
 });
 
