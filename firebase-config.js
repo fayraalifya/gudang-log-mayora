@@ -82,6 +82,9 @@ const auth = getAuth(app);
 
 const LAPORAN_COLLECTION = "laporan";
 const OPERATOR_COLLECTION = "operator";
+// Koleksi terpisah untuk akun admin yang mendaftar sendiri lewat "Daftar
+// Baru" (beda dari akun admin lama yang masih hardcode di data.js).
+const ADMIN_COLLECTION = "admin";
 const BARANG_BARU_COLLECTION = "barangBaru";
 const PEMILIK_BARU_COLLECTION = "pemilikBaru";
 
@@ -107,6 +110,7 @@ window.gudangFirebase = {
   authReady,
   laporanCol: collection(db, LAPORAN_COLLECTION),
   operatorCol: collection(db, OPERATOR_COLLECTION),
+  adminCol: collection(db, ADMIN_COLLECTION),
   barangBaruCol: collection(db, BARANG_BARU_COLLECTION),
   pemilikBaruCol: collection(db, PEMILIK_BARU_COLLECTION),
   collection,

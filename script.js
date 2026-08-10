@@ -880,10 +880,6 @@ function getSession() {
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (!s || (s.role !== 'operator' && s.role !== 'admin')) return null;
-    if (s.role === 'admin') {
-      const stillValid = ADMIN_ACCOUNTS.some(a => a.nama === s.nama);
-      if (!stillValid) return null;
-    }
     return s;
   } catch (e) { return null; }
 }
@@ -986,6 +982,7 @@ window.addEventListener('appinstalled', () => {
 const formLoginOperator = document.getElementById('form-login-operator');
 const formLoginAdmin = document.getElementById('form-login-admin');
 const loginOperatorNik = document.getElementById('login-operator-nik');
+const loginAdminNik = document.getElementById('login-admin-nik');
 const loginAdminPassword = document.getElementById('login-admin-password');
 const loginError = document.getElementById('login-error');
 const operatorModeTabs = document.getElementById('operator-mode-tabs');
@@ -1001,6 +998,19 @@ const registerOperatorKodeAkses = document.getElementById('register-operator-kod
 const registerOperatorPassword = document.getElementById('register-operator-password');
 const registerOperatorPasswordConfirm = document.getElementById('register-operator-password-confirm');
 
+// ---- Elemen form admin (Masuk / Daftar Baru) — pola sama seperti operator ----
+const adminModeTabs = document.getElementById('admin-mode-tabs');
+const tabAdminLogin = document.getElementById('tab-admin-login');
+const tabAdminRegister = document.getElementById('tab-admin-register');
+const formRegisterAdmin = document.getElementById('form-register-admin');
+const registerAdminError = document.getElementById('register-admin-error');
+const registerAdminNama = document.getElementById('register-admin-nama');
+const registerAdminIdKaryawan = document.getElementById('register-admin-id-karyawan');
+const registerAdminKodeAkses = document.getElementById('register-admin-kode-akses');
+const registerAdminPassword = document.getElementById('register-admin-password');
+const registerAdminPasswordConfirm = document.getElementById('register-admin-password-confirm');
+const loginFormIntro = document.getElementById('login-form-intro');
+
 function switchOperatorMode(mode) {
   tabOperatorLogin.classList.toggle('is-active', mode === 'login');
   tabOperatorRegister.classList.toggle('is-active', mode === 'register');
@@ -1012,32 +1022,46 @@ function switchOperatorMode(mode) {
 tabOperatorLogin.addEventListener('click', () => switchOperatorMode('login'));
 tabOperatorRegister.addEventListener('click', () => switchOperatorMode('register'));
 
+// Sama seperti switchOperatorMode, tapi untuk tab Admin — admin sekarang
+// juga bisa "Daftar Baru" sendiri, dengan Kode Akses Pendaftaran yang
+// berbeda dari operator (lihat KODE_AKSES_PENDAFTARAN_ADMIN di data.js).
+function switchAdminMode(mode) {
+  tabAdminLogin.classList.toggle('is-active', mode === 'login');
+  tabAdminRegister.classList.toggle('is-active', mode === 'register');
+  formLoginAdmin.hidden = mode !== 'login';
+  formRegisterAdmin.hidden = mode !== 'register';
+  loginError.hidden = true;
+  registerAdminError.hidden = true;
+}
+tabAdminLogin.addEventListener('click', () => switchAdminMode('login'));
+tabAdminRegister.addEventListener('click', () => switchAdminMode('register'));
+
 function switchLoginTab(role) {
   tabOperator.classList.toggle('is-active', role === 'operator');
   tabAdmin.classList.toggle('is-active', role === 'admin');
-  formLoginAdmin.hidden = role !== 'admin';
-  loginError.hidden = true;
+  if (loginFormIntro) {
+    loginFormIntro.textContent = role === 'admin'
+      ? 'Pilih untuk masuk atau daftar sebagai admin.'
+      : 'Pilih untuk masuk atau daftar sebagai operator.';
+  }
 
   if (role === 'operator') {
     operatorModeTabs.hidden = false;
+    adminModeTabs.hidden = true;
+    formLoginAdmin.hidden = true;
+    formRegisterAdmin.hidden = true;
     switchOperatorMode('login');
   } else {
     operatorModeTabs.hidden = true;
     formLoginOperator.hidden = true;
     formRegisterOperator.hidden = true;
+    adminModeTabs.hidden = false;
+    switchAdminMode('login');
   }
 }
 
 tabOperator.addEventListener('click', () => switchLoginTab('operator'));
 tabAdmin.addEventListener('click', () => switchLoginTab('admin'));
-
-const selAdminNama = setupSearchableSelect({
-  id: 'sel-admin-nama',
-  options: ADMIN_ACCOUNTS,
-  getLabel: o => o.nama,
-  placeholder: 'Pilih nama Anda...',
-  onSelect: () => {},
-});
 
 /* ==========================================================================
    AKUN OPERATOR — daftar & login sungguhan lewat Firestore
@@ -1118,6 +1142,18 @@ async function findOperatorAccountByNik(nik) {
   return { id: docSnap.id, ...docSnap.data() };
 }
 
+// Sama seperti findOperatorAccountByNik, tapi mencari di koleksi "admin"
+// (akun admin yang mendaftar sendiri lewat "Daftar Baru").
+async function findAdminAccountByNik(nik) {
+  const fb = window.gudangFirebase;
+  const nikKey = normalizeNikKey(nik);
+  const q = fb.query(fb.adminCol, fb.where('idKaryawan', '==', nikKey));
+  const snapshot = await fb.getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() };
+}
+
 function showRegisterError(msg) {
   registerOperatorError.hidden = false;
   registerOperatorError.textContent = msg;
@@ -1133,6 +1169,22 @@ function showLoginOperatorError(msg) {
 function hideLoginOperatorError() {
   loginOperatorError.hidden = true;
   loginOperatorError.textContent = '';
+}
+function showRegisterAdminError(msg) {
+  registerAdminError.hidden = false;
+  registerAdminError.textContent = msg;
+}
+function hideRegisterAdminError() {
+  registerAdminError.hidden = true;
+  registerAdminError.textContent = '';
+}
+function showLoginAdminError(msg) {
+  loginError.hidden = false;
+  loginError.textContent = msg;
+}
+function hideLoginAdminError() {
+  loginError.hidden = true;
+  loginError.textContent = '';
 }
 
 formRegisterOperator.addEventListener('submit', async (e) => {
@@ -1199,6 +1251,75 @@ formRegisterOperator.addEventListener('submit', async (e) => {
   }
 });
 
+formRegisterAdmin.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hideRegisterAdminError();
+
+  const nama = registerAdminNama.value.trim();
+  const idKaryawan = registerAdminIdKaryawan.value.trim();
+  const kodeAkses = registerAdminKodeAkses.value.trim();
+  const password = registerAdminPassword.value;
+  const passwordConfirm = registerAdminPasswordConfirm.value;
+
+  if (!nama) { showRegisterAdminError('Nama admin wajib diisi.'); registerAdminNama.focus(); return; }
+  if (!idKaryawan) { showRegisterAdminError('ID Karyawan / NIK wajib diisi.'); registerAdminIdKaryawan.focus(); return; }
+  if (!kodeAkses) { showRegisterAdminError('Kode Akses Pendaftaran Admin wajib diisi.'); registerAdminKodeAkses.focus(); return; }
+  if (typeof KODE_AKSES_PENDAFTARAN_ADMIN === 'undefined') {
+    showRegisterAdminError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
+    return;
+  }
+  // Sengaja dicek terhadap kode ADMIN, bukan kode operator — supaya
+  // operator yang cuma tahu kode pendaftaran operator tidak bisa
+  // mendaftarkan diri sebagai admin.
+  if (kodeAkses !== KODE_AKSES_PENDAFTARAN_ADMIN) {
+    showRegisterAdminError('Kode Akses Pendaftaran Admin salah. Pastikan Anda mendapatkan kode resmi yang khusus untuk admin.');
+    registerAdminKodeAkses.value = '';
+    registerAdminKodeAkses.focus();
+    return;
+  }
+  if (!password || password.length < 6) { showRegisterAdminError('Kata sandi minimal 6 karakter.'); registerAdminPassword.focus(); return; }
+  if (password !== passwordConfirm) { showRegisterAdminError('Konfirmasi kata sandi tidak cocok.'); registerAdminPasswordConfirm.focus(); return; }
+
+  const submitBtn = formRegisterAdmin.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'MENDAFTARKAN...';
+
+  try {
+    await waitForFirebaseAuth();
+
+    const nikKey = normalizeNikKey(idKaryawan);
+    const existingFirestore = await findAdminAccountByNik(idKaryawan);
+    const existingLegacy = ADMIN_ACCOUNTS.some(a => normalizeNikKey(a.idKaryawan) === nikKey);
+    if (existingFirestore || existingLegacy) {
+      showRegisterAdminError('NIK ini sudah terdaftar sebagai admin. Silakan masuk lewat tab "Masuk".');
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
+    const fb = window.gudangFirebase;
+    await fb.addDoc(fb.adminCol, {
+      nama,
+      namaLower: normalizeNamaKey(nama),
+      idKaryawan: nikKey,
+      passwordHash,
+      createdAt: Date.now(),
+    });
+
+    formRegisterAdmin.reset();
+    switchAdminMode('login');
+    loginAdminNik.value = idKaryawan;
+    loginAdminPassword.focus();
+    showToast('Pendaftaran admin berhasil. Silakan masuk dengan akun yang baru dibuat.');
+  } catch (err) {
+    console.error('Gagal mendaftarkan admin:', err);
+    showRegisterAdminError('Gagal mendaftar: sistem belum siap atau koneksi bermasalah. Coba lagi.');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
+  }
+});
+
 formLoginOperator.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideLoginOperatorError();
@@ -1242,25 +1363,63 @@ formLoginOperator.addEventListener('submit', async (e) => {
   }
 });
 
-formLoginAdmin.addEventListener('submit', (e) => {
+formLoginAdmin.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const akun = selAdminNama.getValue();
+  hideLoginAdminError();
+
+  const nik = loginAdminNik.value.trim();
   const password = loginAdminPassword.value;
-  loginError.hidden = true;
-  if (!akun) {
-    loginError.hidden = false;
-    loginError.textContent = 'Pilih nama admin terlebih dahulu.';
-    return;
+
+  if (!nik) { loginAdminNik.focus(); return; }
+  if (!password) { showLoginAdminError('Kata sandi wajib diisi.'); loginAdminPassword.focus(); return; }
+
+  const submitBtn = formLoginAdmin.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'MEMERIKSA...';
+
+  try {
+    await waitForFirebaseAuth();
+
+    // Cek dulu akun admin yang mendaftar sendiri (Firestore, password
+    // tersimpan sebagai hash). Kalau tidak ketemu, fallback ke daftar
+    // admin lama yang masih hardcode di data.js (password teks polos).
+    const nikKey = normalizeNikKey(nik);
+    const akunFirestore = await findAdminAccountByNik(nik);
+
+    if (akunFirestore) {
+      const passwordHash = await hashPassword(password);
+      if (passwordHash !== akunFirestore.passwordHash) {
+        showLoginAdminError('Kata sandi salah. Coba lagi.');
+        loginAdminPassword.value = '';
+        loginAdminPassword.focus();
+        return;
+      }
+      setSession({ role: 'admin', nama: akunFirestore.nama });
+      enterApp({ role: 'admin', nama: akunFirestore.nama });
+      return;
+    }
+
+    const akunLegacy = ADMIN_ACCOUNTS.find(a => normalizeNikKey(a.idKaryawan) === nikKey);
+    if (!akunLegacy) {
+      showLoginAdminError('NIK belum terdaftar sebagai admin. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
+      return;
+    }
+    if (password !== akunLegacy.password) {
+      showLoginAdminError('Kata sandi salah. Coba lagi.');
+      loginAdminPassword.value = '';
+      loginAdminPassword.focus();
+      return;
+    }
+    setSession({ role: 'admin', nama: akunLegacy.nama });
+    enterApp({ role: 'admin', nama: akunLegacy.nama });
+  } catch (err) {
+    console.error('Gagal memeriksa akun admin:', err);
+    showLoginAdminError('Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.');
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = originalText;
   }
-  if (!password || akun.password !== password) {
-    loginError.hidden = false;
-    loginError.textContent = 'Password salah. Coba lagi.';
-    loginAdminPassword.value = '';
-    loginAdminPassword.focus();
-    return;
-  }
-  setSession({ role: 'admin', nama: akun.nama });
-  enterApp({ role: 'admin', nama: akun.nama });
 });
 
 // Ambil inisial dari nama (maks 2 huruf) untuk ditampilkan di lingkaran

@@ -76,7 +76,7 @@
         <h1 class="login-welcome">Selamat Datang</h1>
         <p class="login-welcome-sub">Warehouse Recording System</p>
         <div class="login-divider login-divider-center"></div>
-        <p class="login-form-intro">Pilih untuk masuk atau daftar sebagai operator.</p>
+        <p class="login-form-intro" id="login-form-intro">Pilih untuk masuk atau daftar sebagai operator.</p>
 
         <div class="role-tabs" role="tablist">
           <button type="button" class="role-tab is-active" id="tab-operator" data-role="operator">
@@ -93,6 +93,12 @@
         <div class="operator-mode-tabs" id="operator-mode-tabs">
           <button type="button" class="mode-tab is-active" id="tab-operator-login" data-mode="login">Masuk</button>
           <button type="button" class="mode-tab" id="tab-operator-register" data-mode="register">Daftar Baru</button>
+        </div>
+
+        <!-- TAB ADMIN: LOGIN vs REGISTER -->
+        <div class="operator-mode-tabs" id="admin-mode-tabs" hidden>
+          <button type="button" class="mode-tab is-active" id="tab-admin-login" data-mode="login">Masuk</button>
+          <button type="button" class="mode-tab" id="tab-admin-register" data-mode="register">Daftar Baru</button>
         </div>
 
         <!-- FORM OPERATOR LOGIN -->
@@ -159,32 +165,68 @@
           <button type="submit" class="btn-login">DAFTAR</button>
         </form>
 
-        <!-- FORM ADMIN -->
+        <!-- FORM ADMIN LOGIN -->
         <form id="form-login-admin" class="login-form" hidden>
-          <p class="login-form-desc">Khusus admin gudang yang terdaftar. Bisa melihat laporan, ringkasan stok, dan file Excel.</p>
+          <p class="login-form-desc">Masuk dengan NIK dan kata sandi admin yang sudah terdaftar.</p>
           <div class="field">
-            <label>Nama Admin</label>
-            <div class="searchable" id="sel-admin-nama">
-              <button type="button" class="select-btn" id="sel-admin-nama-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
-                <span class="select-value" id="sel-admin-nama-value" data-placeholder="Pilih nama Anda...">Pilih nama Anda...</span>
-                <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="dropdown-panel" id="sel-admin-nama-panel" hidden>
-                <div class="search-box"><input type="text" id="sel-admin-nama-search" placeholder="Ketik untuk mencari..."></div>
-                <div class="options-list" id="sel-admin-nama-list"></div>
-              </div>
+            <label for="login-admin-nik">NIK</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6M7 12h10M7 16h6"/></svg>
+              <input type="text" id="login-admin-nik" inputmode="numeric" placeholder="Masukkan NIK Anda" autocomplete="off">
             </div>
           </div>
           <div class="field">
-            <label for="login-admin-password">Password</label>
+            <label for="login-admin-password">Kata Sandi</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <input type="password" id="login-admin-password" placeholder="Masukkan password" autocomplete="off">
+              <input type="password" id="login-admin-password" placeholder="Masukkan kata sandi Anda" autocomplete="off">
             </div>
           </div>
           <div id="login-error" class="error-box" hidden></div>
           <button type="submit" class="btn-login btn-login-admin">MASUK SEBAGAI ADMIN</button>
+        </form>
+
+        <!-- FORM ADMIN REGISTER -->
+        <form id="form-register-admin" class="login-form" hidden>
+          <p class="login-form-desc">Buat akun admin baru. Pendaftaran hanya bisa diselesaikan oleh pihak yang memiliki Kode Akses Pendaftaran Admin (beda dari kode operator).</p>
+          <div class="field">
+            <label for="register-admin-nama">Nama Admin</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/></svg>
+              <input type="text" id="register-admin-nama" placeholder="Masukkan nama Anda" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label for="register-admin-id-karyawan">ID Karyawan / NIK</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6M7 12h10M7 16h6"/></svg>
+              <input type="text" id="register-admin-id-karyawan" placeholder="Masukkan ID karyawan / NIK Anda" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label for="register-admin-kode-akses">Kode Akses Pendaftaran Admin</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.5"/></svg>
+              <input type="password" id="register-admin-kode-akses" placeholder="Kode khusus pendaftaran admin" autocomplete="off">
+            </div>
+            <p class="field-hint">Kode ini berbeda dari Kode Akses Pendaftaran operator — hanya dipegang oleh pihak yang berwenang menunjuk admin baru.</p>
+          </div>
+          <div class="field">
+            <label for="register-admin-password">Kata Sandi</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <input type="password" id="register-admin-password" placeholder="Buat kata sandi" autocomplete="off">
+            </div>
+          </div>
+          <div class="field">
+            <label for="register-admin-password-confirm">Konfirmasi Kata Sandi</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <input type="password" id="register-admin-password-confirm" placeholder="Konfirmasi kata sandi" autocomplete="off">
+            </div>
+          </div>
+          <div id="register-admin-error" class="error-box" hidden></div>
+          <button type="submit" class="btn-login btn-login-admin">DAFTAR SEBAGAI ADMIN</button>
         </form>
 
         <div class="login-form-foot">
