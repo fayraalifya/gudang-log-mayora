@@ -2,15 +2,21 @@
 // SERVICE WORKER — GDPM•LOG
 // Strategi: NETWORK-FIRST untuk file aplikasi (index.html, script.js,
 // style.css, data.js). Artinya kalau HP/laptop online, selalu ambil versi
-// TERBARU dari server dulu — cache cuma dipakai kalau lagi offline. Jadi
-// tidak akan terjadi lagi kasus "sudah update tapi kelihatannya nggak
-// berubah" gara-gara cache lama.
+// TERBARU dari server dulu — cache cuma dipakai kalau lagi offline.
 //
 // PENTING buat yang mau update file nanti: naikkan angka CACHE_VERSION di
 // bawah ini setiap kali deploy perubahan, supaya cache lama otomatis
 // dibersihkan dan tidak menumpuk.
+//
+// TAMBAHAN: begitu service worker BARU selesai ter-install dan siap
+// menggantikan yang lama (activate), kita kirim pesan 'gudang-sw-updated'
+// ke semua tab yang sedang terbuka. script.js akan menangkap pesan ini dan
+// menampilkan banner "Versi baru tersedia — Muat ulang", supaya tab yang
+// sudah lama terbuka TIDAK terus menjalankan JS versi lama (ini akar
+// masalah error "Cannot read properties of null" yang sebelumnya muncul —
+// tab lama tetap memakai script.js versi lama yang sudah ada di memori).
 // ==========================================================================
-const CACHE_VERSION = 'gdpm-log-v2';
+const CACHE_VERSION = 'gdpm-log-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -32,9 +38,17 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k)))
+      )
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((clientsList) => {
+        clientsList.forEach((client) => {
+          client.postMessage({ type: 'gudang-sw-updated', version: CACHE_VERSION });
+        });
+      })
   );
 });
 

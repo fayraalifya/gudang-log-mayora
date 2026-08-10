@@ -1385,4 +1385,112 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 }
 .jejak-log-oleh { font-weight: 700; color: var(--emas-deep, var(--ink-soft)); flex-shrink: 0; }
 .jejak-log-waktu { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; flex-shrink: 0; }
+
+/* ==========================================================================
+   KATALOG PANEL — KELOLA MASTER DATA (BARANG, SUPPLIER, PEMILIK, LOKASI)
+========================================================================== */
+.katalog-tabs {
+  display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);
+  overflow-x: auto; padding-bottom: 0; -webkit-overflow-scrolling: touch;
+}
+.katalog-tab-btn {
+  padding: 10px 16px; border: none; background: none; color: var(--text-muted);
+  font-weight: 600; font-size: 14px; cursor: pointer; border-bottom: 3px solid transparent;
+  transition: all 200ms ease; white-space: nowrap;
+}
+.katalog-tab-btn:hover { color: var(--text-primary); }
+.katalog-tab-btn.is-active {
+  color: var(--ink-primary); border-bottom-color: var(--ink-primary);
+}
+
+.katalog-section { display: none; }
+.katalog-section:not([hidden]) { display: block; }
+
+.katalog-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; gap: 16px; flex-wrap: wrap;
+}
+.katalog-header h3 { margin: 0; font-size: 18px; font-weight: 700; }
+
+.katalog-hint {
+  font-size: 13px; color: var(--text-muted); margin: 8px 0 16px 0;
+}
+
+.katalog-list {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.katalog-item {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: 8px; padding: 12px 14px; font-size: 14px; gap: 12px;
+}
+.katalog-item-info { flex: 1; }
+.katalog-item-label { font-weight: 600; color: var(--text-primary); }
+.katalog-item-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.katalog-item-actions {
+  display: flex; gap: 8px;
+}
+.katalog-item-actions button {
+  padding: 6px 12px; border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 600; cursor: pointer; transition: 150ms ease;
+}
+.btn-katalog-edit {
+  background: var(--info-bg, #E3F2FD); color: var(--info-color, #1976D2);
+}
+.btn-katalog-edit:hover { background: var(--info-bg-hover, #BBDEFB); }
+.btn-katalog-delete {
+  background: var(--danger-bg, #FFEBEE); color: var(--danger-color, #D32F2F);
+}
+.btn-katalog-delete:hover { background: var(--danger-bg-hover, #FFCDD2); }
+
+/* FORM KATALOG */
+.form-katalog { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+.form-katalog .field {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.form-katalog label {
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+}
+.form-katalog input[type="text"],
+.form-katalog input[type="email"],
+.form-katalog input[type="tel"],
+.form-katalog textarea {
+  padding: 10px 12px; border: 1px solid var(--border-color);
+  border-radius: 6px; font-size: 14px; font-family: inherit;
+  background: var(--bg-primary); color: var(--text-primary);
+  transition: 150ms ease;
+}
+.form-katalog input:focus,
+.form-katalog textarea:focus {
+  outline: none; border-color: var(--ink-primary);
+  background: var(--bg-secondary);
+}
+.form-katalog textarea {
+  resize: vertical; min-height: 60px;
+}
+
+.modal-actions {
+  display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px;
+}
+.modal-actions .btn-secondary,
+.modal-actions .btn-submit {
+  padding: 10px 20px; border: none; border-radius: 6px;
+  font-weight: 600; font-size: 14px; cursor: pointer; transition: 150ms ease;
+}
+.modal-cancel { background: var(--border-color); color: var(--text-primary); }
+.modal-cancel:hover { background: var(--bg-tertiary); }
+
+/* MOBILE: adjust katalog items layout */
+@media (max-width: 640px) {
+  .katalog-item {
+    flex-direction: column; align-items: flex-start;
+  }
+  .katalog-item-actions {
+    align-self: flex-end;
+  }
+  .katalog-header {
+    flex-direction: column; align-items: flex-start;
+  }
+  .katalog-header h3 { width: 100%; }
+}
 .jejak-log-detail { color: var(--ink-soft); flex: 1 1 auto; min-width: 160px; }

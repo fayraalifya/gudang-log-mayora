@@ -258,6 +258,617 @@ function setupSearchableSelect({ id, options, getLabel, getSub, onSelect, placeh
 document.addEventListener('click', () => openPanels.forEach(close => close()));
 
 /* ==========================================================================
+   KATALOG MANAGEMENT — ADMIN PANEL (BARANG, SUPPLIER, PEMILIK, LOKASI)
+========================================================================== */
+
+class KatalogManager {
+  constructor() {
+    this.barangEditing = null;
+    this.supplierEditing = null;
+    this.pemilikEditing = null;
+    this.lokasiEditing = null;
+  }
+
+  init() {
+    // Tab switching
+    document.querySelectorAll('.katalog-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+    });
+
+    // Barang
+    document.getElementById('btn-tambah-barang')?.addEventListener('click', () => this.openBarangForm());
+    document.getElementById('form-barang')?.addEventListener('submit', (e) => this.saveBarang(e));
+    document.getElementById('search-barang')?.addEventListener('input', (e) => this.filterBarang(e.target.value));
+
+    // Supplier
+    document.getElementById('btn-tambah-supplier')?.addEventListener('click', () => this.openSupplierForm());
+    document.getElementById('form-supplier')?.addEventListener('submit', (e) => this.saveSupplier(e));
+    document.getElementById('search-supplier')?.addEventListener('input', (e) => this.filterSupplier(e.target.value));
+
+    // Pemilik
+    document.getElementById('btn-tambah-pemilik')?.addEventListener('click', () => this.openPemilikForm());
+    document.getElementById('form-pemilik')?.addEventListener('submit', (e) => this.savePemilik(e));
+    document.getElementById('search-pemilik')?.addEventListener('input', (e) => this.filterPemilik(e.target.value));
+
+    // Lokasi
+    document.getElementById('btn-tambah-lokasi')?.addEventListener('click', () => this.openLokasiForm());
+    document.getElementById('form-lokasi')?.addEventListener('submit', (e) => this.saveLokasi(e));
+    document.getElementById('search-lokasi')?.addEventListener('input', (e) => this.filterLokasi(e.target.value));
+
+    // Modal close buttons
+    document.querySelectorAll('#form-barang-modal .modal-close, #form-barang-modal .modal-cancel').forEach(btn => {
+      btn.addEventListener('click', () => this.closeBarangForm());
+    });
+    document.querySelectorAll('#form-supplier-modal .modal-close, #form-supplier-modal .modal-cancel').forEach(btn => {
+      btn.addEventListener('click', () => this.closeSupplierForm());
+    });
+    document.querySelectorAll('#form-pemilik-modal .modal-close, #form-pemilik-modal .modal-cancel').forEach(btn => {
+      btn.addEventListener('click', () => this.closePemilikForm());
+    });
+    document.querySelectorAll('#form-lokasi-modal .modal-close, #form-lokasi-modal .modal-cancel').forEach(btn => {
+      btn.addEventListener('click', () => this.closeLokasiForm());
+    });
+
+    // Close modal on overlay click
+    document.getElementById('form-barang-modal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'form-barang-modal') this.closeBarangForm();
+    });
+    document.getElementById('form-supplier-modal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'form-supplier-modal') this.closeSupplierForm();
+    });
+    document.getElementById('form-pemilik-modal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'form-pemilik-modal') this.closePemilikForm();
+    });
+    document.getElementById('form-lokasi-modal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'form-lokasi-modal') this.closeLokasiForm();
+    });
+
+    // Load and render all katalog data
+    this.loadKatalog();
+  }
+
+  switchTab(tab) {
+    document.querySelectorAll('.katalog-tab-btn').forEach(btn => {
+      btn.classList.toggle('is-active', btn.dataset.tab === tab);
+    });
+    document.querySelectorAll('.katalog-section').forEach(section => {
+      section.hidden = section.id !== `katalog-${tab}`;
+    });
+  }
+
+  // ========== BARANG ==========
+  loadKatalog() {
+    this.renderBarangList();
+    this.renderSupplierList();
+    this.renderPemilikList();
+    this.renderLokasiList();
+
+    // Subscribe to updates
+    if (window.gudangFirebase?.barangBaruCol) {
+      window.gudangFirebase.onSnapshot(window.gudangFirebase.barangBaruCol, () => {
+        this.renderBarangList();
+      });
+    }
+    if (window.gudangFirebase?.pemilikBaruCol) {
+      window.gudangFirebase.onSnapshot(window.gudangFirebase.pemilikBaruCol, () => {
+        this.renderPemilikList();
+      });
+    }
+  }
+
+  renderBarangList(filter = '') {
+    const container = document.getElementById('barang-list');
+    const empty = document.getElementById('barang-empty');
+    if (!container) return;
+
+    let barang = [...(MASTER_DATA.barang || [])];
+    if (filter) {
+      const q = filter.toLowerCase();
+      barang = barang.filter(b => 
+        (b.kode || '').toLowerCase().includes(q) || 
+        (b.nama || '').toLowerCase().includes(q)
+      );
+    }
+
+    if (barang.length === 0) {
+      container.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    container.innerHTML = barang.map(b => `
+      <div class="katalog-item">
+        <div class="katalog-item-info">
+          <div class="katalog-item-label">${escapeHtml(b.kode || '-')}</div>
+          <div class="katalog-item-sub">${escapeHtml(b.nama || '-')}</div>
+        </div>
+        <div class="katalog-item-actions">
+          <button type="button" class="btn-katalog-edit" data-action="edit-barang" data-kode="${escapeHtml(b.kode || '')}">Edit</button>
+          <button type="button" class="btn-katalog-delete" data-action="delete-barang" data-kode="${escapeHtml(b.kode || '')}">Hapus</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('[data-action="edit-barang"]').forEach(btn => {
+      btn.addEventListener('click', () => this.editBarang(btn.dataset.kode));
+    });
+    container.querySelectorAll('[data-action="delete-barang"]').forEach(btn => {
+      btn.addEventListener('click', () => this.deleteBarang(btn.dataset.kode));
+    });
+  }
+
+  filterBarang(value) {
+    this.renderBarangList(value);
+  }
+
+  openBarangForm(kode = null) {
+    const modal = document.getElementById('form-barang-modal');
+    const form = document.getElementById('form-barang');
+    const title = document.getElementById('form-barang-title');
+    const input_kode = document.getElementById('form-barang-kode');
+    const input_nama = document.getElementById('form-barang-nama');
+    const errorBox = document.getElementById('form-barang-error');
+
+    this.barangEditing = kode;
+    if (kode) {
+      const barang = (MASTER_DATA.barang || []).find(b => b.kode === kode);
+      if (barang) {
+        title.textContent = 'Edit Kode Barang';
+        input_kode.value = barang.kode || '';
+        input_nama.value = barang.nama || '';
+        input_kode.disabled = true;
+      }
+    } else {
+      title.textContent = 'Tambah Kode Barang';
+      form.reset();
+      input_kode.disabled = false;
+    }
+    errorBox.hidden = true;
+    modal.hidden = false;
+    input_nama.focus();
+  }
+
+  closeBarangForm() {
+    document.getElementById('form-barang-modal').hidden = true;
+    this.barangEditing = null;
+  }
+
+  async saveBarang(e) {
+    e.preventDefault();
+    const kode = document.getElementById('form-barang-kode').value.trim();
+    const nama = document.getElementById('form-barang-nama').value.trim();
+    const errorBox = document.getElementById('form-barang-error');
+
+    if (!kode || !nama) {
+      errorBox.textContent = 'Kode dan nama barang harus diisi.';
+      errorBox.hidden = false;
+      return;
+    }
+
+    try {
+      if (this.barangEditing) {
+        // Edit existing
+        const idx = (MASTER_DATA.barang || []).findIndex(b => b.kode === this.barangEditing);
+        if (idx >= 0) {
+          MASTER_DATA.barang[idx] = { kode, nama };
+          localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
+        }
+      } else {
+        // Add new
+        const exists = (MASTER_DATA.barang || []).some(b => b.kode === kode);
+        if (exists) {
+          errorBox.textContent = 'Kode barang sudah ada!';
+          errorBox.hidden = false;
+          return;
+        }
+        MASTER_DATA.barang.push({ kode, nama });
+        localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
+      }
+
+      showToast('Barang berhasil disimpan');
+      this.closeBarangForm();
+      this.renderBarangList();
+      BARANG_OPTIONS = MASTER_DATA.barang;
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    }
+  }
+
+  editBarang(kode) {
+    this.openBarangForm(kode);
+  }
+
+  deleteBarang(kode) {
+    if (!confirm(`Hapus kode barang "${kode}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try {
+      MASTER_DATA.barang = (MASTER_DATA.barang || []).filter(b => b.kode !== kode);
+      localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
+      showToast('Kode barang berhasil dihapus');
+      this.renderBarangList();
+      BARANG_OPTIONS = MASTER_DATA.barang;
+    } catch (err) {
+      showToast('Gagal menghapus barang: ' + err.message, 'error');
+    }
+  }
+
+  // ========== SUPPLIER ==========
+  renderSupplierList(filter = '') {
+    const container = document.getElementById('supplier-list');
+    const empty = document.getElementById('supplier-empty');
+    if (!container) return;
+
+    let supplier = [...(MASTER_DATA.supplier || [])];
+    if (filter) {
+      const q = filter.toLowerCase();
+      supplier = supplier.filter(s => (s || '').toLowerCase().includes(q));
+    }
+
+    if (supplier.length === 0) {
+      container.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    container.innerHTML = supplier.map(s => `
+      <div class="katalog-item">
+        <div class="katalog-item-info">
+          <div class="katalog-item-label">${escapeHtml(s || '-')}</div>
+        </div>
+        <div class="katalog-item-actions">
+          <button type="button" class="btn-katalog-edit" data-action="edit-supplier" data-nama="${escapeHtml(s || '')}">Edit</button>
+          <button type="button" class="btn-katalog-delete" data-action="delete-supplier" data-nama="${escapeHtml(s || '')}">Hapus</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('[data-action="edit-supplier"]').forEach(btn => {
+      btn.addEventListener('click', () => this.editSupplier(btn.dataset.nama));
+    });
+    container.querySelectorAll('[data-action="delete-supplier"]').forEach(btn => {
+      btn.addEventListener('click', () => this.deleteSupplier(btn.dataset.nama));
+    });
+  }
+
+  filterSupplier(value) {
+    this.renderSupplierList(value);
+  }
+
+  openSupplierForm(nama = null) {
+    const modal = document.getElementById('form-supplier-modal');
+    const form = document.getElementById('form-supplier');
+    const title = document.getElementById('form-supplier-title');
+    const input_nama = document.getElementById('form-supplier-nama');
+    const errorBox = document.getElementById('form-supplier-error');
+
+    this.supplierEditing = nama;
+    if (nama) {
+      title.textContent = 'Edit Supplier';
+      input_nama.value = nama;
+    } else {
+      title.textContent = 'Tambah Supplier';
+      form.reset();
+    }
+    errorBox.hidden = true;
+    modal.hidden = false;
+    input_nama.focus();
+  }
+
+  closeSupplierForm() {
+    document.getElementById('form-supplier-modal').hidden = true;
+    this.supplierEditing = null;
+  }
+
+  async saveSupplier(e) {
+    e.preventDefault();
+    const nama = document.getElementById('form-supplier-nama').value.trim();
+    const errorBox = document.getElementById('form-supplier-error');
+
+    if (!nama) {
+      errorBox.textContent = 'Nama supplier harus diisi.';
+      errorBox.hidden = false;
+      return;
+    }
+
+    try {
+      if (this.supplierEditing) {
+        // Edit: hapus yang lama, tambah yang baru
+        MASTER_DATA.supplier = (MASTER_DATA.supplier || []).filter(s => s !== this.supplierEditing);
+        if (!MASTER_DATA.supplier.includes(nama)) {
+          MASTER_DATA.supplier.push(nama);
+        }
+      } else {
+        // Add new
+        const exists = (MASTER_DATA.supplier || []).some(s => s === nama);
+        if (exists) {
+          errorBox.textContent = 'Supplier sudah ada!';
+          errorBox.hidden = false;
+          return;
+        }
+        MASTER_DATA.supplier.push(nama);
+      }
+
+      MASTER_DATA.supplier.sort();
+      localStorage.setItem('gudang_master_supplier', JSON.stringify(MASTER_DATA.supplier));
+      showToast('Supplier berhasil disimpan');
+      this.closeSupplierForm();
+      this.renderSupplierList();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    }
+  }
+
+  editSupplier(nama) {
+    this.openSupplierForm(nama);
+  }
+
+  deleteSupplier(nama) {
+    if (!confirm(`Hapus supplier "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try {
+      MASTER_DATA.supplier = (MASTER_DATA.supplier || []).filter(s => s !== nama);
+      localStorage.setItem('gudang_master_supplier', JSON.stringify(MASTER_DATA.supplier));
+      showToast('Supplier berhasil dihapus');
+      this.renderSupplierList();
+    } catch (err) {
+      showToast('Gagal menghapus supplier: ' + err.message, 'error');
+    }
+  }
+
+  // ========== PEMILIK ==========
+  renderPemilikList(filter = '') {
+    const container = document.getElementById('pemilik-list');
+    const empty = document.getElementById('pemilik-empty');
+    if (!container) return;
+
+    let pemilik = [...(MASTER_DATA.pemilik || [])];
+    if (filter) {
+      const q = filter.toLowerCase();
+      pemilik = pemilik.filter(p => (p || '').toLowerCase().includes(q));
+    }
+
+    if (pemilik.length === 0) {
+      container.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    container.innerHTML = pemilik.map(p => `
+      <div class="katalog-item">
+        <div class="katalog-item-info">
+          <div class="katalog-item-label">${escapeHtml(p || '-')}</div>
+        </div>
+        <div class="katalog-item-actions">
+          <button type="button" class="btn-katalog-edit" data-action="edit-pemilik" data-nama="${escapeHtml(p || '')}">Edit</button>
+          <button type="button" class="btn-katalog-delete" data-action="delete-pemilik" data-nama="${escapeHtml(p || '')}">Hapus</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('[data-action="edit-pemilik"]').forEach(btn => {
+      btn.addEventListener('click', () => this.editPemilik(btn.dataset.nama));
+    });
+    container.querySelectorAll('[data-action="delete-pemilik"]').forEach(btn => {
+      btn.addEventListener('click', () => this.deletePemilik(btn.dataset.nama));
+    });
+  }
+
+  filterPemilik(value) {
+    this.renderPemilikList(value);
+  }
+
+  openPemilikForm(nama = null) {
+    const modal = document.getElementById('form-pemilik-modal');
+    const form = document.getElementById('form-pemilik');
+    const title = document.getElementById('form-pemilik-title');
+    const input_nama = document.getElementById('form-pemilik-nama');
+    const errorBox = document.getElementById('form-pemilik-error');
+
+    this.pemilikEditing = nama;
+    if (nama) {
+      title.textContent = 'Edit Pemilik Barang';
+      input_nama.value = nama;
+    } else {
+      title.textContent = 'Tambah Pemilik Barang';
+      form.reset();
+    }
+    errorBox.hidden = true;
+    modal.hidden = false;
+    input_nama.focus();
+  }
+
+  closePemilikForm() {
+    document.getElementById('form-pemilik-modal').hidden = true;
+    this.pemilikEditing = null;
+  }
+
+  async savePemilik(e) {
+    e.preventDefault();
+    const nama = document.getElementById('form-pemilik-nama').value.trim();
+    const errorBox = document.getElementById('form-pemilik-error');
+
+    if (!nama) {
+      errorBox.textContent = 'Nama pemilik harus diisi.';
+      errorBox.hidden = false;
+      return;
+    }
+
+    try {
+      if (this.pemilikEditing) {
+        MASTER_DATA.pemilik = (MASTER_DATA.pemilik || []).filter(p => p !== this.pemilikEditing);
+        if (!MASTER_DATA.pemilik.includes(nama)) {
+          MASTER_DATA.pemilik.push(nama);
+        }
+      } else {
+        const exists = (MASTER_DATA.pemilik || []).some(p => p === nama);
+        if (exists) {
+          errorBox.textContent = 'Pemilik sudah ada!';
+          errorBox.hidden = false;
+          return;
+        }
+        MASTER_DATA.pemilik.push(nama);
+      }
+
+      MASTER_DATA.pemilik.sort();
+      localStorage.setItem('gudang_master_pemilik', JSON.stringify(MASTER_DATA.pemilik));
+      showToast('Pemilik berhasil disimpan');
+      this.closePemilikForm();
+      this.renderPemilikList();
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    }
+  }
+
+  editPemilik(nama) {
+    this.openPemilikForm(nama);
+  }
+
+  deletePemilik(nama) {
+    if (!confirm(`Hapus pemilik "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try {
+      MASTER_DATA.pemilik = (MASTER_DATA.pemilik || []).filter(p => p !== nama);
+      localStorage.setItem('gudang_master_pemilik', JSON.stringify(MASTER_DATA.pemilik));
+      showToast('Pemilik berhasil dihapus');
+      this.renderPemilikList();
+    } catch (err) {
+      showToast('Gagal menghapus pemilik: ' + err.message, 'error');
+    }
+  }
+
+  // ========== LOKASI ==========
+  renderLokasiList(filter = '') {
+    const container = document.getElementById('lokasi-list');
+    const empty = document.getElementById('lokasi-empty');
+    if (!container) return;
+
+    let lokasi = [...(MASTER_DATA.lokasi || [])];
+    if (filter) {
+      const q = filter.toLowerCase();
+      lokasi = lokasi.filter(l => (l || '').toLowerCase().includes(q));
+    }
+
+    if (lokasi.length === 0) {
+      container.innerHTML = '';
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+
+    container.innerHTML = lokasi.map(l => `
+      <div class="katalog-item">
+        <div class="katalog-item-info">
+          <div class="katalog-item-label">${escapeHtml(l || '-')}</div>
+        </div>
+        <div class="katalog-item-actions">
+          <button type="button" class="btn-katalog-edit" data-action="edit-lokasi" data-nama="${escapeHtml(l || '')}">Edit</button>
+          <button type="button" class="btn-katalog-delete" data-action="delete-lokasi" data-nama="${escapeHtml(l || '')}">Hapus</button>
+        </div>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('[data-action="edit-lokasi"]').forEach(btn => {
+      btn.addEventListener('click', () => this.editLokasi(btn.dataset.nama));
+    });
+    container.querySelectorAll('[data-action="delete-lokasi"]').forEach(btn => {
+      btn.addEventListener('click', () => this.deleteLokasi(btn.dataset.nama));
+    });
+  }
+
+  filterLokasi(value) {
+    this.renderLokasiList(value);
+  }
+
+  openLokasiForm(nama = null) {
+    const modal = document.getElementById('form-lokasi-modal');
+    const form = document.getElementById('form-lokasi');
+    const title = document.getElementById('form-lokasi-title');
+    const input_nama = document.getElementById('form-lokasi-nama');
+    const errorBox = document.getElementById('form-lokasi-error');
+
+    this.lokasiEditing = nama;
+    if (nama) {
+      title.textContent = 'Edit Lokasi';
+      input_nama.value = nama;
+    } else {
+      title.textContent = 'Tambah Lokasi';
+      form.reset();
+    }
+    errorBox.hidden = true;
+    modal.hidden = false;
+    input_nama.focus();
+  }
+
+  closeLokasiForm() {
+    document.getElementById('form-lokasi-modal').hidden = true;
+    this.lokasiEditing = null;
+  }
+
+  async saveLokasi(e) {
+    e.preventDefault();
+    const nama = document.getElementById('form-lokasi-nama').value.trim();
+    const errorBox = document.getElementById('form-lokasi-error');
+
+    if (!nama) {
+      errorBox.textContent = 'Nama lokasi harus diisi.';
+      errorBox.hidden = false;
+      return;
+    }
+
+    try {
+      if (this.lokasiEditing) {
+        MASTER_DATA.lokasi = (MASTER_DATA.lokasi || []).filter(l => l !== this.lokasiEditing);
+        if (!MASTER_DATA.lokasi.includes(nama)) {
+          MASTER_DATA.lokasi.push(nama);
+        }
+      } else {
+        const exists = (MASTER_DATA.lokasi || []).some(l => l === nama);
+        if (exists) {
+          errorBox.textContent = 'Lokasi sudah ada!';
+          errorBox.hidden = false;
+          return;
+        }
+        MASTER_DATA.lokasi.push(nama);
+      }
+
+      MASTER_DATA.lokasi.sort();
+      localStorage.setItem('gudang_master_lokasi', JSON.stringify(MASTER_DATA.lokasi));
+      showToast('Lokasi berhasil disimpan');
+      this.closeLokasiForm();
+      this.renderLokasiList();
+      LOKASI_SET.clear();
+      MASTER_DATA.lokasi.forEach(l => LOKASI_SET.add(l));
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    }
+  }
+
+  editLokasi(nama) {
+    this.openLokasiForm(nama);
+  }
+
+  deleteLokasi(nama) {
+    if (!confirm(`Hapus lokasi "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    try {
+      MASTER_DATA.lokasi = (MASTER_DATA.lokasi || []).filter(l => l !== nama);
+      localStorage.setItem('gudang_master_lokasi', JSON.stringify(MASTER_DATA.lokasi));
+      showToast('Lokasi berhasil dihapus');
+      this.renderLokasiList();
+      LOKASI_SET.clear();
+      MASTER_DATA.lokasi.forEach(l => LOKASI_SET.add(l));
+    } catch (err) {
+      showToast('Gagal menghapus lokasi: ' + err.message, 'error');
+    }
+  }
+}
+
+const katalogManager = new KatalogManager();
+
+/* ==========================================================================
    SESSION & ROLE MANAGEMENT (LOGIN)
 ========================================================================== */
 const SESSION_KEY = 'gudang_session_v1';
@@ -320,6 +931,36 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   });
+
+  // Begitu service worker versi baru selesai aktif, dia mengirim pesan
+  // 'gudang-sw-updated' ke semua tab yang terbuka. Kita tangkap di sini
+  // dan tampilkan banner "Versi baru tersedia" supaya tab yang sudah
+  // lama terbuka tidak terus-terusan menjalankan JS versi lama.
+  let swUpdateBannerShown = false;
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'gudang-sw-updated' && !swUpdateBannerShown) {
+      swUpdateBannerShown = true;
+      showSwUpdateBanner();
+    }
+  });
+
+  function showSwUpdateBanner() {
+    const bar = document.createElement('div');
+    bar.textContent = 'Versi baru tersedia. ';
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;' +
+      'background:#0F2038;color:#fff;font-family:Inter,sans-serif;font-size:14px;' +
+      'padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:12px;' +
+      'box-shadow:0 -2px 12px rgba(0,0,0,.25);';
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Muat Ulang';
+    btn.style.cssText = 'background:#F2ECDC;color:#0F2038;border:none;border-radius:6px;' +
+      'padding:6px 14px;font-weight:700;font-size:13px;cursor:pointer;';
+    btn.onclick = () => window.location.reload();
+
+    bar.appendChild(btn);
+    document.body.appendChild(bar);
+  }
 }
 
 let deferredInstallPrompt = null;
@@ -343,7 +984,7 @@ window.addEventListener('appinstalled', () => {
 });
 const formLoginOperator = document.getElementById('form-login-operator');
 const formLoginAdmin = document.getElementById('form-login-admin');
-const loginOperatorNama = document.getElementById('login-operator-nama');
+const loginOperatorNik = document.getElementById('login-operator-nik');
 const loginAdminPassword = document.getElementById('login-admin-password');
 const loginError = document.getElementById('login-error');
 const operatorModeTabs = document.getElementById('operator-mode-tabs');
@@ -416,6 +1057,10 @@ function normalizeNamaKey(nama) {
   return String(nama || '').trim().toLowerCase();
 }
 
+function normalizeNikKey(nik) {
+  return String(nik || '').trim();
+}
+
 // Halaman login bisa tampil sebelum proses sign-in anonim ke Firebase
 // selesai — bahkan sebelum firebase-config.js (dimuat sebagai <script
 // type="module">, jadi dieksekusi belakangan dan butuh waktu fetch SDK
@@ -453,6 +1098,19 @@ async function findOperatorAccountByNama(nama) {
   const fb = window.gudangFirebase;
   const namaKey = normalizeNamaKey(nama);
   const q = fb.query(fb.operatorCol, fb.where('namaLower', '==', namaKey));
+  const snapshot = await fb.getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() };
+}
+
+// Login & pengecekan akun sekarang berdasarkan NIK (bukan nama), karena
+// nama karyawan berpotensi sama antara satu operator dengan operator lain
+// — NIK dijamin unik per karyawan.
+async function findOperatorAccountByNik(nik) {
+  const fb = window.gudangFirebase;
+  const nikKey = normalizeNikKey(nik);
+  const q = fb.query(fb.operatorCol, fb.where('idKaryawan', '==', nikKey));
   const snapshot = await fb.getDocs(q);
   if (snapshot.empty) return null;
   const docSnap = snapshot.docs[0];
@@ -510,9 +1168,9 @@ formRegisterOperator.addEventListener('submit', async (e) => {
   try {
     await waitForFirebaseAuth();
 
-    const existing = await findOperatorAccountByNama(nama);
+    const existing = await findOperatorAccountByNik(idKaryawan);
     if (existing) {
-      showRegisterError('Nama ini sudah terdaftar. Silakan masuk lewat tab "Masuk", atau gunakan nama lain.');
+      showRegisterError('NIK ini sudah terdaftar. Silakan masuk lewat tab "Masuk", atau hubungi admin gudang jika ini bukan Anda.');
       return;
     }
 
@@ -521,14 +1179,14 @@ formRegisterOperator.addEventListener('submit', async (e) => {
     await fb.addDoc(fb.operatorCol, {
       nama,
       namaLower: normalizeNamaKey(nama),
-      idKaryawan,
+      idKaryawan: normalizeNikKey(idKaryawan),
       passwordHash,
       createdAt: Date.now(),
     });
 
     formRegisterOperator.reset();
     switchOperatorMode('login');
-    loginOperatorNama.value = nama;
+    loginOperatorNik.value = idKaryawan;
     loginOperatorPassword.focus();
     showToast('Pendaftaran berhasil. Silakan masuk dengan akun yang baru dibuat.');
   } catch (err) {
@@ -544,10 +1202,10 @@ formLoginOperator.addEventListener('submit', async (e) => {
   e.preventDefault();
   hideLoginOperatorError();
 
-  const nama = loginOperatorNama.value.trim();
+  const nik = loginOperatorNik.value.trim();
   const password = loginOperatorPassword.value;
 
-  if (!nama) { loginOperatorNama.focus(); return; }
+  if (!nik) { loginOperatorNik.focus(); return; }
   if (!password) { showLoginOperatorError('Kata sandi wajib diisi.'); loginOperatorPassword.focus(); return; }
 
   const submitBtn = formLoginOperator.querySelector('button[type="submit"]');
@@ -558,9 +1216,9 @@ formLoginOperator.addEventListener('submit', async (e) => {
   try {
     await waitForFirebaseAuth();
 
-    const akun = await findOperatorAccountByNama(nama);
+    const akun = await findOperatorAccountByNik(nik);
     if (!akun) {
-      showLoginOperatorError('Nama belum terdaftar. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
+      showLoginOperatorError('NIK belum terdaftar. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
       return;
     }
 
@@ -1479,19 +2137,56 @@ const inputJumlahPallet = document.getElementById('input-jumlah-pallet');
 const formError = document.getElementById('form-error');
 const form = document.getElementById('form-laporan');
 
+/* ==========================================================================
+   FORMAT ANGKA RIBUAN — Jumlah Barang & Qty per Pallet
+   Input tetap type="text" (bukan number) supaya bisa menampilkan titik
+   pemisah ribuan ala format Indonesia (1.000, bukan 1000) sambil operator
+   mengetik. Nilai aslinya (tanpa titik) selalu bisa diambil ulang lewat
+   parseFormattedNumber() saat validasi/hitung/simpan.
+========================================================================== */
+function parseFormattedNumber(str) {
+  if (str == null) return NaN;
+  const cleaned = String(str).trim().replace(/\./g, '').replace(/,/g, '.');
+  if (cleaned === '') return NaN;
+  return parseFloat(cleaned);
+}
+
+function attachThousandsFormatting(input) {
+  input.addEventListener('input', () => {
+    const digitsOnly = input.value.replace(/[^\d]/g, '');
+    input.value = digitsOnly ? Number(digitsOnly).toLocaleString('id-ID') : '';
+  });
+}
+attachThousandsFormatting(inputJumlah);
+attachThousandsFormatting(inputQtyPallet);
+
 function hitungJumlahPallet() {
-  const jumlah = parseFloat(inputJumlah.value);
-  const qtyPallet = parseFloat(inputQtyPallet.value);
+  const jumlah = parseFormattedNumber(inputJumlah.value);
+  const qtyPallet = parseFormattedNumber(inputQtyPallet.value);
   if (!jumlah || !qtyPallet || qtyPallet <= 0) {
     inputJumlahPallet.value = '';
     return;
   }
   const hasil = jumlah / qtyPallet;
-  // tampilkan maks 2 angka desimal, buang nol yang tidak perlu
-  inputJumlahPallet.value = (Math.round(hasil * 100) / 100).toString();
+  // tampilkan maks 2 angka desimal, buang nol yang tidak perlu, dengan
+  // pemisah ribuan juga (mis. 1.250,5)
+  const dibulatkan = Math.round(hasil * 100) / 100;
+  inputJumlahPallet.value = dibulatkan.toLocaleString('id-ID', { maximumFractionDigits: 2 });
 }
 inputJumlah.addEventListener('input', hitungJumlahPallet);
 inputQtyPallet.addEventListener('input', hitungJumlahPallet);
+
+// Helper untuk menampilkan angka jumlah pallet (bisa desimal, mis. hasil
+// bagi jumlah barang / qty per pallet) di kartu Ringkasan. Dibulatkan ke
+// maksimal 2 angka desimal dan diformat dengan pemisah ribuan ala Indonesia
+// (mis. 1.250,5), sama seperti cara input-jumlah-pallet diisi otomatis di
+// hitungJumlahPallet() di atas.
+function roundPalletDisplay(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '0';
+  const dibulatkan = Math.round(num * 100) / 100;
+  return dibulatkan.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+}
 
 /* ==========================================================================
    SCAN BARCODE — LOKASI (Input Laporan)
@@ -1651,19 +2346,22 @@ form.addEventListener('submit', async (e) => {
   const pemilik = selPemilik.getValue();
   const lokasi = selLokasi.getValue();
   const tanggal = inputTanggal.value;
-  const jumlah = parseInt(inputJumlah.value, 10);
+  const jumlahParsed = parseFormattedNumber(inputJumlah.value);
+  const jumlah = Number.isFinite(jumlahParsed) ? Math.trunc(jumlahParsed) : NaN;
   const qtyPerPalletRaw = inputQtyPallet.value.trim();
-  const qtyPerPallet = qtyPerPalletRaw ? parseFloat(qtyPerPalletRaw) : null;
-  const jumlahPallet = inputJumlahPallet.value ? parseFloat(inputJumlahPallet.value) : null;
+  const qtyPerPalletParsed = parseFormattedNumber(qtyPerPalletRaw);
+  const qtyPerPallet = qtyPerPalletRaw ? qtyPerPalletParsed : null;
+  const jumlahPalletParsed = parseFormattedNumber(inputJumlahPallet.value);
+  const jumlahPallet = inputJumlahPallet.value ? jumlahPalletParsed : null;
 
   if (!operator) return showError('Nama operator wajib diisi.');
   if (!barang) return showError('Pilih nama barang terlebih dahulu.');
   if (!supplier) return showError('Pilih supplier terlebih dahulu.');
   if (!pemilik) return showError('Pilih pemilik barang (pabrik) terlebih dahulu.');
   if (!lokasi) return showError('Scan barcode lokasi penyimpanan terlebih dahulu.');
-  if (!tanggal) return showError('Tanggal wajib diisi.');
+  if (!tanggal) return showError('Tanggal kedatangan wajib diisi.');
   if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
-  if (qtyPerPalletRaw && (!qtyPerPallet || qtyPerPallet <= 0)) return showError('Qty per pallet harus berupa angka lebih dari 0.');
+  if (!qtyPerPalletRaw || !qtyPerPallet || qtyPerPallet <= 0) return showError('Qty per pallet wajib diisi dengan angka lebih dari 0.');
 
   if (jenis === 'keluar') {
     const stokDiLokasi = getStokAtLokasi(currentEntries, barang.kode, lokasi);
@@ -1956,6 +2654,11 @@ const statKeluarCount = document.getElementById('stat-keluar-count');
 const statTotalCount = document.getElementById('stat-total-count');
 const statTopOperator = document.getElementById('stat-top-operator');
 const statTopOperatorSub = document.getElementById('stat-top-operator-sub');
+const statPalletMasuk = document.getElementById('stat-pallet-masuk');
+const statPalletMasukSub = document.getElementById('stat-pallet-masuk-sub');
+const statPalletKeluar = document.getElementById('stat-pallet-keluar');
+const statPalletKeluarSub = document.getElementById('stat-pallet-keluar-sub');
+const statPalletSaatIni = document.getElementById('stat-pallet-saat-ini');
 
 function renderRingkasan() {
   if (currentRole() !== 'admin') return;
@@ -1966,10 +2669,16 @@ function renderRingkasan() {
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
   let masukQty = 0, masukCount = 0, keluarQty = 0, keluarCount = 0;
+  let palletMasuk = 0, palletKeluar = 0;
   currentEntries.forEach(t => {
     if (inPeriod(t, range)) {
-      if (t.jenis === 'masuk') { masukQty += t.jumlah; masukCount++; }
-      else { keluarQty += t.jumlah; keluarCount++; }
+      if (t.jenis === 'masuk') {
+        masukQty += t.jumlah; masukCount++;
+        if (t.jumlahPallet != null) palletMasuk += t.jumlahPallet;
+      } else {
+        keluarQty += t.jumlah; keluarCount++;
+        if (t.jumlahPallet != null) palletKeluar += t.jumlahPallet;
+      }
     }
   });
   statMasukQty.textContent = masukQty.toLocaleString('id-ID');
@@ -1977,6 +2686,27 @@ function renderRingkasan() {
   statKeluarQty.textContent = keluarQty.toLocaleString('id-ID');
   statKeluarCount.textContent = `${keluarCount} laporan`;
   statTotalCount.textContent = currentEntries.length.toLocaleString('id-ID');
+
+  // Pallet masuk/keluar mengikuti periode yang sama seperti kartu di atas.
+  // Hanya laporan yang punya info Qty per Pallet (sehingga jumlahPallet
+  // terisi) yang dihitung — laporan lama sebelum fitur ini ada tidak ikut.
+  if (statPalletMasuk) statPalletMasuk.textContent = roundPalletDisplay(palletMasuk);
+  if (statPalletKeluar) statPalletKeluar.textContent = roundPalletDisplay(palletKeluar);
+  if (statPalletMasukSub) statPalletMasukSub.textContent = `periode ini · ${range.label}`;
+  if (statPalletKeluarSub) statPalletKeluarSub.textContent = `periode ini · ${range.label}`;
+
+  // Total Pallet Saat Ini = posisi stok pallet sekarang, dihitung dari
+  // SELURUH riwayat (masuk dikurangi keluar), sama seperti cara stok pcs
+  // dihitung di buildLocationStock — tidak mengikuti filter periode karena
+  // ini "saldo sekarang", bukan aktivitas dalam rentang waktu.
+  if (statPalletSaatIni) {
+    let palletSaldo = 0;
+    currentEntries.forEach(t => {
+      if (t.jumlahPallet == null) return;
+      palletSaldo += (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet);
+    });
+    statPalletSaatIni.textContent = roundPalletDisplay(palletSaldo);
+  }
 
   const opCount = {};
   currentEntries.forEach(t => {
@@ -2888,7 +3618,7 @@ document.getElementById('btn-clear').addEventListener('click', async () => {
     enterApp(existing);
   } else {
     switchLoginTab('operator');
-    loginOperatorNama.focus();
+    loginOperatorNik.focus();
   }
 })();
 
