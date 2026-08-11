@@ -2622,6 +2622,17 @@ async function onScanSuccess(decodedText) {
   const matched = findMatchingLokasi(decodedText);
 
   if (matched) {
+    // Kalau sedang mode KELUAR dan operator sudah mengunci satu kombinasi
+    // (supplier+pemilik) dari kartu "Stok Tersedia", lokasi yang di-scan
+    // WAJIB persis sama dengan lokasi kombinasi itu. Ini menutup celah di
+    // mana operator bisa memilih kombinasi Gudang 1 tapi scan barcode
+    // Gudang 2 — yang akan membuat laporan keluar dengan kombinasi yang
+    // sebenarnya tidak pernah tercatat masuk.
+    if (jenis === 'keluar' && kombinasiTerkunci && matched !== kombinasiTerkunci.lokasi) {
+      scanErrorBox.hidden = false;
+      scanErrorBox.textContent = `Barcode ini adalah lokasi "${matched}", tapi kombinasi yang dipilih ada di lokasi "${kombinasiTerkunci.lokasi}". Scan barcode lokasi ${kombinasiTerkunci.lokasi}, atau pilih ulang kombinasi yang sesuai lokasi ini.`;
+      return;
+    }
     scanBusy = true;
     selLokasi.setValue(matched);
     await closeScanModal();
@@ -2704,9 +2715,25 @@ form.addEventListener('submit', async (e) => {
   if (!qtyPerPalletRaw || !qtyPerPallet || qtyPerPallet <= 0) return showError('Qty per pallet wajib diisi dengan angka lebih dari 0.');
 
   if (jenis === 'keluar') {
-    const stokDiLokasi = getStokAtLokasi(currentEntries, barang.kode, lokasi);
-    if (jumlah > stokDiLokasi) {
-      return showError(`Jumlah keluar (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok barang ini di lokasi ${lokasi} (${stokDiLokasi.toLocaleString('id-ID')} pcs). Cek lokasi lain kalau stok barang ini memang ada di tempat lain.`);
+    // Wajib sudah pilih satu kombinasi dari kartu "Stok Tersedia" — ini
+    // jaring pengaman terakhir sebelum data tersimpan, kalau-kalau ada
+    // cara lain form ini terisi tanpa lewat klik kartu kombinasi.
+    if (!kombinasiTerkunci) {
+      return showError('Pilih salah satu kombinasi supplier/pemilik dari daftar "Stok Tersedia" terlebih dahulu.');
+    }
+    // Pastikan supplier, pemilik, DAN lokasi yang benar-benar akan
+    // disimpan masih persis sama dengan kombinasi yang dikunci — bukan
+    // cuma dicek stoknya, tapi identitas kombinasinya sendiri.
+    if (supplier !== kombinasiTerkunci.supplier || pemilik !== kombinasiTerkunci.pemilik || lokasi !== kombinasiTerkunci.lokasi) {
+      return showError('Kombinasi supplier/pemilik/lokasi berubah. Pilih ulang kombinasinya dari daftar "Stok Tersedia" dan scan ulang lokasinya.');
+    }
+    // Cek stok HANYA dari kombinasi kode+supplier+pemilik+lokasi yang
+    // persis sama (satu ikat) — bukan total stok kode barang di lokasi
+    // itu saja, supaya kombinasi lain di lokasi yang sama tidak ikut
+    // "menutupi" kekurangan stok kombinasi ini.
+    const stokKombinasi = getStokKombinasi(currentEntries, barang.kode, supplier, pemilik, lokasi);
+    if (jumlah > stokKombinasi) {
+      return showError(`Jumlah keluar (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok kombinasi ini (supplier ${supplier}, pemilik ${pemilik}, lokasi ${lokasi}): ${stokKombinasi.toLocaleString('id-ID')} pcs. Kombinasi lain di lokasi yang sama tidak bisa dipakai untuk menutupi kekurangan ini.`);
     }
   }
 
