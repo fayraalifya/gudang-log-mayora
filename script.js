@@ -11,6 +11,58 @@ function getStokAtLokasi(entries, kodeBarang, lokasi) {
     .filter(t => t.kodeBarang === kodeBarang && t.lokasi === lokasi)
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlah : -t.jumlah), 0);
 }
+
+/* ==========================================================================
+   KOMBINASI TERIKAT (ITEM MASTER "SATU IKAT")
+   Barang tidak lagi bebas keluar dengan supplier/pemilik/lokasi apa saja.
+   Setiap barang MASUK mengikat kode+nama+supplier+pemilik+lokasi menjadi
+   satu kombinasi. Barang KELUAR wajib memakai kombinasi yang PERSIS sama
+   dengan yang pernah tercatat masuk (dan masih ada sisa stok/palletnya) —
+   kalau kombinasinya beda, dianggap "barang lain" walau kode & namanya
+   sama, dan akan ditolak. Ini dihitung langsung dari riwayat transaksi
+   (currentEntries), jadi tidak perlu koleksi/master data baru di Firestore
+   ataupun migrasi data lama — cukup mengikat data yang sudah ada.
+========================================================================== */
+
+// Kunci unik satu kombinasi (dipakai untuk mengelompokkan transaksi).
+function comboKey(kodeBarang, supplier, pemilik, lokasi) {
+  return [kodeBarang, supplier, pemilik, lokasi].join('␟');
+}
+
+// Sisa stok (pcs) HANYA untuk kombinasi kode+supplier+pemilik+lokasi yang
+// persis sama — ini yang membuat barang "terikat" (beda supplier/pemilik/
+// lokasi = beda saldo, tidak bisa saling menutupi).
+function getStokKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
+  return entries
+    .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlah : -t.jumlah), 0);
+}
+
+// Sama seperti getStokKombinasi tapi untuk saldo jumlah pallet-nya.
+function getPalletKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
+  return entries
+    .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi && t.jumlahPallet != null)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+}
+
+// Daftar semua kombinasi supplier+pemilik+lokasi (+ sisa stok & pallet)
+// yang MASIH ADA STOKNYA untuk satu kode barang. Inilah "kesatuan" yang
+// ditampilkan ke operator saat lapor barang KELUAR, supaya operator hanya
+// bisa memilih kombinasi yang benar-benar tersedia — bukan mengetik bebas.
+function getKombinasiTersedia(entries, kodeBarang) {
+  const map = new Map();
+  entries.filter(t => t.kodeBarang === kodeBarang).forEach(t => {
+    const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi);
+    if (!map.has(key)) {
+      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, stok: 0, pallet: 0 });
+    }
+    const c = map.get(key);
+    const arah = t.jenis === 'masuk' ? 1 : -1;
+    c.stok += arah * t.jumlah;
+    if (t.jumlahPallet != null) c.pallet += arah * t.jumlahPallet;
+  });
+  return [...map.values()].filter(c => c.stok > 0).sort((a, b) => b.stok - a.stok);
+}
 const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 const BULAN_PANJANG = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
@@ -958,6 +1010,52 @@ if ('serviceWorker' in navigator) {
     bar.appendChild(btn);
     document.body.appendChild(bar);
   }
+}
+
+/* ==========================================================================
+   DETEKSI TAB GANDA — firebase-config.js memakai persistentSingleTabManager,
+   yang hanya mengizinkan SATU tab memegang akses persistensi offline
+   (IndexedDB). Kalau aplikasi ini dibuka di lebih dari satu tab/jendela
+   sekaligus, tab kedua otomatis fallback ke cache memori biasa (ini NORMAL,
+   bukan bug — muncul di console sebagai "Falling back to memory cache").
+   Supaya operator tidak bingung dan tidak salah input dobel di dua tab
+   berbeda, kita kasih tahu lewat BroadcastChannel: setiap tab yang terbuka
+   saling "say hi", dan kalau ada balasan dari tab lain, tampilkan banner.
+========================================================================== */
+if ('BroadcastChannel' in window) {
+  const tabChannel = new BroadcastChannel('gudang-log-tabs');
+  let multiTabBannerShown = false;
+
+  function showMultiTabBanner() {
+    if (multiTabBannerShown) return;
+    multiTabBannerShown = true;
+    const bar = document.createElement('div');
+    bar.textContent = 'Aplikasi ini terbuka di tab/jendela lain juga. Sebaiknya pakai satu tab saja supaya data tidak bentrok. ';
+    bar.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;' +
+      'background:#B45309;color:#fff;font-family:Inter,sans-serif;font-size:14px;' +
+      'padding:12px 16px;display:flex;align-items:center;justify-content:center;gap:12px;' +
+      'box-shadow:0 2px 12px rgba(0,0,0,.25);';
+
+    const btn = document.createElement('button');
+    btn.textContent = 'Mengerti';
+    btn.style.cssText = 'background:#fff;color:#B45309;border:none;border-radius:6px;' +
+      'padding:6px 14px;font-weight:700;font-size:13px;cursor:pointer;';
+    btn.onclick = () => bar.remove();
+
+    bar.appendChild(btn);
+    document.body.appendChild(bar);
+  }
+
+  tabChannel.addEventListener('message', (event) => {
+    if (event.data === 'ping') {
+      tabChannel.postMessage('pong');
+      showMultiTabBanner();
+    } else if (event.data === 'pong') {
+      showMultiTabBanner();
+    }
+  });
+
+  tabChannel.postMessage('ping');
 }
 
 let deferredInstallPrompt = null;
@@ -2233,7 +2331,20 @@ function setJenis(j) {
   jenis = j;
   btnMasuk.classList.toggle('is-active', j === 'masuk');
   btnKeluar.classList.toggle('is-active', j === 'keluar');
+  kombinasiTerkunci = null;
+  if (typeof selSupplier !== 'undefined') selSupplier.reset();
+  if (typeof selPemilik !== 'undefined') selPemilik.reset();
+  if (typeof selLokasi !== 'undefined') selLokasi.reset();
+  if (typeof selBarang !== 'undefined') {
+    const barangDipilih = selBarang.getValue();
+    refreshKombinasiUI(barangDipilih ? barangDipilih.kode : null);
+  }
 }
+
+// kombinasiTerkunci = kombinasi (supplier+pemilik+lokasi) yang sedang
+// dipilih operator dari daftar "Stok Tersedia" saat lapor barang KELUAR.
+// null berarti belum ada yang dipilih / sedang mode MASUK (bebas pilih).
+let kombinasiTerkunci = null;
 
 selBarang = setupSearchableSelect({
   id: 'sel-barang',
@@ -2249,6 +2360,11 @@ selBarang = setupSearchableSelect({
   onSelect: (o) => {
     document.getElementById('kode-box').hidden = false;
     document.getElementById('kode-value').textContent = o.kode;
+    kombinasiTerkunci = null;
+    selSupplier.reset();
+    selPemilik.reset();
+    selLokasi.reset();
+    refreshKombinasiUI(o.kode);
   },
 });
 
@@ -2270,6 +2386,62 @@ selPemilik = setupSearchableSelect({
   // bisa (lewat menu Katalog).
   onSelect: () => {},
 });
+
+// Kunci/buka tombol dropdown Supplier & Pemilik. Dikunci saat mode KELUAR
+// dan barang sudah dipilih — supaya operator TIDAK bisa mengetik bebas
+// kombinasi supplier/pemilik sendiri, harus lewat kartu "Stok Tersedia".
+function setSupplierPemilikLocked(locked) {
+  const supplierBtn = document.getElementById('sel-supplier-btn');
+  const pemilikBtn = document.getElementById('sel-pemilik-btn');
+  [supplierBtn, pemilikBtn].forEach(b => { if (b) b.disabled = !!locked; });
+}
+
+// Render kartu "Stok Tersedia" — daftar kombinasi supplier+pemilik+lokasi
+// (beserta sisa stok & pallet) untuk barang yang dipilih. Hanya tampil
+// saat jenis === 'keluar'. Klik satu kartu = mengikat supplier+pemilik
+// sekaligus (lokasi tetap wajib dikonfirmasi lewat scan barcode fisik,
+// supaya tetap ada verifikasi barang benar-benar ada di rak tsb).
+function refreshKombinasiUI(kodeBarang) {
+  const box = document.getElementById('kombinasi-box');
+  const list = document.getElementById('kombinasi-list');
+  if (!box || !list) return;
+
+  if (jenis !== 'keluar' || !kodeBarang) {
+    box.hidden = true;
+    list.innerHTML = '';
+    setSupplierPemilikLocked(false);
+    return;
+  }
+
+  const combos = getKombinasiTersedia(currentEntries, kodeBarang);
+  box.hidden = false;
+  setSupplierPemilikLocked(true);
+
+  if (combos.length === 0) {
+    list.innerHTML = '<div class="no-result">Belum ada stok barang ini yang tercatat masuk dengan kombinasi supplier/pemilik/lokasi apa pun. Barang keluar tidak bisa dilaporkan.</div>';
+    return;
+  }
+
+  list.innerHTML = combos.map((c, i) => `
+    <button type="button" class="kombinasi-chip" data-idx="${i}">
+      <span class="kombinasi-chip-main">🏭 ${escapeHtml(c.supplier)} <span class="kombinasi-chip-sep">·</span> 🏢 ${escapeHtml(c.pemilik)}</span>
+      <span class="kombinasi-chip-sub">📍 ${escapeHtml(c.lokasi)} <span class="kombinasi-chip-sep">·</span> ${c.stok.toLocaleString('id-ID')} pcs${c.pallet ? ` <span class="kombinasi-chip-sep">·</span> ${roundPalletDisplay(c.pallet)} pallet` : ''}</span>
+    </button>
+  `).join('');
+
+  list.querySelectorAll('.kombinasi-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = combos[Number(btn.dataset.idx)];
+      kombinasiTerkunci = c;
+      selSupplier.setValue(c.supplier);
+      selPemilik.setValue(c.pemilik);
+      selLokasi.reset();
+      list.querySelectorAll('.kombinasi-chip').forEach(b => b.classList.remove('is-selected'));
+      btn.classList.add('is-selected');
+      showToast(`Kombinasi dipilih. Sekarang scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
+    });
+  });
+}
 
 // Lokasi Penyimpanan BUKAN dropdown pilihan manual — nilainya hanya bisa
 // diisi lewat hasil scan barcode (lihat onScanSuccess di bawah).
@@ -2482,6 +2654,10 @@ function resetForm() {
   selPemilik.reset();
   selLokasi.reset();
   document.getElementById('kode-box').hidden = true;
+  kombinasiTerkunci = null;
+  const kombinasiBox = document.getElementById('kombinasi-box');
+  if (kombinasiBox) kombinasiBox.hidden = true;
+  setSupplierPemilikLocked(false);
   inputJumlah.value = '';
   inputQtyPallet.value = '';
   inputJumlahPallet.value = '';
@@ -3733,14 +3909,21 @@ function renderRiwayatOperator() {
         <span class="ticket-time">${formatWaktu(t.createdAt)}</span>
       </div>
       <div class="ticket-grid">
-        <div><span class="lbl">Barang: </span>${escapeHtml(t.namaBarang)}</div>
+        <div><span class="lbl">Barang: </span><a class="link-barang" href="javascript:void(0)">${escapeHtml(t.namaBarang)}</a></div>
         <div><span class="lbl">Kode: </span><span class="mono">${escapeHtml(t.kodeBarang)}</span></div>
-        <div><span class="lbl">Lokasi: </span>${escapeHtml(t.lokasi)}</div>
-        <div><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
-        <div><span class="lbl">Tanggal: </span>${formatTanggal(t.tanggal)}</div>
+        <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier || '-')}</div>
+        <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik || '-')}</div>
+        <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
+        <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
+        ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet.toLocaleString('id-ID')} pcs</div>` : ''}
+        ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet.toLocaleString('id-ID')}</div>` : ''}
+        <div><span class="lbl">Tanggal Kedatangan: </span>${formatTanggal(t.tanggal)}</div>
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
+      ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit)` : ''}</div>` : ''}
     `;
+    card.querySelector('.link-barang:not(.link-lokasi)').addEventListener('click', () => openItemModal(t.kodeBarang));
+    card.querySelector('.link-lokasi').addEventListener('click', () => openLokasiModal(t.lokasi));
     riwayatOpList.appendChild(card);
   });
 }

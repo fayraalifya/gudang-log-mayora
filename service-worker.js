@@ -16,7 +16,7 @@
 // masalah error "Cannot read properties of null" yang sebelumnya muncul —
 // tab lama tetap memakai script.js versi lama yang sudah ada di memori).
 // ==========================================================================
-const CACHE_VERSION = 'gdpm-log-v6';
+const CACHE_VERSION = 'gdpm-log-v7';
 const APP_SHELL = [
   './',
   './index.html',
