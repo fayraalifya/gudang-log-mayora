@@ -950,10 +950,14 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 
 .modal-history-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
 .modal-history-row {
-  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; gap: 4px;
   font-size: 12.5px; padding: 8px 10px; background: var(--kertas); border: 1px solid var(--kraft-line); border-radius: 8px;
 }
+.modal-history-main {
+  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px;
+}
 .modal-history-row .badge-jenis { font-size: 9px; padding: 3px 7px; transform: none; }
+.modal-history-sub { font-size: 11px; padding-left: 2px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
 
 /* ==========================================================================
    TOAST
@@ -1186,8 +1190,8 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
   .header-user { width: 100%; justify-content: space-between; flex-wrap: wrap; }
   .header-status-pill { order: 3; flex: 1 1 100%; justify-content: center; }
   .modal-section-grid { grid-template-columns: 1fr; }
-  .modal-history-row { grid-template-columns: auto 1fr auto; }
-  .modal-history-row span:nth-child(5) { display: none; }
+  .modal-history-main { grid-template-columns: auto 1fr auto; }
+  .modal-history-main span:nth-child(4) { display: none; }
   .period-tabs { flex-direction: column; align-items: stretch; }
   .period-date { width: 100%; }
 }

@@ -1510,12 +1510,12 @@ function buildStokList(entries) {
     if (t.jenis === 'masuk') {
       item.masuk += t.jumlah;
       if (!item.lastMasuk || t.createdAt > item.lastMasuk.at) {
-        item.lastMasuk = { at: t.createdAt, tanggal: t.tanggal, jumlah: t.jumlah, lokasi: t.lokasi, supplier: t.supplier, operator: t.operator };
+        item.lastMasuk = { at: t.createdAt, tanggal: t.tanggal, jumlah: t.jumlah, lokasi: t.lokasi, supplier: t.supplier, pemilik: t.pemilik, qtyPerPallet: t.qtyPerPallet, jumlahPallet: t.jumlahPallet, operator: t.operator };
       }
     } else {
       item.keluar += t.jumlah;
       if (!item.lastKeluar || t.createdAt > item.lastKeluar.at) {
-        item.lastKeluar = { at: t.createdAt, tanggal: t.tanggal, jumlah: t.jumlah, lokasi: t.lokasi, operator: t.operator };
+        item.lastKeluar = { at: t.createdAt, tanggal: t.tanggal, jumlah: t.jumlah, lokasi: t.lokasi, pemilik: t.pemilik, qtyPerPallet: t.qtyPerPallet, jumlahPallet: t.jumlahPallet, operator: t.operator };
       }
     }
     if (t.updatedAt > item.updated) item.updated = t.updatedAt;
@@ -3386,13 +3386,17 @@ function openItemModal(kode) {
       <div>
         <h4>Terakhir Masuk</h4>
         ${item.lastMasuk
-          ? `<p>${formatTanggal(item.lastMasuk.tanggal)} — ${item.lastMasuk.jumlah} pcs<br><span class="muted">${escapeHtml(item.lastMasuk.supplier || '-')} · ${escapeHtml(item.lastMasuk.lokasi || '-')}</span></p>`
+          ? `<p>${formatTanggal(item.lastMasuk.tanggal)} — ${item.lastMasuk.jumlah} pcs<br>
+             <span class="muted">${escapeHtml(item.lastMasuk.supplier || '-')} · ${escapeHtml(item.lastMasuk.lokasi || '-')}</span><br>
+             <span class="muted">🏭 ${escapeHtml(item.lastMasuk.pemilik || '-')}${item.lastMasuk.jumlahPallet ? ` · 🧱 ${item.lastMasuk.jumlahPallet.toLocaleString('id-ID')} pallet${item.lastMasuk.qtyPerPallet ? ` (${item.lastMasuk.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}` : ''}</span></p>`
           : '<p class="muted">Belum pernah.</p>'}
       </div>
       <div>
         <h4>Terakhir Keluar</h4>
         ${item.lastKeluar
-          ? `<p>${formatTanggal(item.lastKeluar.tanggal)} — ${item.lastKeluar.jumlah} pcs<br><span class="muted">${escapeHtml(item.lastKeluar.lokasi || '-')}</span></p>`
+          ? `<p>${formatTanggal(item.lastKeluar.tanggal)} — ${item.lastKeluar.jumlah} pcs<br>
+             <span class="muted">${escapeHtml(item.lastKeluar.lokasi || '-')}</span><br>
+             <span class="muted">🏭 ${escapeHtml(item.lastKeluar.pemilik || '-')}${item.lastKeluar.jumlahPallet ? ` · 🧱 ${item.lastKeluar.jumlahPallet.toLocaleString('id-ID')} pallet${item.lastKeluar.qtyPerPallet ? ` (${item.lastKeluar.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}` : ''}</span></p>`
           : '<p class="muted">Belum pernah.</p>'}
       </div>
     </div>
@@ -3401,10 +3405,17 @@ function openItemModal(kode) {
       <div class="modal-history-list">
         ${historySorted.map(t => `
           <div class="modal-history-row">
-            <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · PNY' : ''}</span>
-            <span>${formatTanggal(t.tanggal)} · ${escapeHtml(t.lokasi)}</span>
-            <span>${t.jumlah} pcs</span>
-            <span class="muted">${escapeHtml(t.operator)}</span>
+            <div class="modal-history-main">
+              <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · PNY' : ''}</span>
+              <span>${formatTanggal(t.tanggal)} · ${escapeHtml(t.lokasi)}</span>
+              <span>${t.jumlah} pcs</span>
+              <span class="muted">${escapeHtml(t.operator)}</span>
+            </div>
+            <div class="modal-history-sub muted">
+              <span>🏭 ${escapeHtml(t.pemilik || '-')}</span>
+              ${t.jumlahPallet ? `<span>🧱 ${t.jumlahPallet.toLocaleString('id-ID')} pallet${t.qtyPerPallet ? ` (${t.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}</span>` : ''}
+              <span>📅 Kedatangan: ${formatTanggal(t.tanggal)}</span>
+            </div>
           </div>
         `).join('')}
       </div>
