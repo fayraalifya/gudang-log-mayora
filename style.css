@@ -710,6 +710,28 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 }
 .kode-value { font-family: var(--font-mono); font-weight: 600; font-size: 14px; margin-left: auto; }
 
+/* Kartu "Stok Tersedia" (pemilihan kombinasi supplier+pemilik+lokasi
+   saat lapor barang KELUAR) */
+.kombinasi-box { margin-top: -6px; }
+.kombinasi-list { display: flex; flex-direction: column; gap: 8px; }
+.kombinasi-chip {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  border: 2px solid var(--kraft-line); border-radius: 9px;
+  padding: 10px 14px; background: var(--kertas);
+  transition: border-color .15s, background .15s;
+  width: 100%;
+}
+.kombinasi-chip:hover { border-color: var(--emas); background: var(--emas-soft); }
+.kombinasi-chip.is-selected { border-color: var(--navy); background: var(--navy-pale); }
+.kombinasi-chip-main { font-size: 13.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kombinasi-chip-sub { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kombinasi-chip-sep { color: var(--kraft-muted); }
+.kombinasi-list .no-result {
+  font-size: 12.5px; color: var(--text-muted); background: var(--merah-soft);
+  border: 2px dashed var(--merah); border-radius: 9px; padding: 12px 14px; line-height: 1.5;
+}
+
+
 /* Searchable select */
 .searchable { position: relative; }
 .select-btn {
