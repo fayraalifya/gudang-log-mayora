@@ -3559,6 +3559,19 @@ function lokasiBreakdown(history) {
   return Object.entries(map).filter(([, v]) => v !== 0).sort((a, b) => b[1] - a[1]);
 }
 
+// Ambil qty/pallet dari transaksi PALING BARU di masing-masing lokasi —
+// dipakai untuk mengestimasi jumlah pallet dari stok yang sedang aktif.
+// Ini estimasi (bukan angka pasti), karena aplikasi mencatat jumlah pallet
+// per TRANSAKSI, bukan per satuan stok yang tersisa saat ini.
+function lokasiPalletHint(history) {
+  const map = {};
+  [...history].sort((a, b) => a.createdAt - b.createdAt).forEach(t => {
+    if (!t.lokasi || !t.qtyPerPallet) return;
+    map[t.lokasi] = t.qtyPerPallet;
+  });
+  return map;
+}
+
 function openItemModal(kode) {
   if (!kode) return;
   const items = buildStokList(currentEntries);
@@ -3567,6 +3580,7 @@ function openItemModal(kode) {
 
   const stok = item.masuk - item.keluar;
   const lokasiList = lokasiBreakdown(item.history);
+  const palletHintMap = lokasiPalletHint(item.history);
   const historySorted = [...item.history].sort((a, b) => b.createdAt - a.createdAt);
 
   modalBody.innerHTML = `
@@ -3582,7 +3596,22 @@ function openItemModal(kode) {
     <div class="modal-section">
       <h4>Lokasi Penyimpanan</h4>
       ${lokasiList.length
-        ? `<div class="lokasi-chips">${lokasiList.map(([lok, qty]) => `<button type="button" class="lokasi-chip" data-lokasi="${escapeHtml(lok)}">${escapeHtml(lok)} <b>${qty}</b></button>`).join('')}</div>`
+        ? `<div class="lokasi-cards">${lokasiList.map(([lok, qty]) => {
+            const qtyPerPallet = palletHintMap[lok];
+            const estPallet = qtyPerPallet ? Math.ceil(Math.abs(qty) / qtyPerPallet) : null;
+            return `
+            <button type="button" class="lokasi-card" data-lokasi="${escapeHtml(lok)}">
+              <div class="lokasi-card-top">
+                <span class="lokasi-card-nama mono">${escapeHtml(lok)}</span>
+                <span class="lokasi-card-qty">${qty.toLocaleString('id-ID')} <small>pcs</small></span>
+              </div>
+              <div class="lokasi-card-pallet">
+                ${estPallet
+                  ? `🧱 &asymp; ${estPallet.toLocaleString('id-ID')} pallet <span class="muted">(${qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)</span>`
+                  : `<span class="muted">Info pallet tidak tercatat</span>`}
+              </div>
+            </button>`;
+          }).join('')}</div>`
         : '<p class="muted">Tidak ada stok aktif di lokasi manapun.</p>'}
     </div>
     <div class="modal-section modal-section-grid">
@@ -3605,27 +3634,60 @@ function openItemModal(kode) {
     </div>
     <div class="modal-section">
       <h4>Riwayat Transaksi (${historySorted.length})</h4>
+      <p class="modal-history-hint muted">Klik satu baris untuk lihat detail lengkapnya.</p>
       <div class="modal-history-list">
-        ${historySorted.map(t => `
-          <div class="modal-history-row">
+        ${historySorted.map((t, idx) => `
+          <div class="modal-history-row" data-idx="${idx}" role="button" tabindex="0">
             <div class="modal-history-main">
               <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · PNY' : ''}</span>
               <span>${formatTanggal(t.tanggal)} · ${escapeHtml(t.lokasi)}</span>
-              <span>${t.jumlah} pcs</span>
+              <span>${t.jumlah.toLocaleString('id-ID')} pcs</span>
               <span class="muted">${escapeHtml(t.operator)}</span>
+              <svg class="modal-history-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
             </div>
             <div class="modal-history-sub muted">
               <span>🏭 ${escapeHtml(t.pemilik || '-')}</span>
               ${t.jumlahPallet ? `<span>🧱 ${t.jumlahPallet.toLocaleString('id-ID')} pallet${t.qtyPerPallet ? ` (${t.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}</span>` : ''}
-              <span>📅 Kedatangan: ${formatTanggal(t.tanggal)}</span>
+              <span>📅 ${formatTanggal(t.tanggal)}</span>
+            </div>
+            <div class="modal-history-detail" hidden>
+              ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
+              <div><span class="lbl">Lokasi</span><span class="link-inline" data-lokasi="${escapeHtml(t.lokasi)}">${escapeHtml(t.lokasi)}</span></div>
+              <div><span class="lbl">Keterangan</span><span>${escapeHtml(t.keterangan || '-')}</span></div>
+              <div><span class="lbl">Diinput</span><span>${t.createdAt ? formatWaktu(t.createdAt) : '-'}</span></div>
+              ${(t.editLog && t.editLog.length)
+                ? `<div><span class="lbl">Riwayat Edit</span><span>✏️ ${t.editLog.length}× diedit — terakhir oleh ${escapeHtml(t.editLog[t.editLog.length - 1].oleh)} · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}</span></div>`
+                : ''}
             </div>
           </div>
         `).join('')}
       </div>
     </div>
   `;
-  modalBody.querySelectorAll('.lokasi-chip').forEach(chip => {
-    chip.addEventListener('click', () => openLokasiModal(chip.dataset.lokasi));
+  modalBody.querySelectorAll('.lokasi-card').forEach(card => {
+    card.addEventListener('click', () => openLokasiModal(card.dataset.lokasi));
+  });
+  modalBody.querySelectorAll('.modal-history-row').forEach(row => {
+    const detail = row.querySelector('.modal-history-detail');
+    const toggle = () => {
+      const willOpen = detail.hidden;
+      detail.hidden = !willOpen;
+      row.classList.toggle('is-open', willOpen);
+    };
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.link-inline')) return; // ditangani listener lokasi terpisah
+      toggle();
+    });
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+    const lokasiLink = detail.querySelector('.link-inline');
+    if (lokasiLink) {
+      lokasiLink.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openLokasiModal(lokasiLink.dataset.lokasi);
+      });
+    }
   });
   itemModal.hidden = false;
 }

@@ -963,23 +963,43 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .modal-section p { margin: 0; font-size: 13.5px; line-height: 1.5; }
 .modal-section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
-.lokasi-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.lokasi-chip {
-  font-family: var(--font-mono); font-size: 11.5px; background: var(--navy-pale); color: var(--navy);
-  padding: 5px 10px; border-radius: 20px; display: inline-flex; align-items: center; gap: 5px;
+.lokasi-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.lokasi-card {
+  text-align: left; background: var(--navy-pale); border: 1px solid transparent; border-radius: 10px;
+  padding: 9px 12px; display: flex; flex-direction: column; gap: 4px; transition: 150ms ease;
 }
-.lokasi-chip b { font-family: var(--font-body); color: var(--merah); }
+.lokasi-card:hover { border-color: var(--navy); transform: translateY(-1px); }
+.lokasi-card:active { transform: translateY(0) scale(0.99); }
+.lokasi-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.lokasi-card-nama { font-size: 13px; color: var(--navy); font-weight: 600; }
+.lokasi-card-qty { font-family: var(--font-display); font-size: 16px; color: var(--merah); font-weight: 700; }
+.lokasi-card-qty small { font-family: var(--font-body); font-size: 10px; font-weight: 600; color: var(--merah); }
+.lokasi-card-pallet { font-size: 11px; color: var(--ink-soft); }
+.lokasi-card-pallet .muted { color: var(--text-muted); }
 
-.modal-history-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.modal-history-hint { font-size: 11.5px; margin: -2px 0 8px !important; }
+.modal-history-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
 .modal-history-row {
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 4px; cursor: pointer;
   font-size: 12.5px; padding: 8px 10px; background: var(--kertas); border: 1px solid var(--kraft-line); border-radius: 8px;
+  transition: 130ms ease;
 }
+.modal-history-row:hover { border-color: var(--emas); background: var(--navy-pale); }
+.modal-history-row:focus-visible { outline: 2px solid var(--navy); outline-offset: 1px; }
+.modal-history-row.is-open { border-color: var(--navy); }
 .modal-history-main {
-  display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px;
+  display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; gap: 10px;
 }
 .modal-history-row .badge-jenis { font-size: 9px; padding: 3px 7px; transform: none; }
 .modal-history-sub { font-size: 11px; padding-left: 2px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.modal-history-chevron { flex-shrink: 0; color: var(--text-muted); transition: transform 150ms ease; }
+.modal-history-row.is-open .modal-history-chevron { transform: rotate(180deg); color: var(--navy); }
+.modal-history-detail {
+  margin-top: 6px; padding-top: 8px; border-top: 1px dashed var(--kraft-line);
+  display: flex; flex-direction: column; gap: 5px; font-size: 12px; cursor: default;
+}
+.modal-history-detail .lbl { display: inline-block; min-width: 78px; color: var(--text-muted); font-weight: 600; }
+.modal-history-detail .link-inline { color: var(--navy); text-decoration: underline; cursor: pointer; }
 
 /* ==========================================================================
    TOAST
@@ -1212,8 +1232,9 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
   .header-user { width: 100%; justify-content: space-between; flex-wrap: wrap; }
   .header-status-pill { order: 3; flex: 1 1 100%; justify-content: center; }
   .modal-section-grid { grid-template-columns: 1fr; }
-  .modal-history-main { grid-template-columns: auto 1fr auto; }
+  .modal-history-main { grid-template-columns: auto 1fr auto auto; }
   .modal-history-main span:nth-child(4) { display: none; }
+  .lokasi-cards { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
   .period-tabs { flex-direction: column; align-items: stretch; }
   .period-date { width: 100%; }
 }
