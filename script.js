@@ -2917,23 +2917,15 @@ form.addEventListener('submit', async (e) => {
   // laporan DIBLOKIR TOTAL — tidak bisa disimpan sama sekali sampai
   // operator pilih lokasi/blok lain yang masih ada sisa kapasitas.
   if (jenis === 'masuk') {
-    const blokTujuan = getBlokFromLokasi(lokasi);
-    const batasBlok = BATAS_PALLET_BLOK[blokTujuan];
-    if (batasBlok) {
-      const blokSekarang = buildLokasiOccupancy(currentEntries).find(b => b.blok === blokTujuan);
-      const palletSekarang = blokSekarang ? blokSekarang.totalPallet : 0;
-      const palletBaru = jumlahPallet || 0;
-      const palletSetelah = palletSekarang + palletBaru;
-      if (palletSetelah > batasBlok) {
-        const sisaKapasitas = Math.max(batasBlok - palletSekarang, 0);
-        return showError(
-          `❌ Kapasitas Blok ${blokTujuan} tidak mencukupi. ` +
-          `Pallet saat ini: ${roundPalletDisplay(palletSekarang)}, batas: ${batasBlok.toLocaleString('id-ID')} pallet ` +
-          `(sisa kapasitas: ${roundPalletDisplay(sisaKapasitas)} pallet). ` +
-          `Laporan ini butuh ${roundPalletDisplay(palletBaru)} pallet — melebihi sisa kapasitas Blok ${blokTujuan}. ` +
-          `Pilih lokasi di blok lain atau kurangi jumlah barang.`
-        );
-      }
+    const cek = cekKapasitasBlok(lokasi, jumlahPallet || 0);
+    if (!cek.ok) {
+      return showError(
+        `❌ Kapasitas Blok ${cek.blok} tidak mencukupi. ` +
+        `Pallet saat ini: ${roundPalletDisplay(cek.sekarang)}, batas: ${cek.batas.toLocaleString('id-ID')} pallet ` +
+        `(sisa kapasitas: ${roundPalletDisplay(cek.sisa)} pallet). ` +
+        `Laporan ini butuh ${roundPalletDisplay(jumlahPallet || 0)} pallet — melebihi sisa kapasitas Blok ${cek.blok}. ` +
+        `Pilih lokasi di blok lain atau kurangi jumlah barang.`
+      );
     }
   }
 
@@ -3096,6 +3088,24 @@ if (formPenyesuaian) {
       }
     }
 
+    // ---- BLOKIR KAPASITAS BLOK — Penyesuaian Stok (tambah) ----
+    // Form ini tidak punya field qty-per-pallet, jadi kontribusi pallet
+    // dari penyesuaian TIDAK bisa dihitung persis. Sebagai jaring pengaman
+    // minimum: kalau Blok tujuan SUDAH di batas/lewat kapasitas (berdasar
+    // data yang tercatat), penambahan stok baru ke blok itu tetap DIBLOKIR
+    // TOTAL sampai ada barang keluar dari blok itu atau admin pilih lokasi
+    // di blok lain — supaya jalur ini tidak jadi celah untuk menambah stok
+    // ke blok yang sudah penuh.
+    if (adjArah === 'tambah') {
+      const cekAdj = cekKapasitasBlok(lokasi, 0);
+      if (!cekAdj.ok) {
+        return showAdjError(
+          `❌ Kapasitas Blok ${cekAdj.blok} sudah penuh (${roundPalletDisplay(cekAdj.sekarang)} / ${cekAdj.batas.toLocaleString('id-ID')} pallet). ` +
+          `Tidak bisa menambah stok ke lokasi ini sampai ada barang keluar dari Blok ${cekAdj.blok}, atau pilih lokasi di blok lain.`
+        );
+      }
+    }
+
     isSubmittingAdj = true;
     const submitBtn = document.getElementById('btn-adj-submit');
     const submitText = document.getElementById('btn-adj-submit-text');
@@ -3221,6 +3231,30 @@ const BATAS_PALLET_BLOK = {
   A: 1505, B: 5117, C: 5117, D: 4515, E: 5117, F: 4816,
   G: 1645, H: 5593, I: 5593, J: 4935, K: 5593, L: 5264,
 };
+
+// ---- Helper terpusat: cek sisa kapasitas pallet suatu Blok ----
+// Dipakai di SEMUA jalur yang bisa menambah pallet ke suatu blok (form
+// laporan Barang Masuk, Penyesuaian Stok admin, Edit Laporan admin) supaya
+// tidak ada celah satu jalur ke-cek sementara jalur lain tidak.
+//   lokasi          -> kode lokasi tujuan (blok diambil dari huruf/segmen pertamanya)
+//   deltaPallet     -> jumlah pallet yang MAU ditambahkan (0 kalau cuma mau tahu kondisi blok saat ini)
+//   entriesUntukHitung -> basis data transaksi yang dipakai (default currentEntries).
+//                          Dipakai saat simulasi edit laporan, di mana entri yang
+//                          sedang diedit sengaja dikeluarkan dulu dari daftar supaya
+//                          tidak dihitung dobel (kontribusi lama + kontribusi baru).
+// Kalau blok tidak terdaftar di BATAS_PALLET_BLOK, dianggap tidak ada batas (ok: true).
+function cekKapasitasBlok(lokasi, deltaPallet, entriesUntukHitung) {
+  const blok = getBlokFromLokasi(lokasi);
+  const batas = BATAS_PALLET_BLOK[blok];
+  if (!batas) return { ok: true, blok, batas: null, sekarang: 0, sisa: null, setelah: 0 };
+  const blokData = buildLokasiOccupancy(entriesUntukHitung || currentEntries).find(b => b.blok === blok);
+  const sekarang = blokData ? blokData.totalPallet : 0;
+  const setelah = sekarang + (deltaPallet || 0);
+  return {
+    ok: setelah <= batas, blok, batas, sekarang,
+    sisa: Math.max(batas - sekarang, 0), setelah,
+  };
+}
 
 // Ambil kode "blok" dari kode lokasi — blok = huruf/segmen pertama sebelum
 // tanda pemisah pertama (mis. lokasi "A-01-01" -> blok "A"). Kalau lokasi
@@ -4353,6 +4387,24 @@ function buildTicketCard(t) {
       const stokSimulasi = getStokAtLokasi(entriesSimulasi, t.kodeBarang, lok);
       if (stokSimulasi < 0) {
         return showToast(`Perubahan ini membuat stok "${t.namaBarang}" di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah atau lokasinya.`, 'error');
+      }
+    }
+
+    // ---- BLOKIR KAPASITAS BLOK — Edit Laporan ----
+    // Kalau laporan yang diedit ini BARANG MASUK dan lokasinya diubah,
+    // pallet-nya (t.jumlahPallet, tidak berubah oleh edit ini) akan
+    // "pindah" dari blok lama ke blok baru. Pastikan blok baru tidak jadi
+    // melebihi kapasitas akibat perpindahan ini — entriesTanpaIni dipakai
+    // sebagai basis (laporan ini sendiri dikeluarkan dulu) supaya
+    // kontribusi lamanya tidak ikut terhitung dobel di blok baru.
+    if (t.jenis === 'masuk' && t.jumlahPallet) {
+      const cekEdit = cekKapasitasBlok(newLokasi, t.jumlahPallet, entriesTanpaIni);
+      if (!cekEdit.ok) {
+        return showToast(
+          `Perubahan lokasi ini membuat Blok ${cekEdit.blok} melebihi kapasitas ` +
+          `(butuh ${roundPalletDisplay(t.jumlahPallet)} pallet, sisa kapasitas cuma ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet). ` +
+          `Pilih lokasi lain atau batalkan perubahan lokasi.`, 'error'
+        );
       }
     }
 
