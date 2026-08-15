@@ -3911,6 +3911,7 @@ function renderKatalog() {
   // baris yang langsung menampilkan info lengkap tanpa perlu klik dulu.
   katalogList.classList.add('stok-table');
   katalogList.classList.remove('folder-grid');
+  katalogList.classList.remove('bar-list');
 
   if (katalogMode === 'barang') {
     const items = buildStokList(currentEntries);
@@ -3956,6 +3957,45 @@ function renderKatalog() {
         ],
         onClick: () => openLokasiModal(l.lokasi),
       });
+    });
+
+  } else if (katalogMode === 'blok') {
+    // Mode BLOK — peta gudang per Blok (A–L), mirip "Status Lokasi per
+    // Blok" di dashboard admin, tapi dibuka juga untuk operator supaya
+    // operator bisa cari tahu sendiri rak mana yang kosong/terisi tanpa
+    // perlu akses admin. Menampilkan SEMUA lokasi (termasuk yang masih
+    // KOSONG), beda dari mode "Lokasi" di atas yang cuma menampilkan
+    // lokasi yang sudah ada stoknya.
+    const blokData = buildLokasiOccupancy(currentEntries);
+    const filtered = q
+      ? blokData.filter(b => b.blok.toLowerCase().includes(q) || b.slots.some(s => s.lokasi.toLowerCase().includes(q)))
+      : blokData;
+    katalogList.classList.remove('stok-table');
+    katalogList.classList.add('bar-list');
+    if (blokData.length === 0) return setKatalogEmpty('Belum ada data lokasi/blok tercatat.');
+    if (filtered.length === 0) return setKatalogEmpty('Tidak ada blok yang cocok dengan pencarian.');
+    katalogEmpty.hidden = true;
+    katalogHint.textContent = `📁 ${blokData.length} blok gudang. Klik satu blok untuk lihat rak mana yang terisi/kosong, lalu klik rak untuk lihat barang & riwayat lengkapnya.`;
+    filtered.forEach(b => {
+      const total = b.terisi + b.kosong;
+      const batasBlok = BATAS_PALLET_BLOK[b.blok];
+      const isOver = batasBlok ? b.totalPallet > batasBlok : false;
+      const pct = batasBlok
+        ? Math.round((b.totalPallet / batasBlok) * 100)
+        : (total > 0 ? Math.round((b.terisi / total) * 100) : 0);
+      const barWidthPct = Math.min(pct, 100);
+      const row = document.createElement('div');
+      row.className = 'bar-row bar-row-blok' + (isOver ? ' is-over' : '');
+      row.innerHTML = `
+        <div class="bar-row-top">
+          <span class="bar-row-name mono">Blok ${escapeHtml(b.blok)} <span class="muted">(${b.terisi}/${total} terisi · ${b.kosong} kosong)</span></span>
+          <span class="bar-row-val">${roundPalletDisplay(b.totalPallet)}${batasBlok ? ` / ${batasBlok.toLocaleString('id-ID')}` : ''} pallet${batasBlok ? ` · ${pct}%` : ''}</span>
+        </div>
+        <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(barWidthPct, total > 0 && b.terisi > 0 ? 4 : 0)}%"></div></div>
+        ${isOver ? `<div class="bar-row-warning">⚠️ Kapasitas terlampaui (batas ${batasBlok.toLocaleString('id-ID')} pallet)</div>` : ''}
+      `;
+      row.addEventListener('click', () => openBlokModal(b.blok));
+      katalogList.appendChild(row);
     });
 
   } else if (katalogMode === 'supplier' || katalogMode === 'pemilik') {
