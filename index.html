@@ -691,6 +691,22 @@
           <div id="blok-empty" class="vis-empty">Belum ada data lokasi tercatat.</div>
           <div class="bar-list" id="blok-list"></div>
         </div>
+        <!-- STATUS LOKASI PER BARANG — cari satu barang (dari seluruh master
+             data, bukan cuma yang sudah pernah tercatat), lalu klik untuk
+             lihat peta blok/rak mana saja yang terisi & kosong khusus untuk
+             barang itu. Ditaruh di dashboard (bukan di Pengelolaan Barang)
+             supaya jadi satu tempat untuk "cek stok & lokasi", terpisah dari
+             tempat kelola data master (tambah/edit/hapus SKU). -->
+        <div class="vis-card vis-card-full">
+          <div class="vis-card-title"><span class="vis-card-icon">🔎</span>Status Lokasi per Barang — Terisi &amp; Kosong (saat ini)</div>
+          <p class="vis-hint muted">Cari nama atau kode barang, lalu klik hasilnya untuk lihat peta rak — hijau = terisi, putus-putus = kosong.</p>
+          <div class="search-inline" style="margin-bottom:12px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="search-lokasi-barang" placeholder="Ketik nama atau kode barang...">
+          </div>
+          <div id="lokasi-barang-empty" class="vis-empty">Ketik nama atau kode barang di atas untuk mulai mencari.</div>
+          <div class="bar-list" id="lokasi-barang-list"></div>
+        </div>
       </section>
 
       </div>
@@ -778,10 +794,17 @@
             Tambah Barang
           </button>
         </div>
-        <p class="katalog-hint">Kelola daftar kode barang (SKU) yang digunakan di gudang Anda.</p>
+        <p class="katalog-hint">Kelola daftar kode barang (SKU) yang digunakan di gudang Anda. Barang dikelompokkan otomatis per blok berdasarkan kata pertama pada nama (mis. "CRT", "GB", "TIN").</p>
         <div class="search-inline" style="margin-bottom:16px;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           <input type="text" id="search-barang" placeholder="Cari kode atau nama barang...">
+        </div>
+        <div class="katalog-group-toolbar">
+          <span id="barang-total-label" class="katalog-total-label">-</span>
+          <div class="katalog-group-toolbar-actions">
+            <button type="button" class="btn-link-small" id="btn-buka-semua-blok">Buka Semua</button>
+            <button type="button" class="btn-link-small" id="btn-tutup-semua-blok">Tutup Semua</button>
+          </div>
         </div>
         <div id="barang-empty" class="empty-state">Belum ada kode barang.</div>
         <div id="barang-list" class="katalog-list"></div>

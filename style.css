@@ -1092,6 +1092,16 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .bar-row-blok .bar-row-fill { background: var(--oranye); }
 .bar-row:hover .bar-row-name { color: var(--merah); text-decoration: underline; }
 
+/* Blok yang pallet-nya sudah melebihi batas kapasitas (BATAS_PALLET_BLOK) */
+.bar-row-blok.is-over .bar-row-fill { background: var(--merah); }
+.bar-row-blok.is-over .bar-row-val { color: var(--merah); }
+.bar-row-warning {
+  margin-top: 6px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(214, 69, 65, 0.12); border: 1px solid rgba(214, 69, 65, 0.35);
+  color: var(--merah); font-size: 11.5px; font-weight: 600; line-height: 1.4;
+}
+.modal-stat-small.is-over-text { color: var(--merah); }
+
 /* Peta lokasi per blok (modal) — grid kecil semua rak, TERISI vs KOSONG */
 .lokasi-map-legend { display: flex; gap: 16px; margin-bottom: 10px; }
 .lokasi-map-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
@@ -1099,18 +1109,52 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .lokasi-map-dot.is-terisi { background: var(--hijau); }
 .lokasi-map-dot.is-kosong { background: var(--kraft); border: 1.5px dashed var(--kraft-muted); }
 .lokasi-map-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-  gap: 5px; max-height: 320px; overflow-y: auto; padding: 2px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px; max-height: 400px; overflow-y: auto; padding: 2px;
 }
 .lokasi-map-cell {
-  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
-  border-radius: 6px; padding: 7px 3px; text-align: center;
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  border-radius: 8px; padding: 7px 8px; text-align: left;
   border: 1.5px solid transparent; cursor: pointer; transition: transform .1s;
-  line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-height: 48px;
 }
-.lokasi-map-cell:hover { transform: scale(1.06); }
-.lokasi-map-cell.is-terisi { background: var(--hijau-soft); color: var(--hijau); border-color: var(--hijau); }
-.lokasi-map-cell.is-kosong { background: var(--kertas); color: var(--kraft-muted); border-color: var(--kraft-line); border-style: dashed; }
+.lokasi-map-cell:hover { transform: scale(1.04); }
+.lokasi-map-cell.is-terisi { background: var(--hijau-soft); border-color: var(--hijau); }
+.lokasi-map-cell.is-kosong { background: var(--kertas); border-color: var(--kraft-line); border-style: dashed; }
+.lokasi-map-code {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  color: var(--text-muted); letter-spacing: 0.3px;
+}
+.lokasi-map-cell.is-terisi .lokasi-map-code { color: var(--hijau); }
+
+/* Peta lokasi per barang (di dalam modal detail barang) — daftar blok yang
+   bisa dibuka/tutup satu-satu, tiap blok berisi grid rak yang sama seperti
+   "Status Lokasi per Blok" di dashboard, tapi statusnya khusus barang ini. */
+.item-blok-list { display: flex; flex-direction: column; gap: 8px; }
+.item-blok-group {
+  border: 1px solid var(--kraft-line); border-radius: 10px; overflow: hidden;
+}
+.item-blok-header {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--kertas); border: none; cursor: pointer;
+  text-align: left; font: inherit; color: var(--ink);
+}
+.item-blok-header:hover { filter: brightness(0.97); }
+.item-blok-header .katalog-group-title { font-weight: 700; font-size: 13px; }
+.item-blok-header .katalog-group-count {
+  margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
+  background: #fff; border: 1px solid var(--kraft-line); border-radius: 999px; padding: 2px 10px;
+}
+.item-blok-header .katalog-group-count.has-stock { color: var(--hijau); border-color: var(--hijau); }
+.item-blok-grid-wrap { padding: 10px 12px; }
+.item-blok-grid-wrap[hidden] { display: none; }
+.lokasi-map-barang {
+  font-size: 10.5px; font-weight: 600; color: var(--ink-soft); line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical; max-width: 100%;
+}
+.lokasi-map-barang.muted { font-weight: 500; }
+.lokasi-map-more { color: var(--text-muted); font-weight: 500; }
 
 @media (max-width: 900px) {
   .vis-row-top { grid-template-columns: 1fr; }
@@ -1493,9 +1537,52 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   font-size: 13px; color: var(--text-muted); margin: 8px 0 16px 0;
 }
 
-.katalog-list {
-  display: flex; flex-direction: column; gap: 8px;
+.katalog-group-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
 }
+.katalog-total-label { font-size: 12.5px; color: var(--text-muted); font-weight: 600; }
+.katalog-group-toolbar-actions { display: flex; gap: 14px; }
+.btn-link-small {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: var(--accent-color, #2F5496);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.btn-link-small:hover { opacity: 0.75; }
+
+.katalog-list {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.katalog-group {
+  border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden;
+  background: var(--bg-secondary);
+}
+.katalog-group-header {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; background: var(--bg-tertiary, var(--bg-secondary));
+  border: none; cursor: pointer; text-align: left; font: inherit;
+  color: var(--text-primary);
+}
+.katalog-group-header:hover { filter: brightness(0.97); }
+.katalog-group-chevron {
+  display: inline-flex; transition: transform 150ms ease; color: var(--text-muted);
+  flex-shrink: 0;
+}
+.katalog-group-chevron.is-open { transform: rotate(180deg); }
+.katalog-group-title {
+  font-weight: 700; font-size: 13.5px; letter-spacing: 0.02em;
+}
+.katalog-group-count {
+  margin-left: auto; font-size: 12px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg-primary); border: 1px solid var(--border-color);
+  border-radius: 999px; padding: 2px 10px;
+}
+.katalog-group-body {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; padding-top: 0;
+}
+.katalog-group-body[hidden] { display: none; }
+
 .katalog-item {
   display: flex; justify-content: space-between; align-items: center;
   background: var(--bg-secondary); border: 1px solid var(--border-color);
@@ -1504,6 +1591,16 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .katalog-item-info { flex: 1; }
 .katalog-item-label { font-weight: 600; color: var(--text-primary); }
 .katalog-item-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.katalog-item-stok { 
+  font-size: 11px; 
+  color: var(--success-color, #388E3C); 
+  margin-top: 6px; 
+  font-weight: 600;
+  padding: 4px 8px;
+  background: var(--success-bg, #E8F5E9);
+  border-radius: 4px;
+  display: inline-block;
+}
 .katalog-item-actions {
   display: flex; gap: 8px;
 }

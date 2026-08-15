@@ -1,4 +1,13 @@
 /* ==========================================================================
+   GLOBAL STATE & UTILITIES
+========================================================================== */
+
+// Deklarasi global variables untuk transaksi & data master
+// Harus di-deklarasikan DI ATAS class definition untuk avoid TDZ (Temporal Dead Zone)
+let currentEntries = [];
+let currentEntriesRaw = [];
+
+/* ==========================================================================
    UTILITY FUNCTIONS
 ========================================================================== */
 
@@ -336,6 +345,20 @@ class KatalogManager {
     this.supplierEditing = null;
     this.pemilikEditing = null;
     this.lokasiEditing = null;
+    // Blok mana saja yang sedang dibuka (expanded) di daftar Kode Barang.
+    // Disimpan sebagai Set berisi nama blok, supaya tetap terbuka/tertutup
+    // walau list di-render ulang (misal ada barang baru masuk dari admin lain).
+    this.expandedBarangGroups = new Set();
+  }
+
+  // Ambil "blok" dari nama barang = kata pertama pada nama (contoh: "CRT B1
+  // DANISA 12X454G..." -> blok "CRT"). Dipakai untuk mengelompokkan daftar
+  // kode barang di panel Pengelolaan Barang supaya tidak jadi satu list
+  // panjang yang susah disisir manual saat baris data sudah ratusan.
+  getBlokBarang(nama) {
+    const trimmed = (nama || '').trim();
+    if (!trimmed) return 'LAINNYA';
+    return trimmed.split(/\s+/)[0].toUpperCase();
   }
 
   init() {
@@ -348,6 +371,15 @@ class KatalogManager {
     document.getElementById('btn-tambah-barang')?.addEventListener('click', () => this.openBarangForm());
     document.getElementById('form-barang')?.addEventListener('submit', (e) => this.saveBarang(e));
     document.getElementById('search-barang')?.addEventListener('input', (e) => this.filterBarang(e.target.value));
+    document.getElementById('btn-buka-semua-blok')?.addEventListener('click', () => {
+      const allBlok = new Set((MASTER_DATA.barang || []).map(b => this.getBlokBarang(b.nama)));
+      this.expandedBarangGroups = allBlok;
+      this.renderBarangList(document.getElementById('search-barang')?.value || '');
+    });
+    document.getElementById('btn-tutup-semua-blok')?.addEventListener('click', () => {
+      this.expandedBarangGroups.clear();
+      this.renderBarangList(document.getElementById('search-barang')?.value || '');
+    });
 
     // Supplier
     document.getElementById('btn-tambah-supplier')?.addEventListener('click', () => this.openSupplierForm());
@@ -425,40 +457,134 @@ class KatalogManager {
     }
   }
 
+  // Hitung stok semua barang dalam SATU PASS — efisien untuk 671+ item.
+  // Mengembalikan Map { kodeBarang => totalStok }
+  calculateAllBarangStok(entries = []) {
+    const stokMap = new Map();
+    if (!entries || !Array.isArray(entries)) return stokMap;
+    entries.forEach(entry => {
+      if (!entry || !entry.kodeBarang) return;
+      const current = stokMap.get(entry.kodeBarang) || 0;
+      const delta = entry.jenis === 'masuk' ? entry.jumlah : -entry.jumlah;
+      stokMap.set(entry.kodeBarang, current + delta);
+    });
+    return stokMap;
+  }
+
   renderBarangList(filter = '') {
     const container = document.getElementById('barang-list');
     const empty = document.getElementById('barang-empty');
+    const countLabel = document.getElementById('barang-total-label');
     if (!container) return;
 
-    let barang = [...(MASTER_DATA.barang || [])];
-    if (filter) {
-      const q = filter.toLowerCase();
-      barang = barang.filter(b => 
-        (b.kode || '').toLowerCase().includes(q) || 
+    const allBarang = [...(MASTER_DATA.barang || [])];
+    const q = filter.trim().toLowerCase();
+    
+    // Hitung stok SEKALI SAJA untuk semua barang (single pass)
+    // currentEntries mungkin belum siap saat first render → fallback ke []
+    const stokMap = this.calculateAllBarangStok(typeof currentEntries !== 'undefined' ? currentEntries : []);
+    
+    // SELALU tampilkan semua barang, urutkan dari yang paling banyak stoknya
+    // (most filled first), kemudian alphabetically untuk tie-breaking.
+    let barang = allBarang.sort((a, b) => {
+      const stokA = stokMap.get(a.kode) || 0;
+      const stokB = stokMap.get(b.kode) || 0;
+      if (stokB !== stokA) return stokB - stokA; // Paling banyak stok di atas
+      return (a.nama || '').localeCompare(b.nama || '');
+    });
+
+    // Jika ada search query, filter daftar (tapi JANGAN sembunyikan semuanya)
+    // — search adalah filter, bukan syarat wajib.
+    let displayBarang = barang;
+    let totalMatches = barang.length;
+    if (q) {
+      displayBarang = barang.filter(b =>
+        (b.kode || '').toLowerCase().includes(q) ||
         (b.nama || '').toLowerCase().includes(q)
       );
     }
 
-    if (barang.length === 0) {
+    if (countLabel) {
+      if (q) {
+        countLabel.textContent = `${displayBarang.length} dari ${totalMatches} barang cocok`;
+      } else {
+        countLabel.textContent = `${totalMatches} barang total`;
+      }
+    }
+
+    if (displayBarang.length === 0) {
       container.innerHTML = '';
       empty.hidden = false;
       return;
     }
     empty.hidden = true;
 
-    container.innerHTML = barang.map(b => `
-      <div class="katalog-item">
-        <div class="katalog-item-info">
-          <div class="katalog-item-label">${escapeHtml(b.kode || '-')}</div>
-          <div class="katalog-item-sub">${escapeHtml(b.nama || '-')}</div>
-        </div>
-        <div class="katalog-item-actions">
-          <button type="button" class="btn-katalog-edit" data-action="edit-barang" data-kode="${escapeHtml(b.kode || '')}">Edit</button>
-          <button type="button" class="btn-katalog-delete" data-action="delete-barang" data-kode="${escapeHtml(b.kode || '')}">Hapus</button>
-        </div>
-      </div>
-    `).join('');
+    // Kelompokkan per blok (kata pertama nama barang), TANPA re-sort
+    // (sudah diurutkan oleh stok di atas). Blok tetap grouped untuk UX.
+    const groups = new Map();
+    displayBarang.forEach(b => {
+      const blok = this.getBlokBarang(b.nama);
+      if (!groups.has(blok)) groups.set(blok, []);
+      groups.get(blok).push(b);
+    });
+    
+    // Urutkan blok berdasarkan stok TOTAL di dalam blok (paling banyak di atas)
+    const sortedBlok = [...groups.keys()].sort((a, b) => {
+      const totalA = groups.get(a).reduce((sum, item) => sum + (stokMap.get(item.kode) || 0), 0);
+      const totalB = groups.get(b).reduce((sum, item) => sum + (stokMap.get(item.kode) || 0), 0);
+      if (totalB !== totalA) return totalB - totalA;
+      return a.localeCompare(b);
+    });
 
+    // Saat sedang mencari, otomatis buka semua blok supaya hasil terlihat
+    if (q) {
+      sortedBlok.forEach(blok => this.expandedBarangGroups.add(blok));
+    }
+
+    container.innerHTML = sortedBlok.map(blok => {
+      const items = groups.get(blok);
+      const isOpen = this.expandedBarangGroups.has(blok);
+      return `
+        <div class="katalog-group" data-blok="${escapeHtml(blok)}">
+          <button type="button" class="katalog-group-header" data-action="toggle-blok" data-blok="${escapeHtml(blok)}" aria-expanded="${isOpen}">
+            <span class="katalog-group-chevron ${isOpen ? 'is-open' : ''}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
+            </span>
+            <span class="katalog-group-title">${escapeHtml(blok)}</span>
+            <span class="katalog-group-count">${items.length} item</span>
+          </button>
+          <div class="katalog-group-body" ${isOpen ? '' : 'hidden'}>
+            ${items.map(b => {
+              const stok = stokMap.get(b.kode) || 0;
+              return `
+              <div class="katalog-item">
+                <div class="katalog-item-info">
+                  <div class="katalog-item-label">${escapeHtml(b.kode || '-')}</div>
+                  <div class="katalog-item-sub">${escapeHtml(b.nama || '-')}</div>
+                  <div class="katalog-item-stok">Stok: ${stok} pcs</div>
+                </div>
+                <div class="katalog-item-actions">
+                  <button type="button" class="btn-katalog-edit" data-action="edit-barang" data-kode="${escapeHtml(b.kode || '')}">Edit</button>
+                  <button type="button" class="btn-katalog-delete" data-action="delete-barang" data-kode="${escapeHtml(b.kode || '')}">Hapus</button>
+                </div>
+              </div>
+            `}).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('[data-action="toggle-blok"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const blok = btn.dataset.blok;
+        if (this.expandedBarangGroups.has(blok)) {
+          this.expandedBarangGroups.delete(blok);
+        } else {
+          this.expandedBarangGroups.add(blok);
+        }
+        this.renderBarangList(document.getElementById('search-barang')?.value || '');
+      });
+    });
     container.querySelectorAll('[data-action="edit-barang"]').forEach(btn => {
       btn.addEventListener('click', () => this.editBarang(btn.dataset.kode));
     });
@@ -1577,8 +1703,6 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 ========================================================================== */
 const RINGKASAN_SHEET = 'Ringkasan Stok';
 
-let currentEntries = [];
-let currentEntriesRaw = [];
 let unsubscribeLaporan = null;
 let firestoreReady = false;
 
@@ -2471,9 +2595,23 @@ function refreshKombinasiUI(kodeBarang) {
       selSupplier.setValue(c.supplier);
       selPemilik.setValue(c.pemilik);
       selLokasi.reset();
+
+      // Otomatis isi Jumlah Barang & Tanggal begitu operator memilih
+      // kombinasi stok — mengikuti data stok yang dipilih (bukan diketik
+      // manual lagi). Jumlah diisi dengan SISA STOK kombinasi ini (operator
+      // tetap boleh menurunkan angkanya kalau cuma mau keluarkan sebagian),
+      // dan Tanggal diisi dengan tanggal kedatangan kombinasi ini.
+      if (inputJumlah) {
+        inputJumlah.value = Number(c.stok || 0).toLocaleString('id-ID');
+        hitungJumlahPallet();
+      }
+      if (inputTanggal && c.tanggalKedatangan) {
+        inputTanggal.value = c.tanggalKedatangan;
+      }
+
       list.querySelectorAll('.kombinasi-chip').forEach(b => b.classList.remove('is-selected'));
       btn.classList.add('is-selected');
-      showToast(`Kombinasi dipilih. Sekarang scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
+      showToast(`Kombinasi dipilih. Jumlah & tanggal terisi otomatis sesuai stok. Sekarang scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
     });
   });
 }
@@ -2772,6 +2910,33 @@ form.addEventListener('submit', async (e) => {
     }
   }
 
+  // ---- BLOKIR KAPASITAS BLOK — khusus BARANG MASUK ----
+  // Sebelum laporan disimpan, cek apakah pallet baru ini akan membuat
+  // total pallet di Blok tujuan (huruf pertama kode lokasi) melebihi
+  // batas kapasitas Blok tsb (lihat BATAS_PALLET_BLOK). Kalau melebihi,
+  // laporan DIBLOKIR TOTAL — tidak bisa disimpan sama sekali sampai
+  // operator pilih lokasi/blok lain yang masih ada sisa kapasitas.
+  if (jenis === 'masuk') {
+    const blokTujuan = getBlokFromLokasi(lokasi);
+    const batasBlok = BATAS_PALLET_BLOK[blokTujuan];
+    if (batasBlok) {
+      const blokSekarang = buildLokasiOccupancy(currentEntries).find(b => b.blok === blokTujuan);
+      const palletSekarang = blokSekarang ? blokSekarang.totalPallet : 0;
+      const palletBaru = jumlahPallet || 0;
+      const palletSetelah = palletSekarang + palletBaru;
+      if (palletSetelah > batasBlok) {
+        const sisaKapasitas = Math.max(batasBlok - palletSekarang, 0);
+        return showError(
+          `❌ Kapasitas Blok ${blokTujuan} tidak mencukupi. ` +
+          `Pallet saat ini: ${roundPalletDisplay(palletSekarang)}, batas: ${batasBlok.toLocaleString('id-ID')} pallet ` +
+          `(sisa kapasitas: ${roundPalletDisplay(sisaKapasitas)} pallet). ` +
+          `Laporan ini butuh ${roundPalletDisplay(palletBaru)} pallet — melebihi sisa kapasitas Blok ${blokTujuan}. ` +
+          `Pilih lokasi di blok lain atau kurangi jumlah barang.`
+        );
+      }
+    }
+  }
+
   isSubmittingLaporan = true;
   const submitBtn = document.getElementById('btn-submit');
   const submitText = document.getElementById('btn-submit-text');
@@ -3045,6 +3210,18 @@ periodDatePicker.addEventListener('change', () => {
   renderRiwayat();
 });
 
+// ---- BATAS KAPASITAS PALLET PER BLOK ----
+// Jumlah maksimal pallet yang boleh ditampung tiap Blok gudang (A–L).
+// Dipakai untuk (1) menampilkan progress kapasitas di dashboard "Ringkasan
+// Pallet per Blok", dan (2) memperingatkan operator saat input BARANG MASUK
+// yang membuat suatu Blok melebihi batas ini (lihat pengecekan di
+// form.addEventListener('submit', ...) untuk jenis === 'masuk').
+// Ubah angka di bawah ini kalau batas kapasitas gudang berubah.
+const BATAS_PALLET_BLOK = {
+  A: 1505, B: 5117, C: 5117, D: 4515, E: 5117, F: 4816,
+  G: 1645, H: 5593, I: 5593, J: 4935, K: 5593, L: 5264,
+};
+
 // Ambil kode "blok" dari kode lokasi — blok = huruf/segmen pertama sebelum
 // tanda pemisah pertama (mis. lokasi "A-01-01" -> blok "A"). Kalau lokasi
 // tidak memakai tanda pemisah, ambil karakter pertama saja sebagai fallback.
@@ -3093,6 +3270,117 @@ function buildLokasiOccupancy(entries) {
   return Object.values(bloks).sort((a, b) => a.blok.localeCompare(b.blok));
 }
 
+// Sama seperti buildLokasiOccupancy di atas, tapi status TERISI/KOSONG
+// dihitung khusus untuk SATU kode barang tertentu — bukan "ada barang
+// apapun di rak ini", melainkan "barang INI ada di rak ini atau tidak".
+// Dipakai supaya saat admin klik satu barang, langsung kelihatan peta
+// blok/rak mana saja yang sudah terisi barang tsb dan mana yang masih
+// kosong untuknya (persis pola "Status Lokasi per Blok" di dashboard,
+// tapi difokuskan ke satu barang).
+function buildItemLokasiOccupancy(entries, kode) {
+  const locStock = buildLocationStock(entries);
+  const stockMap = new Map(locStock.map(l => [l.lokasi, l]));
+  const masterLokasi = (typeof MASTER_DATA !== 'undefined' && MASTER_DATA.lokasi) ? MASTER_DATA.lokasi : [];
+  const allLokasi = new Set(masterLokasi);
+  entries.forEach(t => { if (t.lokasi) allLokasi.add(t.lokasi); });
+
+  const bloks = {};
+  allLokasi.forEach(lokasi => {
+    const blok = getBlokFromLokasi(lokasi);
+    if (!bloks[blok]) bloks[blok] = { blok, slots: [], terisi: 0, kosong: 0 };
+    const b = bloks[blok];
+    const locData = stockMap.get(lokasi);
+    const itemHere = locData ? locData.items.find(it => (it.kode || it.nama) === kode) : null;
+    const isTerisi = !!(itemHere && itemHere.qty > 0);
+    b.slots.push({
+      lokasi,
+      status: isTerisi ? 'terisi' : 'kosong',
+      qty: itemHere ? itemHere.qty : 0,
+      pallet: itemHere ? itemHere.pallet : 0,
+    });
+    if (isTerisi) b.terisi++; else b.kosong++;
+  });
+
+  Object.values(bloks).forEach(b => {
+    b.slots.sort((x, y) => x.lokasi.localeCompare(y.lokasi, undefined, { numeric: true }));
+  });
+  return Object.values(bloks).sort((a, b) => a.blok.localeCompare(b.blok));
+}
+
+// Bangun HTML peta blok/rak (Terisi & Kosong) untuk SATU barang tertentu,
+// plus attach event listener-nya setelah HTML ini dipasang ke DOM (dipanggil
+// lewat attachItemLokasiMapEvents). Dipakai di modal detail barang, baik
+// yang sudah punya riwayat transaksi maupun yang belum sama sekali.
+function buildItemLokasiMapHtml(kode) {
+  const bloks = buildItemLokasiOccupancy(currentEntries, kode);
+  const totalSlot = bloks.reduce((s, b) => s + b.terisi + b.kosong, 0);
+  const totalTerisi = bloks.reduce((s, b) => s + b.terisi, 0);
+
+  if (totalSlot === 0) {
+    return '<p class="muted">Belum ada data lokasi (rak) di master data untuk dipetakan.</p>';
+  }
+
+  return `
+    <div class="lokasi-map-legend">
+      <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-terisi"></i>Terisi barang ini</span>
+      <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-kosong"></i>Kosong</span>
+    </div>
+    <p class="modal-history-hint muted">${totalTerisi.toLocaleString('id-ID')} dari ${totalSlot.toLocaleString('id-ID')} lokasi terisi barang ini. Klik nama blok untuk buka/tutup peta raknya.</p>
+    <div class="item-blok-list">
+      ${bloks.map(b => {
+        const total = b.terisi + b.kosong;
+        const isOpen = b.terisi > 0;
+        return `
+        <div class="item-blok-group">
+          <button type="button" class="item-blok-header" data-action="toggle-item-blok" aria-expanded="${isOpen}">
+            <span class="katalog-group-chevron ${isOpen ? 'is-open' : ''}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
+            </span>
+            <span class="katalog-group-title mono">Blok ${escapeHtml(b.blok)}</span>
+            <span class="katalog-group-count${b.terisi > 0 ? ' has-stock' : ''}">${b.terisi}/${total} terisi</span>
+          </button>
+          <div class="item-blok-grid-wrap" ${isOpen ? '' : 'hidden'}>
+            <div class="lokasi-map-grid">
+              ${b.slots.map(s => {
+                const shortLabel = s.lokasi.replace(new RegExp('^' + b.blok + '[-_./\\\\s]?'), '') || s.lokasi;
+                const title = s.status === 'terisi'
+                  ? `${s.lokasi} — Terisi (${s.qty.toLocaleString('id-ID')} pcs${s.pallet ? `, ${roundPalletDisplay(s.pallet)} pallet` : ''})`
+                  : `${s.lokasi} — Kosong, barang ini belum ada di sini`;
+                return `<button type="button" class="lokasi-map-cell is-${s.status}" data-lokasi="${escapeHtml(s.lokasi)}" data-status="${s.status}" title="${escapeHtml(title)}">${escapeHtml(shortLabel)}</button>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+// Pasang event listener untuk peta blok hasil buildItemLokasiMapHtml() di
+// atas. Dipisah dari fungsi pembuat HTML supaya bisa dipanggil ulang tiap
+// kali HTML-nya baru saja disisipkan ke modalBody.
+function attachItemLokasiMapEvents(root) {
+  root.querySelectorAll('[data-action="toggle-item-blok"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wrap = btn.parentElement.querySelector('.item-blok-grid-wrap');
+      const chevron = btn.querySelector('.katalog-group-chevron');
+      const willOpen = wrap.hidden;
+      wrap.hidden = !willOpen;
+      chevron.classList.toggle('is-open', willOpen);
+      btn.setAttribute('aria-expanded', String(willOpen));
+    });
+  });
+  root.querySelectorAll('.lokasi-map-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      if (cell.dataset.status === 'terisi') {
+        openLokasiModal(cell.dataset.lokasi);
+      } else {
+        showToast(`Barang ini belum ada di lokasi ${cell.dataset.lokasi}.`, 'info');
+      }
+    });
+  });
+}
+
 function renderBlokPallet() {
   const blokListEl = document.getElementById('blok-list');
   const blokEmptyEl = document.getElementById('blok-empty');
@@ -3122,15 +3410,28 @@ function renderBlokPallet() {
 
   blokData.forEach(b => {
     const total = b.terisi + b.kosong;
-    const pct = total > 0 ? Math.round((b.terisi / total) * 100) : 0;
+    // Kalau Blok ini punya batas kapasitas pallet yang diketahui
+    // (BATAS_PALLET_BLOK), progress bar mengukur PALLET TERPAKAI vs BATAS
+    // KAPASITAS-nya (bukan lagi persentase rak terisi/kosong) supaya admin
+    // langsung lihat blok mana yang sudah mendekati/lewat kapasitas.
+    // Kalau blok tidak dikenal di BATAS_PALLET_BLOK, tetap pakai persentase
+    // rak terisi seperti sebelumnya (fallback lama).
+    const batasBlok = BATAS_PALLET_BLOK[b.blok];
+    const isOver = batasBlok ? b.totalPallet > batasBlok : false;
+    const pct = batasBlok
+      ? Math.round((b.totalPallet / batasBlok) * 100)
+      : (total > 0 ? Math.round((b.terisi / total) * 100) : 0);
+    const barWidthPct = Math.min(pct, 100);
+
     const row = document.createElement('div');
-    row.className = 'bar-row bar-row-blok';
+    row.className = 'bar-row bar-row-blok' + (isOver ? ' is-over' : '');
     row.innerHTML = `
       <div class="bar-row-top">
         <span class="bar-row-name mono">Blok ${escapeHtml(b.blok)} <span class="muted">(${b.terisi}/${total} terisi · ${b.kosong} kosong)</span></span>
-        <span class="bar-row-val">${roundPalletDisplay(b.totalPallet)} pallet</span>
+        <span class="bar-row-val">${roundPalletDisplay(b.totalPallet)}${batasBlok ? ` / ${batasBlok.toLocaleString('id-ID')}` : ''} pallet${batasBlok ? ` · ${pct}%` : ''}</span>
       </div>
-      <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(pct, total > 0 && b.terisi > 0 ? 4 : 0)}%"></div></div>
+      <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(barWidthPct, total > 0 && b.terisi > 0 ? 4 : 0)}%"></div></div>
+      ${isOver ? `<div class="bar-row-warning">⚠️ Kapasitas terlampaui (batas ${batasBlok.toLocaleString('id-ID')} pallet)</div>` : ''}
     `;
     row.addEventListener('click', () => openBlokModal(b.blok));
     blokListEl.appendChild(row);
@@ -3145,6 +3446,8 @@ function openBlokModal(blok) {
   const data = blokData.find(b => b.blok === blok);
   if (!data) return;
   const total = data.terisi + data.kosong;
+  const batasBlok = BATAS_PALLET_BLOK[data.blok];
+  const isOver = batasBlok ? data.totalPallet > batasBlok : false;
 
   modalBody.innerHTML = `
     <div class="modal-item-head">
@@ -3155,8 +3458,9 @@ function openBlokModal(blok) {
       <div class="modal-stat"><span>Total Lokasi</span><strong>${total}</strong></div>
       <div class="modal-stat"><span>Terisi</span><strong>${data.terisi}</strong></div>
       <div class="modal-stat"><span>Kosong</span><strong>${data.kosong}</strong></div>
-      <div class="modal-stat"><span>Total Pallet</span><strong class="modal-stat-small">${data.totalPallet ? roundPalletDisplay(data.totalPallet) : '-'}</strong></div>
+      <div class="modal-stat"><span>Total Pallet</span><strong class="modal-stat-small${isOver ? ' is-over-text' : ''}">${data.totalPallet ? roundPalletDisplay(data.totalPallet) : '-'}${batasBlok ? ` / ${batasBlok.toLocaleString('id-ID')}` : ''}</strong></div>
     </div>
+    ${isOver ? `<div class="bar-row-warning">⚠️ Kapasitas Blok ${escapeHtml(data.blok)} terlampaui — batas ${batasBlok.toLocaleString('id-ID')} pallet.</div>` : ''}
     <div class="modal-section">
       <h4>Peta Lokasi (klik untuk detail)</h4>
       <div class="lokasi-map-legend">
@@ -3188,6 +3492,81 @@ function openBlokModal(blok) {
     grid.appendChild(cell);
   });
   itemModal.hidden = false;
+}
+
+/* ---- STATUS LOKASI PER BARANG (dashboard) ----
+   Pencarian barang dari SELURUH master data (bukan cuma yang sudah pernah
+   tercatat transaksi), supaya admin bisa cek "barang ini ada di mana saja"
+   untuk barang apapun, termasuk yang belum pernah masuk/keluar. Baru
+   menampilkan hasil setelah admin mengetik sesuatu, supaya tidak langsung
+   memuat 600+ baris sekaligus di dashboard. */
+const searchLokasiBarang = document.getElementById('search-lokasi-barang');
+const lokasiBarangList = document.getElementById('lokasi-barang-list');
+const lokasiBarangEmpty = document.getElementById('lokasi-barang-empty');
+const LOKASI_BARANG_MAX_HASIL = 40;
+
+function renderLokasiBarangSearch() {
+  if (!lokasiBarangList || !lokasiBarangEmpty) return;
+  const q = searchLokasiBarang.value.trim().toLowerCase();
+  lokasiBarangList.innerHTML = '';
+
+  if (!q) {
+    lokasiBarangEmpty.hidden = false;
+    lokasiBarangEmpty.textContent = 'Ketik nama atau kode barang di atas untuk mulai mencari.';
+    return;
+  }
+
+  const allBarang = (typeof MASTER_DATA !== 'undefined' && MASTER_DATA.barang) ? MASTER_DATA.barang : [];
+  const matched = allBarang.filter(b =>
+    (b.nama || '').toLowerCase().includes(q) || (b.kode || '').toLowerCase().includes(q)
+  );
+
+  if (matched.length === 0) {
+    lokasiBarangEmpty.hidden = false;
+    lokasiBarangEmpty.textContent = 'Tidak ada barang yang cocok dengan pencarian.';
+    return;
+  }
+  lokasiBarangEmpty.hidden = true;
+
+  const shown = matched.slice(0, LOKASI_BARANG_MAX_HASIL);
+  const occupancyCache = {};
+  shown.forEach(b => {
+    // Hitung ringkas jumlah lokasi terisi barang ini, untuk ditampilkan di
+    // baris hasil pencarian (biar kelihatan "penuh" atau belum tanpa perlu
+    // buka modal dulu).
+    const bloks = buildItemLokasiOccupancy(currentEntries, b.kode);
+    const totalSlot = bloks.reduce((s, bl) => s + bl.terisi + bl.kosong, 0);
+    const totalTerisi = bloks.reduce((s, bl) => s + bl.terisi, 0);
+    occupancyCache[b.kode] = { totalSlot, totalTerisi };
+
+    const row = document.createElement('div');
+    row.className = 'bar-row bar-row-lokasi';
+    const info = totalSlot > 0
+      ? `${totalTerisi.toLocaleString('id-ID')}/${totalSlot.toLocaleString('id-ID')} lokasi terisi`
+      : 'Belum ada data lokasi';
+    const pct = totalSlot > 0 ? Math.round((totalTerisi / totalSlot) * 100) : 0;
+    row.innerHTML = `
+      <div class="bar-row-top">
+        <span class="bar-row-name">${escapeHtml(b.nama)} <span class="muted mono">(${escapeHtml(b.kode)})</span></span>
+        <span class="bar-row-val">${info}</span>
+      </div>
+      <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(pct, totalTerisi > 0 ? 4 : 0)}%"></div></div>
+    `;
+    row.addEventListener('click', () => openItemModal(b.kode, b.nama));
+    lokasiBarangList.appendChild(row);
+  });
+
+  if (matched.length > LOKASI_BARANG_MAX_HASIL) {
+    const more = document.createElement('p');
+    more.className = 'vis-hint muted';
+    more.style.marginTop = '10px';
+    more.textContent = `Menampilkan ${LOKASI_BARANG_MAX_HASIL} dari ${matched.length} hasil. Ketik kata kunci lebih spesifik untuk mempersempit.`;
+    lokasiBarangList.appendChild(more);
+  }
+}
+
+if (searchLokasiBarang) {
+  searchLokasiBarang.addEventListener('input', renderLokasiBarangSearch);
 }
 
 /* ==========================================================================
@@ -3387,6 +3766,7 @@ function renderRingkasan() {
   }
 
   renderBlokPallet();
+  if (searchLokasiBarang && searchLokasiBarang.value.trim()) renderLokasiBarangSearch();
 }
 
 /* ==========================================================================
@@ -3773,15 +4153,35 @@ function lokasiPalletHint(history) {
   return map;
 }
 
-function openItemModal(kode) {
+function openItemModal(kode, namaFallback) {
   if (!kode) return;
   const items = buildStokList(currentEntries);
   const item = items.find(i => i.kode === kode);
-  if (!item) return;
+
+  // Barang ini belum pernah tercatat masuk/keluar sama sekali (misal baru
+  // ditambahkan lewat Pengelolaan Barang tapi belum ada transaksi). Tetap
+  // tampilkan modal dengan info dasar dari master data supaya klik dari
+  // daftar Kode Barang tidak terasa "mati" / tidak merespons.
+  if (!item) {
+    const master = (MASTER_DATA.barang || []).find(b => b.kode === kode);
+    const nama = namaFallback || master?.nama || kode;
+    modalBody.innerHTML = `
+      <div class="modal-item-head">
+        <div class="modal-item-kode mono">Kode Barang: ${escapeHtml(kode)}</div>
+        <h2 class="modal-item-nama">${escapeHtml(nama)}</h2>
+      </div>
+      <p class="muted" style="margin-top:-8px;">Barang ini belum pernah tercatat masuk/keluar, jadi belum ada stok. Peta di bawah menunjukkan barang ini memang belum ada di lokasi manapun.</p>
+      <div class="modal-section">
+        <h4>🧱 Status Lokasi Barang Ini — Terisi &amp; Kosong</h4>
+        ${buildItemLokasiMapHtml(kode)}
+      </div>
+    `;
+    attachItemLokasiMapEvents(modalBody);
+    itemModal.hidden = false;
+    return;
+  }
 
   const stok = item.masuk - item.keluar;
-  const lokasiList = lokasiBreakdown(item.history);
-  const palletHintMap = lokasiPalletHint(item.history);
   const historySorted = [...item.history].sort((a, b) => b.createdAt - a.createdAt);
 
   modalBody.innerHTML = `
@@ -3800,25 +4200,8 @@ function openItemModal(kode) {
     </div>
 
     <div class="modal-section">
-      <h4>Lokasi Penyimpanan Saat Ini</h4>
-      ${lokasiList.length
-        ? `<div class="lokasi-cards">${lokasiList.map(([lok, qty]) => {
-            const qtyPerPallet = palletHintMap[lok];
-            const estPallet = qtyPerPallet ? Math.ceil(Math.abs(qty) / qtyPerPallet) : null;
-            return `
-            <button type="button" class="lokasi-card" data-lokasi="${escapeHtml(lok)}">
-              <div class="lokasi-card-top">
-                <span class="lokasi-card-nama mono">Rak ${escapeHtml(lok)}</span>
-                <span class="lokasi-card-qty">${qty.toLocaleString('id-ID')} <small>pcs</small></span>
-              </div>
-              <div class="lokasi-card-pallet">
-                ${estPallet
-                  ? `&asymp; ${estPallet.toLocaleString('id-ID')} pallet <span class="muted">(${qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)</span>`
-                  : `<span class="muted">Info pallet tidak tercatat</span>`}
-              </div>
-            </button>`;
-          }).join('')}</div>`
-        : '<p class="muted">Tidak ada stok aktif di lokasi manapun.</p>'}
+      <h4>🧱 Status Lokasi Barang Ini — Terisi &amp; Kosong</h4>
+      ${buildItemLokasiMapHtml(item.kode)}
     </div>
 
     <div class="modal-section">
@@ -3853,9 +4236,7 @@ function openItemModal(kode) {
       </div>
     </div>
   `;
-  modalBody.querySelectorAll('.lokasi-card').forEach(card => {
-    card.addEventListener('click', () => openLokasiModal(card.dataset.lokasi));
-  });
+  attachItemLokasiMapEvents(modalBody);
   modalBody.querySelectorAll('.modal-history-row').forEach(row => {
     const detail = row.querySelector('.modal-history-detail');
     const toggle = () => {
