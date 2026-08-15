@@ -373,6 +373,7 @@
 
           <div class="field field-full kombinasi-box" id="kombinasi-box" hidden>
             <label>Stok Tersedia <span class="req">*</span></label>
+            <p class="kombinasi-hint muted">Diurutkan dari tanggal kedatangan paling lama (FIFO) — keluarkan barang lama dulu.</p>
             <div class="kombinasi-list" id="kombinasi-list"></div>
           </div>
 
@@ -685,8 +686,9 @@
              dihitung dari SELURUH data (tidak mengikuti filter periode di
              atas), sama seperti kartu "Total Pallet Saat Ini". -->
         <div class="vis-card vis-card-full">
-          <div class="vis-card-title"><span class="vis-card-icon">🧱</span>Stok Pallet per Blok (saat ini)</div>
-          <div id="blok-empty" class="vis-empty">Belum ada stok tercatat di blok manapun.</div>
+          <div class="vis-card-title"><span class="vis-card-icon">🧱</span>Status Lokasi per Blok — Terisi &amp; Kosong (saat ini) <span class="vis-card-sub" id="blok-total-wrap"><span class="vis-blok-total" id="blok-total" hidden></span></span></div>
+          <p class="vis-hint muted">Klik satu blok untuk lihat peta rak — hijau = terisi, putus-putus = kosong.</p>
+          <div id="blok-empty" class="vis-empty">Belum ada data lokasi tercatat.</div>
           <div class="bar-list" id="blok-list"></div>
         </div>
       </section>

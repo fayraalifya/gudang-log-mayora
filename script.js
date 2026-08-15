@@ -45,23 +45,40 @@ function getPalletKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
 }
 
-// Daftar semua kombinasi supplier+pemilik+lokasi (+ sisa stok & pallet)
-// yang MASIH ADA STOKNYA untuk satu kode barang. Inilah "kesatuan" yang
-// ditampilkan ke operator saat lapor barang KELUAR, supaya operator hanya
-// bisa memilih kombinasi yang benar-benar tersedia — bukan mengetik bebas.
+// Daftar semua kombinasi supplier+pemilik+lokasi (+ sisa stok, pallet, dan
+// tanggal kedatangan) yang MASIH ADA STOKNYA untuk satu kode barang. Inilah
+// "kesatuan" yang ditampilkan ke operator saat lapor barang KELUAR, supaya
+// operator hanya bisa memilih kombinasi yang benar-benar tersedia — bukan
+// mengetik bebas.
+//
+// tanggalKedatangan = tanggal transaksi MASUK paling awal untuk kombinasi
+// ini. Dipakai supaya daftar bisa diurutkan FIFO (First In First Out) —
+// stok yang datang paling lama ditampilkan paling atas, supaya operator
+// memprioritaskan mengeluarkan barang lama dulu sebelum barang baru.
 function getKombinasiTersedia(entries, kodeBarang) {
   const map = new Map();
   entries.filter(t => t.kodeBarang === kodeBarang).forEach(t => {
     const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi);
     if (!map.has(key)) {
-      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, stok: 0, pallet: 0 });
+      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, stok: 0, pallet: 0, tanggalKedatangan: null });
     }
     const c = map.get(key);
     const arah = t.jenis === 'masuk' ? 1 : -1;
     c.stok += arah * t.jumlah;
     if (t.jumlahPallet != null) c.pallet += arah * t.jumlahPallet;
+    if (t.jenis === 'masuk' && t.tanggal && (!c.tanggalKedatangan || t.tanggal < c.tanggalKedatangan)) {
+      c.tanggalKedatangan = t.tanggal;
+    }
   });
-  return [...map.values()].filter(c => c.stok > 0).sort((a, b) => b.stok - a.stok);
+  return [...map.values()].filter(c => c.stok > 0).sort((a, b) => {
+    // Urutkan dari tanggal kedatangan PALING LAMA di atas (FIFO). Kombinasi
+    // tanpa tanggal kedatangan (kasus langka/data lama) ditaruh di bawah.
+    if (a.tanggalKedatangan && b.tanggalKedatangan && a.tanggalKedatangan !== b.tanggalKedatangan) {
+      return a.tanggalKedatangan < b.tanggalKedatangan ? -1 : 1;
+    }
+    if (!!a.tanggalKedatangan !== !!b.tanggalKedatangan) return a.tanggalKedatangan ? -1 : 1;
+    return b.stok - a.stok;
+  });
 }
 const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 const BULAN_PANJANG = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
@@ -1594,7 +1611,7 @@ function buildStokList(entries) {
     if (!map[key]) {
       map[key] = {
         kode: t.kodeBarang, nama: t.namaBarang,
-        masuk: 0, keluar: 0, lokasi: new Set(),
+        masuk: 0, keluar: 0, masukPallet: 0, keluarPallet: 0, lokasi: new Set(),
         supplierSet: new Set(), pemilikSet: new Set(),
         lastMasuk: null, lastKeluar: null, updated: 0,
         history: [],
@@ -1607,11 +1624,13 @@ function buildStokList(entries) {
     if (t.pemilik) item.pemilikSet.add(t.pemilik);
     if (t.jenis === 'masuk') {
       item.masuk += t.jumlah;
+      if (t.jumlahPallet != null) item.masukPallet += t.jumlahPallet;
       if (!item.lastMasuk || t.createdAt > item.lastMasuk.at) {
         item.lastMasuk = { at: t.createdAt, tanggal: t.tanggal, jumlah: t.jumlah, lokasi: t.lokasi, supplier: t.supplier, pemilik: t.pemilik, qtyPerPallet: t.qtyPerPallet, jumlahPallet: t.jumlahPallet, operator: t.operator };
       }
     } else {
       item.keluar += t.jumlah;
+      if (t.jumlahPallet != null) item.keluarPallet += t.jumlahPallet;
       if (!item.lastKeluar || t.createdAt > item.lastKeluar.at) {
         item.lastKeluar = { at: t.createdAt, tanggal: t.tanggal, jumlah: t.jumlah, lokasi: t.lokasi, pemilik: t.pemilik, qtyPerPallet: t.qtyPerPallet, jumlahPallet: t.jumlahPallet, operator: t.operator };
       }
@@ -1626,25 +1645,40 @@ function buildLocationStock(entries) {
   entries.forEach(t => {
     if (!t.lokasi) return;
     const key = t.kodeBarang || t.namaBarang;
-    if (!map[t.lokasi]) map[t.lokasi] = { items: {}, lastActivity: 0 };
+    if (!map[t.lokasi]) map[t.lokasi] = { items: {}, lastActivity: 0, tanggalKedatangan: null, totalPallet: 0 };
     const loc = map[t.lokasi];
     if (!loc.items[key]) {
       loc.items[key] = {
-        kode: t.kodeBarang, nama: t.namaBarang, qty: 0,
+        kode: t.kodeBarang, nama: t.namaBarang, qty: 0, pallet: 0, tanggalKedatangan: null,
         supplierSet: new Set(), pemilikSet: new Set(), lastActivity: 0,
       };
     }
     const it = loc.items[key];
-    it.qty += (t.jenis === 'masuk' ? t.jumlah : -t.jumlah);
+    const arah = t.jenis === 'masuk' ? 1 : -1;
+    it.qty += arah * t.jumlah;
+    if (t.jumlahPallet != null) {
+      it.pallet += arah * t.jumlahPallet;
+      loc.totalPallet += arah * t.jumlahPallet;
+    }
     if (t.supplier) it.supplierSet.add(t.supplier);
     if (t.pemilik) it.pemilikSet.add(t.pemilik);
     if (t.createdAt > it.lastActivity) it.lastActivity = t.createdAt;
     if (t.createdAt > loc.lastActivity) loc.lastActivity = t.createdAt;
+    // Tanggal kedatangan = tanggal transaksi MASUK paling awal untuk
+    // barang ini di lokasi ini (per item) dan untuk lokasi secara
+    // keseluruhan (barang paling lama yang masih tercatat di rak ini).
+    if (t.jenis === 'masuk' && t.tanggal) {
+      if (!it.tanggalKedatangan || t.tanggal < it.tanggalKedatangan) it.tanggalKedatangan = t.tanggal;
+      if (!loc.tanggalKedatangan || t.tanggal < loc.tanggalKedatangan) loc.tanggalKedatangan = t.tanggal;
+    }
   });
   const result = Object.entries(map).map(([lokasi, locData]) => {
     const list = Object.values(locData.items).filter(it => it.qty !== 0).sort((a, b) => b.qty - a.qty);
     const totalQty = list.reduce((s, it) => s + it.qty, 0);
-    return { lokasi, items: list, totalQty, itemCount: list.length, lastActivity: locData.lastActivity };
+    return {
+      lokasi, items: list, totalQty, itemCount: list.length, lastActivity: locData.lastActivity,
+      tanggalKedatangan: locData.tanggalKedatangan, totalPallet: locData.totalPallet,
+    };
   }).filter(l => l.itemCount > 0).sort((a, b) => a.lokasi.localeCompare(b.lokasi));
   return result;
 }
@@ -2426,6 +2460,7 @@ function refreshKombinasiUI(kodeBarang) {
     <button type="button" class="kombinasi-chip" data-idx="${i}">
       <span class="kombinasi-chip-main">🏭 ${escapeHtml(c.supplier)} <span class="kombinasi-chip-sep">·</span> 🏢 ${escapeHtml(c.pemilik)}</span>
       <span class="kombinasi-chip-sub">📍 ${escapeHtml(c.lokasi)} <span class="kombinasi-chip-sep">·</span> ${c.stok.toLocaleString('id-ID')} pcs${c.pallet ? ` <span class="kombinasi-chip-sep">·</span> ${roundPalletDisplay(c.pallet)} pallet` : ''}</span>
+      <span class="kombinasi-chip-sub">📅 Datang: ${c.tanggalKedatangan ? formatTanggal(c.tanggalKedatangan) : '-'}</span>
     </button>
   `).join('');
 
@@ -3010,6 +3045,151 @@ periodDatePicker.addEventListener('change', () => {
   renderRiwayat();
 });
 
+// Ambil kode "blok" dari kode lokasi — blok = huruf/segmen pertama sebelum
+// tanda pemisah pertama (mis. lokasi "A-01-01" -> blok "A"). Kalau lokasi
+// tidak memakai tanda pemisah, ambil karakter pertama saja sebagai fallback.
+function getBlokFromLokasi(lokasi) {
+  if (!lokasi) return '(Tanpa Blok)';
+  const str = String(lokasi).trim();
+  const match = str.match(/^([A-Za-z0-9]+)[-_./\s]/);
+  return (match ? match[1] : str.charAt(0)).toUpperCase();
+}
+
+// Bandingkan setiap kode lokasi (rak/slot) dari MASTER_DATA.lokasi dengan
+// posisi stok SEKARANG (buildLocationStock) untuk menandai TERISI (masih
+// ada stok tercatat) atau KOSONG (belum/sudah tidak ada stok) — supaya
+// admin bisa langsung lihat rak mana yang masih kosong untuk barang baru,
+// dan rak mana yang sudah terisi. Lokasi yang pernah dipakai transaksi tapi
+// belum ada di MASTER_DATA.lokasi (mis. lokasi baru yang di-scan sebelum
+// sempat ditambahkan admin) tetap ikut dihitung, supaya tidak "hilang".
+function buildLokasiOccupancy(entries) {
+  const locStock = buildLocationStock(entries);
+  const stockMap = new Map(locStock.map(l => [l.lokasi, l]));
+  const masterLokasi = (typeof MASTER_DATA !== 'undefined' && MASTER_DATA.lokasi) ? MASTER_DATA.lokasi : [];
+  const allLokasi = new Set(masterLokasi);
+  entries.forEach(t => { if (t.lokasi) allLokasi.add(t.lokasi); });
+
+  const bloks = {};
+  allLokasi.forEach(lokasi => {
+    const blok = getBlokFromLokasi(lokasi);
+    if (!bloks[blok]) bloks[blok] = { blok, slots: [], terisi: 0, kosong: 0, totalPallet: 0 };
+    const b = bloks[blok];
+    const stok = stockMap.get(lokasi);
+    const isTerisi = !!(stok && stok.totalQty > 0);
+    b.slots.push({
+      lokasi,
+      status: isTerisi ? 'terisi' : 'kosong',
+      qty: stok ? stok.totalQty : 0,
+      pallet: stok ? stok.totalPallet : 0,
+      itemCount: stok ? stok.itemCount : 0,
+      tanggalKedatangan: stok ? stok.tanggalKedatangan : null,
+    });
+    if (isTerisi) { b.terisi++; b.totalPallet += (stok.totalPallet || 0); } else { b.kosong++; }
+  });
+
+  Object.values(bloks).forEach(b => {
+    b.slots.sort((x, y) => x.lokasi.localeCompare(y.lokasi, undefined, { numeric: true }));
+  });
+  return Object.values(bloks).sort((a, b) => a.blok.localeCompare(b.blok));
+}
+
+function renderBlokPallet() {
+  const blokListEl = document.getElementById('blok-list');
+  const blokEmptyEl = document.getElementById('blok-empty');
+  const blokTotalEl = document.getElementById('blok-total');
+  if (!blokListEl || !blokEmptyEl) return;
+
+  const blokData = buildLokasiOccupancy(currentEntries);
+  const totalSlot = blokData.reduce((s, b) => s + b.terisi + b.kosong, 0);
+  const totalTerisi = blokData.reduce((s, b) => s + b.terisi, 0);
+  const totalPallet = blokData.reduce((s, b) => s + b.totalPallet, 0);
+
+  if (blokTotalEl) {
+    if (totalSlot > 0) {
+      blokTotalEl.hidden = false;
+      blokTotalEl.textContent = `${totalTerisi.toLocaleString('id-ID')}/${totalSlot.toLocaleString('id-ID')} lokasi terisi · ${roundPalletDisplay(totalPallet)} pallet`;
+    } else {
+      blokTotalEl.hidden = true;
+    }
+  }
+
+  blokListEl.innerHTML = '';
+  if (blokData.length === 0) {
+    blokEmptyEl.hidden = false;
+    return;
+  }
+  blokEmptyEl.hidden = true;
+
+  blokData.forEach(b => {
+    const total = b.terisi + b.kosong;
+    const pct = total > 0 ? Math.round((b.terisi / total) * 100) : 0;
+    const row = document.createElement('div');
+    row.className = 'bar-row bar-row-blok';
+    row.innerHTML = `
+      <div class="bar-row-top">
+        <span class="bar-row-name mono">Blok ${escapeHtml(b.blok)} <span class="muted">(${b.terisi}/${total} terisi · ${b.kosong} kosong)</span></span>
+        <span class="bar-row-val">${roundPalletDisplay(b.totalPallet)} pallet</span>
+      </div>
+      <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(pct, total > 0 && b.terisi > 0 ? 4 : 0)}%"></div></div>
+    `;
+    row.addEventListener('click', () => openBlokModal(b.blok));
+    blokListEl.appendChild(row);
+  });
+}
+
+// ---- Modal peta lokasi per blok — grid kecil semua rak di blok tsb,
+// ditandai TERISI (ada stok) / KOSONG (belum ada stok), klik satu rak untuk
+// lihat detail (kalau terisi) atau info singkat (kalau kosong).
+function openBlokModal(blok) {
+  const blokData = buildLokasiOccupancy(currentEntries);
+  const data = blokData.find(b => b.blok === blok);
+  if (!data) return;
+  const total = data.terisi + data.kosong;
+
+  modalBody.innerHTML = `
+    <div class="modal-item-head">
+      <div class="modal-item-kode">BLOK GUDANG</div>
+      <h2 class="modal-item-nama mono">Blok ${escapeHtml(data.blok)}</h2>
+    </div>
+    <div class="modal-stat-grid">
+      <div class="modal-stat"><span>Total Lokasi</span><strong>${total}</strong></div>
+      <div class="modal-stat"><span>Terisi</span><strong>${data.terisi}</strong></div>
+      <div class="modal-stat"><span>Kosong</span><strong>${data.kosong}</strong></div>
+      <div class="modal-stat"><span>Total Pallet</span><strong class="modal-stat-small">${data.totalPallet ? roundPalletDisplay(data.totalPallet) : '-'}</strong></div>
+    </div>
+    <div class="modal-section">
+      <h4>Peta Lokasi (klik untuk detail)</h4>
+      <div class="lokasi-map-legend">
+        <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-terisi"></i>Terisi</span>
+        <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-kosong"></i>Kosong</span>
+      </div>
+      <div class="lokasi-map-grid" id="lokasi-map-grid"></div>
+    </div>
+  `;
+  const grid = modalBody.querySelector('#lokasi-map-grid');
+  data.slots.forEach(s => {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = `lokasi-map-cell is-${s.status}`;
+    // Tampilkan bagian kode lokasi setelah huruf blok saja (lebih ringkas
+    // di dalam grid kecil), tapi title tetap kode lengkap.
+    const shortLabel = s.lokasi.replace(new RegExp('^' + data.blok + '[-_./\\s]?'), '') || s.lokasi;
+    cell.title = s.status === 'terisi'
+      ? `${s.lokasi} — Terisi (${s.qty.toLocaleString('id-ID')} pcs${s.pallet ? `, ${roundPalletDisplay(s.pallet)} pallet` : ''})`
+      : `${s.lokasi} — Kosong`;
+    cell.textContent = shortLabel;
+    cell.addEventListener('click', () => {
+      if (s.status === 'terisi') {
+        openLokasiModal(s.lokasi);
+      } else {
+        showToast(`Lokasi ${s.lokasi} masih kosong — belum ada stok tercatat.`, 'info');
+      }
+    });
+    grid.appendChild(cell);
+  });
+  itemModal.hidden = false;
+}
+
 /* ==========================================================================
    RINGKASAN LAPORAN (admin)
 ========================================================================== */
@@ -3205,6 +3385,8 @@ function renderRingkasan() {
   } else {
     topLokasiEmpty.hidden = false;
   }
+
+  renderBlokPallet();
 }
 
 /* ==========================================================================
@@ -3273,13 +3455,18 @@ function formatSetList(set, max = 2) {
 // (Barang/Lokasi/Supplier/Pemilik) dan modal detailnya supaya tampilannya
 // konsisten & gampang dipahami. Klik baris tetap membuka modal detail untuk
 // lihat lebih lanjut.
-function appendStokRow(container, { nama, sub, subMono = true, stok, statusClass, statusLabel, meta, onClick }) {
+function appendStokRow(container, { nama, sub, subMono = true, stok, statusClass, statusLabel, meta, pallet, onClick }) {
   const row = document.createElement('button');
   row.type = 'button';
   row.className = `stok-row stok-row-${statusClass}`;
   const metaHtml = (meta || []).map(m => `
     <div class="stok-meta-item"><span class="stok-meta-label">${m.icon} ${escapeHtml(m.label)}</span><span class="stok-meta-val" title="${escapeHtml(m.value)}">${escapeHtml(m.value)}</span></div>
   `).join('');
+  // pallet: jumlah pallet (opsional) yang ditampilkan sebagai baris kecil
+  // di bawah angka stok pcs, misalnya untuk Katalog Barang.
+  const palletHtml = (pallet != null && pallet !== 0)
+    ? `<span class="stok-qty-pallet">${roundPalletDisplay(pallet)} pallet</span>`
+    : '';
   row.innerHTML = `
     <div class="stok-row-top">
       <div class="stok-row-info">
@@ -3289,6 +3476,7 @@ function appendStokRow(container, { nama, sub, subMono = true, stok, statusClass
       <div class="stok-row-qty">
         <span class="stok-qty-num ${statusClass}">${stok.toLocaleString('id-ID')}</span>
         <span class="stok-qty-status ${statusClass}">${statusLabel}</span>
+        ${palletHtml}
       </div>
     </div>
     <div class="stok-row-meta">${metaHtml}</div>
@@ -3319,10 +3507,11 @@ function renderKatalog() {
     katalogHint.textContent = `📁 ${items.length} barang. Klik baris untuk lihat riwayat transaksi lengkap.`;
     filtered.forEach(it => {
       const stok = it.masuk - it.keluar;
+      const totalPallet = (it.masukPallet || 0) - (it.keluarPallet || 0);
       const statusClass = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
       const statusLabel = stok > 0 ? 'Stok Tersedia' : (stok < 0 ? 'Stok Minus' : 'Stok Kosong');
       appendStokRow(katalogList, {
-        nama: it.nama, sub: it.kode, subMono: true, stok, statusClass, statusLabel,
+        nama: it.nama, sub: it.kode, subMono: true, stok, statusClass, statusLabel, pallet: totalPallet,
         meta: [
           { icon: '📍', label: 'Lokasi', value: formatSetList(it.lokasi) },
           { icon: '🚚', label: 'Supplier', value: formatSetList(it.supplierSet) },
@@ -3344,10 +3533,11 @@ function renderKatalog() {
       const statusLabel = l.totalQty > 0 ? 'Stok Tersedia' : (l.totalQty < 0 ? 'Stok Minus' : 'Stok Kosong');
       const barangUtama = l.items[0] ? l.items[0].nama : '-';
       appendStokRow(katalogList, {
-        nama: l.lokasi, sub: 'Lokasi Penyimpanan', subMono: false, stok: l.totalQty, statusClass, statusLabel,
+        nama: l.lokasi, sub: 'Lokasi Penyimpanan', subMono: false, stok: l.totalQty, statusClass, statusLabel, pallet: l.totalPallet,
         meta: [
           { icon: '📦', label: 'Jenis Barang', value: `${l.itemCount} jenis` },
           { icon: '⭐', label: 'Barang Utama', value: barangUtama },
+          { icon: '📅', label: 'Tanggal Kedatangan', value: l.tanggalKedatangan ? formatTanggal(l.tanggalKedatangan) : '-' },
           { icon: '🕒', label: 'Terakhir', value: l.lastActivity ? formatWaktu(l.lastActivity) : '-' },
         ],
         onClick: () => openLokasiModal(l.lokasi),
@@ -3476,22 +3666,33 @@ function openLokasiModal(lokasi) {
     <div class="modal-stat-grid">
       <div class="modal-stat"><span>Jenis Barang</span><strong>${data.itemCount}</strong></div>
       <div class="modal-stat"><span>Total Stok</span><strong>${data.totalQty.toLocaleString('id-ID')}</strong></div>
+      <div class="modal-stat"><span>Total Pallet</span><strong>${data.totalPallet ? roundPalletDisplay(data.totalPallet) : '-'}</strong></div>
+      <div class="modal-stat"><span>Tanggal Kedatangan</span><strong class="modal-stat-small">${data.tanggalKedatangan ? formatTanggal(data.tanggalKedatangan) : '-'}</strong></div>
       <div class="modal-stat"><span>Terakhir Diperbarui</span><strong class="modal-stat-small">${data.lastActivity ? formatWaktu(data.lastActivity) : '-'}</strong></div>
     </div>
     <div class="modal-section">
       <h4>Barang di Lokasi Ini</h4>
+      <p class="modal-history-hint muted">Diurutkan dari tanggal kedatangan paling lama (FIFO) di atas.</p>
       <div id="modal-lokasi-stok-table" class="stok-table stok-table-modal"></div>
     </div>
   `;
   const container = modalBody.querySelector('#modal-lokasi-stok-table');
-  data.items.forEach(it => {
+  const itemsUrut = [...data.items].sort((a, b) => {
+    if (a.tanggalKedatangan && b.tanggalKedatangan && a.tanggalKedatangan !== b.tanggalKedatangan) {
+      return a.tanggalKedatangan < b.tanggalKedatangan ? -1 : 1;
+    }
+    if (!!a.tanggalKedatangan !== !!b.tanggalKedatangan) return a.tanggalKedatangan ? -1 : 1;
+    return b.qty - a.qty;
+  });
+  itemsUrut.forEach(it => {
     const statusClass = it.qty > 0 ? 'pos' : (it.qty < 0 ? 'neg' : 'zero');
     const statusLabel = it.qty > 0 ? 'Stok Tersedia' : (it.qty < 0 ? 'Stok Minus' : 'Stok Kosong');
     appendStokRow(container, {
-      nama: it.nama, sub: it.kode, subMono: true, stok: it.qty, statusClass, statusLabel,
+      nama: it.nama, sub: it.kode, subMono: true, stok: it.qty, statusClass, statusLabel, pallet: it.pallet,
       meta: [
         { icon: '🚚', label: 'Supplier', value: formatSetList(it.supplierSet) },
         { icon: '🏭', label: 'Pemilik', value: formatSetList(it.pemilikSet) },
+        { icon: '📅', label: 'Tanggal Kedatangan', value: it.tanggalKedatangan ? formatTanggal(it.tanggalKedatangan) : '-' },
         { icon: '🕒', label: 'Terakhir', value: it.lastActivity ? formatWaktu(it.lastActivity) : '-' },
       ],
       onClick: () => openItemModal(it.kode),
@@ -3585,16 +3786,21 @@ function openItemModal(kode) {
 
   modalBody.innerHTML = `
     <div class="modal-item-head">
-      <div class="modal-item-kode mono">${escapeHtml(item.kode || '-')}</div>
+      <div class="modal-item-kode mono">Kode Barang: ${escapeHtml(item.kode || '-')}</div>
       <h2 class="modal-item-nama">${escapeHtml(item.nama)}</h2>
     </div>
-    <div class="modal-stat-grid">
-      <div class="modal-stat"><span>Stok Saat Ini</span><strong class="${stok <= 0 ? 'neg' : ''}">${stok.toLocaleString('id-ID')}</strong></div>
-      <div class="modal-stat"><span>Total Masuk</span><strong>${item.masuk.toLocaleString('id-ID')}</strong></div>
-      <div class="modal-stat"><span>Total Keluar</span><strong>${item.keluar.toLocaleString('id-ID')}</strong></div>
+
+    <div class="modal-headline">
+      <span class="modal-headline-label">Stok Saat Ini</span>
+      <strong class="modal-headline-value ${stok <= 0 ? 'neg' : ''}">${stok.toLocaleString('id-ID')} <small>pcs</small></strong>
     </div>
+    <div class="modal-stat-grid modal-stat-grid-sub">
+      <div class="modal-stat"><span>Total Masuk (semua waktu)</span><strong>${item.masuk.toLocaleString('id-ID')} pcs</strong></div>
+      <div class="modal-stat"><span>Total Keluar (semua waktu)</span><strong>${item.keluar.toLocaleString('id-ID')} pcs</strong></div>
+    </div>
+
     <div class="modal-section">
-      <h4>Lokasi Penyimpanan</h4>
+      <h4>Lokasi Penyimpanan Saat Ini</h4>
       ${lokasiList.length
         ? `<div class="lokasi-cards">${lokasiList.map(([lok, qty]) => {
             const qtyPerPallet = palletHintMap[lok];
@@ -3602,61 +3808,44 @@ function openItemModal(kode) {
             return `
             <button type="button" class="lokasi-card" data-lokasi="${escapeHtml(lok)}">
               <div class="lokasi-card-top">
-                <span class="lokasi-card-nama mono">${escapeHtml(lok)}</span>
+                <span class="lokasi-card-nama mono">Rak ${escapeHtml(lok)}</span>
                 <span class="lokasi-card-qty">${qty.toLocaleString('id-ID')} <small>pcs</small></span>
               </div>
               <div class="lokasi-card-pallet">
                 ${estPallet
-                  ? `🧱 &asymp; ${estPallet.toLocaleString('id-ID')} pallet <span class="muted">(${qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)</span>`
+                  ? `&asymp; ${estPallet.toLocaleString('id-ID')} pallet <span class="muted">(${qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)</span>`
                   : `<span class="muted">Info pallet tidak tercatat</span>`}
               </div>
             </button>`;
           }).join('')}</div>`
         : '<p class="muted">Tidak ada stok aktif di lokasi manapun.</p>'}
     </div>
-    <div class="modal-section modal-section-grid">
-      <div>
-        <h4>Terakhir Masuk</h4>
-        ${item.lastMasuk
-          ? `<p>${formatTanggal(item.lastMasuk.tanggal)} — ${item.lastMasuk.jumlah} pcs<br>
-             <span class="muted">${escapeHtml(item.lastMasuk.supplier || '-')} · ${escapeHtml(item.lastMasuk.lokasi || '-')}</span><br>
-             <span class="muted">🏭 ${escapeHtml(item.lastMasuk.pemilik || '-')}${item.lastMasuk.jumlahPallet ? ` · 🧱 ${item.lastMasuk.jumlahPallet.toLocaleString('id-ID')} pallet${item.lastMasuk.qtyPerPallet ? ` (${item.lastMasuk.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}` : ''}</span></p>`
-          : '<p class="muted">Belum pernah.</p>'}
-      </div>
-      <div>
-        <h4>Terakhir Keluar</h4>
-        ${item.lastKeluar
-          ? `<p>${formatTanggal(item.lastKeluar.tanggal)} — ${item.lastKeluar.jumlah} pcs<br>
-             <span class="muted">${escapeHtml(item.lastKeluar.lokasi || '-')}</span><br>
-             <span class="muted">🏭 ${escapeHtml(item.lastKeluar.pemilik || '-')}${item.lastKeluar.jumlahPallet ? ` · 🧱 ${item.lastKeluar.jumlahPallet.toLocaleString('id-ID')} pallet${item.lastKeluar.qtyPerPallet ? ` (${item.lastKeluar.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}` : ''}</span></p>`
-          : '<p class="muted">Belum pernah.</p>'}
-      </div>
-    </div>
+
     <div class="modal-section">
-      <h4>Riwayat Transaksi (${historySorted.length})</h4>
-      <p class="modal-history-hint muted">Klik satu baris untuk lihat detail lengkapnya.</p>
+      <h4>Riwayat Transaksi Masuk &amp; Keluar (${historySorted.length})</h4>
+      <p class="modal-history-hint muted">Diurutkan dari yang paling baru. Klik satu baris untuk lihat detail lengkapnya.</p>
       <div class="modal-history-list">
         ${historySorted.map((t, idx) => `
           <div class="modal-history-row" data-idx="${idx}" role="button" tabindex="0">
             <div class="modal-history-main">
-              <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · PNY' : ''}</span>
-              <span>${formatTanggal(t.tanggal)} · ${escapeHtml(t.lokasi)}</span>
+              <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · Penyesuaian' : ''}</span>
+              <span>${formatTanggal(t.tanggal)} · Rak ${escapeHtml(t.lokasi)}</span>
               <span>${t.jumlah.toLocaleString('id-ID')} pcs</span>
-              <span class="muted">${escapeHtml(t.operator)}</span>
+              <span class="muted">Operator: ${escapeHtml(t.operator)}</span>
               <svg class="modal-history-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
             </div>
             <div class="modal-history-sub muted">
-              <span>🏭 ${escapeHtml(t.pemilik || '-')}</span>
-              ${t.jumlahPallet ? `<span>🧱 ${t.jumlahPallet.toLocaleString('id-ID')} pallet${t.qtyPerPallet ? ` (${t.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}</span>` : ''}
-              <span>📅 ${formatTanggal(t.tanggal)}</span>
+              <span>Kode Pemilik: ${escapeHtml(t.pemilik || '-')}</span>
+              ${t.jumlahPallet ? `<span>${t.jumlahPallet.toLocaleString('id-ID')} pallet${t.qtyPerPallet ? ` (${t.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}</span>` : ''}
             </div>
             <div class="modal-history-detail" hidden>
               ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
-              <div><span class="lbl">Lokasi</span><span class="link-inline" data-lokasi="${escapeHtml(t.lokasi)}">${escapeHtml(t.lokasi)}</span></div>
+              <div><span class="lbl">Lokasi</span><span class="link-inline" data-lokasi="${escapeHtml(t.lokasi)}">Rak ${escapeHtml(t.lokasi)}</span></div>
+              <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
               <div><span class="lbl">Keterangan</span><span>${escapeHtml(t.keterangan || '-')}</span></div>
               <div><span class="lbl">Diinput</span><span>${t.createdAt ? formatWaktu(t.createdAt) : '-'}</span></div>
               ${(t.editLog && t.editLog.length)
-                ? `<div><span class="lbl">Riwayat Edit</span><span>✏️ ${t.editLog.length}× diedit — terakhir oleh ${escapeHtml(t.editLog[t.editLog.length - 1].oleh)} · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}</span></div>`
+                ? `<div><span class="lbl">Riwayat Edit</span><span>${t.editLog.length}× diedit — terakhir oleh ${escapeHtml(t.editLog[t.editLog.length - 1].oleh)} · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}</span></div>`
                 : ''}
             </div>
           </div>

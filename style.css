@@ -631,6 +631,7 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .stok-qty-status.pos { color: var(--hijau); }
 .stok-qty-status.zero { color: var(--text-muted); }
 .stok-qty-status.neg { color: var(--merah-flag); }
+.stok-qty-pallet { display: block; font-size: 10.5px; color: var(--text-muted); margin-top: 3px; }
 
 .stok-row-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; border-top: 1px dashed var(--kraft-line); padding-top: 8px; }
 .stok-meta-item { display: flex; flex-direction: column; gap: 1px; min-width: 92px; flex: 1 1 92px; }
@@ -713,6 +714,7 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 /* Kartu "Stok Tersedia" (pemilihan kombinasi supplier+pemilik+lokasi
    saat lapor barang KELUAR) */
 .kombinasi-box { margin-top: -6px; }
+.kombinasi-hint { font-size: 11.5px; margin: 0 0 8px; line-height: 1.4; }
 .kombinasi-list { display: flex; flex-direction: column; gap: 8px; }
 .kombinasi-chip {
   display: flex; flex-direction: column; gap: 3px; text-align: left;
@@ -1042,6 +1044,7 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .vis-card-icon { margin-right: 2px; }
 .vis-card-sub { display: flex; align-items: center; margin-left: auto; }
 .vis-empty { font-size: 12.5px; color: var(--kraft-muted); padding: 6px 0; }
+.vis-hint { font-size: 11.5px; margin: -4px 0 12px; line-height: 1.4; }
 
 .vis-trend {
   font-family: var(--font-mono); font-size: 11px; font-weight: 700;
@@ -1050,6 +1053,12 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .vis-trend.up { background: var(--hijau-soft); color: var(--hijau); }
 .vis-trend.down { background: var(--merah-flag-soft); color: var(--merah-flag); }
 .vis-trend.flat { background: var(--kraft); color: var(--text-muted); }
+
+.vis-blok-total {
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 700;
+  padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+  background: var(--navy-pale); color: var(--navy);
+}
 
 /* Arus Barang: split bar masuk vs keluar */
 .arus-bar {
@@ -1080,7 +1089,28 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .bar-row-track { width: 100%; height: 8px; border-radius: 6px; background: var(--kraft); overflow: hidden; }
 .bar-row-fill { height: 100%; border-radius: 6px; background: var(--navy); transition: width .25s ease; }
 .bar-row-lokasi .bar-row-fill { background: var(--emas); }
+.bar-row-blok .bar-row-fill { background: var(--oranye); }
 .bar-row:hover .bar-row-name { color: var(--merah); text-decoration: underline; }
+
+/* Peta lokasi per blok (modal) — grid kecil semua rak, TERISI vs KOSONG */
+.lokasi-map-legend { display: flex; gap: 16px; margin-bottom: 10px; }
+.lokasi-map-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
+.lokasi-map-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
+.lokasi-map-dot.is-terisi { background: var(--hijau); }
+.lokasi-map-dot.is-kosong { background: var(--kraft); border: 1.5px dashed var(--kraft-muted); }
+.lokasi-map-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 5px; max-height: 320px; overflow-y: auto; padding: 2px;
+}
+.lokasi-map-cell {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  border-radius: 6px; padding: 7px 3px; text-align: center;
+  border: 1.5px solid transparent; cursor: pointer; transition: transform .1s;
+  line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lokasi-map-cell:hover { transform: scale(1.06); }
+.lokasi-map-cell.is-terisi { background: var(--hijau-soft); color: var(--hijau); border-color: var(--hijau); }
+.lokasi-map-cell.is-kosong { background: var(--kertas); color: var(--kraft-muted); border-color: var(--kraft-line); border-style: dashed; }
 
 @media (max-width: 900px) {
   .vis-row-top { grid-template-columns: 1fr; }
