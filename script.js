@@ -118,6 +118,13 @@ function formatWaktu(ts) {
   return new Date(ts).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// Cuma jam:menit saja (tanpa tanggal) — dipakai di kartu Riwayat Transaksi
+// yang tanggalnya sudah ditampilkan terpisah lewat formatTanggal().
+function formatJam(ts) {
+  if (!ts) return '-';
+  return new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
+
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -1252,6 +1259,23 @@ const registerAdminPassword = document.getElementById('register-admin-password')
 const registerAdminPasswordConfirm = document.getElementById('register-admin-password-confirm');
 const loginFormIntro = document.getElementById('login-form-intro');
 
+// ---- Tombol "Lihat/Sembunyikan Kata Sandi" ----
+// Satu handler generik untuk semua field password di layar login (login &
+// daftar, operator & admin) — cukup cari tombol dengan atribut
+// [data-toggle-password], lalu toggle type text/password pada <input>
+// yang jadi tetangganya (sibling sebelumnya) di dalam .input-icon yang
+// sama. Ini menghindari perlu menulis 8 event listener terpisah untuk
+// tiap field satu-satu.
+document.querySelectorAll('[data-toggle-password]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const input = btn.previousElementSibling;
+    if (!input || input.tagName !== 'INPUT') return;
+    const isVisible = input.type === 'text';
+    input.type = isVisible ? 'password' : 'text';
+    btn.classList.toggle('is-visible', !isVisible);
+  });
+});
+
 function switchOperatorMode(mode) {
   tabOperatorLogin.classList.toggle('is-active', mode === 'login');
   tabOperatorRegister.classList.toggle('is-active', mode === 'register');
@@ -1265,7 +1289,7 @@ tabOperatorRegister.addEventListener('click', () => switchOperatorMode('register
 
 // Sama seperti switchOperatorMode, tapi untuk tab Admin — admin sekarang
 // juga bisa "Daftar Baru" sendiri, dengan Kode Akses Pendaftaran yang
-// berbeda dari operator (lihat KODE_AKSES_PENDAFTARAN_ADMIN di data.js).
+// berbeda dari operator (divalidasi di server, lihat functions/index.js).
 function switchAdminMode(mode) {
   tabAdminLogin.classList.toggle('is-active', mode === 'login');
   tabAdminRegister.classList.toggle('is-active', mode === 'register');
@@ -1305,19 +1329,10 @@ tabOperator.addEventListener('click', () => switchLoginTab('operator'));
 tabAdmin.addEventListener('click', () => switchLoginTab('admin'));
 
 /* ==========================================================================
-   AKUN OPERATOR — daftar & login sungguhan lewat Firestore
-   (mencegah orang masuk tanpa mendaftar terlebih dahulu)
+   AKUN OPERATOR & ADMIN — daftar & login lewat Firebase Authentication
+   (bukan lagi menyimpan/membandingkan password hash sendiri di Firestore —
+   lihat functions/index.js untuk alasan & detail perubahan ini)
 ========================================================================== */
-
-// Hash satu arah (SHA-256) supaya kata sandi tidak tersimpan sebagai teks
-// polos di database. Ini bukan pengganti backend yang sesungguhnya (idealnya
-// hashing + salt dilakukan di server), tapi jauh lebih aman dibanding
-// menyimpan password apa adanya, dan cukup untuk skala aplikasi internal ini.
-async function hashPassword(password) {
-  const enc = new TextEncoder().encode(password);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 function normalizeNamaKey(nama) {
   return String(nama || '').trim().toLowerCase();
@@ -1325,6 +1340,29 @@ function normalizeNamaKey(nama) {
 
 function normalizeNikKey(nik) {
   return String(nik || '').trim();
+}
+
+// Firebase Auth butuh "email" untuk sign-in, jadi NIK diubah jadi email
+// sintetis yang deterministik (tidak pernah dipakai kirim email
+// sungguhan). Diberi awalan role supaya NIK yang sama tetap bisa dipakai
+// terpisah sebagai operator maupun admin. HARUS PERSIS SAMA dengan
+// nikToSyntheticEmail() di functions/index.js.
+function nikToSyntheticEmail(role, nik) {
+  return `${role}-${normalizeNikKey(nik).toLowerCase()}@akun.gudanglog.internal`;
+}
+
+// Pesan error Firebase Auth diseragamkan supaya tidak membocorkan apakah
+// NIK terdaftar atau tidak (mencegah user enumeration) — sama seperti
+// prinsip yang sudah dipakai aplikasi ini sebelumnya.
+function loginErrorMessage(err) {
+  const code = err && err.code;
+  if (code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') {
+    return 'NIK atau kata sandi salah. Jika belum punya akun, daftar lewat tab "Daftar Baru".';
+  }
+  if (code === 'auth/too-many-requests') {
+    return 'Terlalu banyak percobaan gagal. Coba lagi beberapa saat lagi.';
+  }
+  return 'Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.';
 }
 
 // Halaman login bisa tampil sebelum proses sign-in anonim ke Firebase
@@ -1360,39 +1398,104 @@ function waitForFirebaseAuth(timeoutMs = 12000) {
   });
 }
 
-async function findOperatorAccountByNama(nama) {
+// ---- Registrasi & login lewat Firebase Authentication (TANPA Cloud Functions) ----
+// CATATAN ARSITEKTUR (dibaca dulu sebelum ubah-ubah bagian ini):
+// Project ini sengaja TIDAK memakai plan Blaze, jadi Cloud Functions tidak
+// bisa dipakai sama sekali. Konsekuensinya:
+//
+// 1. Kode akses pendaftaran TIDAK BISA divalidasi 100% rahasia lagi. Kita
+//    taruh perbandingannya di dalam firestore.rules (server-side, tidak
+//    dikirim ke browser seperti kalau ditaruh di script.js/data.js) lewat
+//    trik dua-langkah "registrationGate": client menulis dulu ke koleksi
+//    registrationGate/{uid} yang isinya kode yang diketik user — rule di
+//    koleksi itu HANYA mengizinkan create kalau kode == konstanta rahasia
+//    di dalam rules. Baru kalau itu sukses, client boleh menulis dokumen
+//    profil ke operator/{uid} atau admin/{uid} (rule-nya mensyaratkan
+//    exists(registrationGate/{uid})). Koleksi registrationGate sendiri
+//    TIDAK BISA dibaca siapa pun (allow read: if false) jadi kode aksesnya
+//    tidak pernah bocor lewat baca data — tapi ini tetap lebih lemah
+//    dibanding Cloud Function murni, karena siapa pun yang punya akses ke
+//    Firebase Console project ini (bukan pengunjung biasa) bisa melihat
+//    rules-nya.
+// 2. Role (operator/admin) TIDAK BISA lagi disimpan sebagai custom claim
+//    (butuh Admin SDK). Sekarang role ditentukan dari KOLEKSI tempat
+//    dokumen profilnya berada (operator/{uid} vs admin/{uid}), dan
+//    firestore.rules mengecek exists(...) berdasarkan request.auth.uid.
+//    ID dokumen profil sekarang UID Firebase Auth, BUKAN NIK lagi (NIK
+//    cuma field biasa di dalam dokumen).
+// 3. Firebase Auth client SDK cuma bisa menghapus akunnya SENDIRI, bukan
+//    akun user lain — jadi "hapus akun operator" oleh admin sekarang cuma
+//    menghapus dokumen profil Firestore-nya (soft-delete: operator itu
+//    langsung kehilangan akses ke seluruh data karena exists() check
+//    gagal, tapi akun Firebase Auth-nya sendiri tetap ada di sistem sampai
+//    dibersihkan manual lewat Firebase Console kalau perlu).
+async function registerViaClientSDK(role, { nama, idKaryawan, password, kodeAkses }) {
   const fb = window.gudangFirebase;
-  const namaKey = normalizeNamaKey(nama);
-  const q = fb.query(fb.operatorCol, fb.where('namaLower', '==', namaKey));
-  const snapshot = await fb.getDocs(q);
-  if (snapshot.empty) return null;
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() };
-}
+  const email = nikToSyntheticEmail(role, idKaryawan);
+  const namaLower = String(nama || '').trim().toLowerCase();
+  const nik = normalizeNikKey(idKaryawan);
 
-// Login & pengecekan akun sekarang berdasarkan NIK (bukan nama), karena
-// nama karyawan berpotensi sama antara satu operator dengan operator lain
-// — NIK dijamin unik per karyawan.
-async function findOperatorAccountByNik(nik) {
-  const fb = window.gudangFirebase;
-  const nikKey = normalizeNikKey(nik);
-  const q = fb.query(fb.operatorCol, fb.where('idKaryawan', '==', nikKey));
-  const snapshot = await fb.getDocs(q);
-  if (snapshot.empty) return null;
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() };
-}
+  let cred;
+  try {
+    cred = await fb.createUserWithEmailAndPassword(fb.auth, email, password);
+  } catch (err) {
+    if (err && err.code === 'auth/email-already-in-use') {
+      const e = new Error(
+        role === 'admin' ? 'NIK ini sudah terdaftar sebagai admin.' : 'NIK ini sudah terdaftar.'
+      );
+      e.code = 'already-exists';
+      throw e;
+    }
+    if (err && err.code === 'auth/weak-password') {
+      const e = new Error('Kata sandi terlalu lemah, minimal 6 karakter.');
+      e.code = 'invalid-argument';
+      throw e;
+    }
+    throw err;
+  }
 
-// Sama seperti findOperatorAccountByNik, tapi mencari di koleksi "admin"
-// (akun admin yang mendaftar sendiri lewat "Daftar Baru").
-async function findAdminAccountByNik(nik) {
-  const fb = window.gudangFirebase;
-  const nikKey = normalizeNikKey(nik);
-  const q = fb.query(fb.adminCol, fb.where('idKaryawan', '==', nikKey));
-  const snapshot = await fb.getDocs(q);
-  if (snapshot.empty) return null;
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() };
+  const uid = cred.user.uid;
+
+  try {
+    // Langkah 1: "buktikan" tahu kode akses lewat koleksi registrationGate.
+    // Rule-nya yang menolak kalau kodeAkses salah — kalau ini gagal,
+    // dilempar ke catch di bawah (rollback: hapus user Auth yang baru
+    // dibuat supaya tidak nyangkut jadi akun "yatim").
+    await fb.setDoc(fb.doc(fb.db, 'registrationGate', uid), {
+      role,
+      kodeAkses,
+      createdAt: Date.now(),
+    });
+
+    // Langkah 2: tulis profil publik. Rule di operator/{uid} & admin/{uid}
+    // mensyaratkan exists(registrationGate/{uid}) dari langkah 1 di atas.
+    await fb.setDoc(fb.doc(fb.db, role, uid), {
+      nama,
+      namaLower,
+      idKaryawan: nik,
+      uid,
+      role,
+      createdAt: Date.now(),
+    });
+  } catch (err) {
+    console.error('Gagal menulis profil, rollback akun Auth:', err);
+    try { await fb.deleteUser(cred.user); } catch (e2) { console.warn('Rollback gagal:', e2); }
+    if (err && err.code === 'permission-denied') {
+      const e = new Error(
+        role === 'admin' ? 'Kode Akses Pendaftaran Admin salah.' : 'Kode Akses Pendaftaran salah.'
+      );
+      e.code = 'permission-denied';
+      throw e;
+    }
+    const e = new Error('Gagal mendaftar. Coba lagi.');
+    e.code = 'internal';
+    throw e;
+  }
+
+  // Registrasi client-side otomatis membuat sesi login — sign out lagi
+  // supaya perilakunya konsisten dengan sebelumnya: user diarahkan balik
+  // ke layar "Masuk" dan login manual dengan akun barunya.
+  try { await fb.signOut(fb.auth); } catch (e3) { console.warn('Gagal sign-out setelah registrasi:', e3); }
 }
 
 function showRegisterError(msg) {
@@ -1441,16 +1544,6 @@ formRegisterOperator.addEventListener('submit', async (e) => {
   if (!nama) { showRegisterError('Nama operator wajib diisi.'); registerOperatorNama.focus(); return; }
   if (!idKaryawan) { showRegisterError('ID Karyawan / NIK wajib diisi.'); registerOperatorIdKaryawan.focus(); return; }
   if (!kodeAkses) { showRegisterError('Kode Akses Pendaftaran wajib diisi. Minta kode ini ke admin gudang.'); registerOperatorKodeAkses.focus(); return; }
-  if (typeof KODE_AKSES_PENDAFTARAN === 'undefined') {
-    showRegisterError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
-    return;
-  }
-  if (kodeAkses !== KODE_AKSES_PENDAFTARAN) {
-    showRegisterError('Kode Akses Pendaftaran salah. Pastikan Anda mendapatkan kode resmi dari admin gudang Mayora.');
-    registerOperatorKodeAkses.value = '';
-    registerOperatorKodeAkses.focus();
-    return;
-  }
   if (!password || password.length < 6) { showRegisterError('Kata sandi minimal 6 karakter.'); registerOperatorPassword.focus(); return; }
   if (password !== passwordConfirm) { showRegisterError('Konfirmasi kata sandi tidak cocok.'); registerOperatorPasswordConfirm.focus(); return; }
 
@@ -1462,21 +1555,27 @@ formRegisterOperator.addEventListener('submit', async (e) => {
   try {
     await waitForFirebaseAuth();
 
-    const existing = await findOperatorAccountByNik(idKaryawan);
-    if (existing) {
-      showRegisterError('NIK ini sudah terdaftar. Silakan masuk lewat tab "Masuk", atau hubungi admin gudang jika ini bukan Anda.');
-      return;
+    // Kode akses divalidasi lewat firestore.rules (koleksi registrationGate),
+    // bukan di client — lihat catatan panjang di registerViaClientSDK().
+    try {
+      await registerViaClientSDK('operator', { nama, idKaryawan, password, kodeAkses });
+    } catch (regErr) {
+      if (regErr.code === 'already-exists') {
+        showRegisterError('NIK ini sudah terdaftar. Silakan masuk lewat tab "Masuk", atau hubungi admin gudang jika ini bukan Anda.');
+        return;
+      }
+      if (regErr.code === 'permission-denied') {
+        showRegisterError(regErr.message);
+        registerOperatorKodeAkses.value = '';
+        registerOperatorKodeAkses.focus();
+        return;
+      }
+      if (regErr.code === 'invalid-argument') {
+        showRegisterError(regErr.message);
+        return;
+      }
+      throw regErr;
     }
-
-    const passwordHash = await hashPassword(password);
-    const fb = window.gudangFirebase;
-    await fb.addDoc(fb.operatorCol, {
-      nama,
-      namaLower: normalizeNamaKey(nama),
-      idKaryawan: normalizeNikKey(idKaryawan),
-      passwordHash,
-      createdAt: Date.now(),
-    });
 
     formRegisterOperator.reset();
     switchOperatorMode('login');
@@ -1505,19 +1604,6 @@ formRegisterAdmin.addEventListener('submit', async (e) => {
   if (!nama) { showRegisterAdminError('Nama admin wajib diisi.'); registerAdminNama.focus(); return; }
   if (!idKaryawan) { showRegisterAdminError('ID Karyawan / NIK wajib diisi.'); registerAdminIdKaryawan.focus(); return; }
   if (!kodeAkses) { showRegisterAdminError('Kode Akses Pendaftaran Admin wajib diisi.'); registerAdminKodeAkses.focus(); return; }
-  if (typeof KODE_AKSES_PENDAFTARAN_ADMIN === 'undefined') {
-    showRegisterAdminError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
-    return;
-  }
-  // Sengaja dicek terhadap kode ADMIN, bukan kode operator — supaya
-  // operator yang cuma tahu kode pendaftaran operator tidak bisa
-  // mendaftarkan diri sebagai admin.
-  if (kodeAkses !== KODE_AKSES_PENDAFTARAN_ADMIN) {
-    showRegisterAdminError('Kode Akses Pendaftaran Admin salah. Pastikan Anda mendapatkan kode resmi yang khusus untuk admin.');
-    registerAdminKodeAkses.value = '';
-    registerAdminKodeAkses.focus();
-    return;
-  }
   if (!password || password.length < 6) { showRegisterAdminError('Kata sandi minimal 6 karakter.'); registerAdminPassword.focus(); return; }
   if (password !== passwordConfirm) { showRegisterAdminError('Konfirmasi kata sandi tidak cocok.'); registerAdminPasswordConfirm.focus(); return; }
 
@@ -1529,23 +1615,27 @@ formRegisterAdmin.addEventListener('submit', async (e) => {
   try {
     await waitForFirebaseAuth();
 
-    const nikKey = normalizeNikKey(idKaryawan);
-    const existingFirestore = await findAdminAccountByNik(idKaryawan);
-    const existingLegacy = ADMIN_ACCOUNTS.some(a => normalizeNikKey(a.idKaryawan) === nikKey);
-    if (existingFirestore || existingLegacy) {
-      showRegisterAdminError('NIK ini sudah terdaftar sebagai admin. Silakan masuk lewat tab "Masuk".');
-      return;
+    // Sama seperti registrasi operator: kode akses ADMIN divalidasi lewat
+    // firestore.rules (registrationGate), bukan konstanta di script.js.
+    try {
+      await registerViaClientSDK('admin', { nama, idKaryawan, password, kodeAkses });
+    } catch (regErr) {
+      if (regErr.code === 'already-exists') {
+        showRegisterAdminError('NIK ini sudah terdaftar sebagai admin. Silakan masuk lewat tab "Masuk".');
+        return;
+      }
+      if (regErr.code === 'permission-denied') {
+        showRegisterAdminError(regErr.message);
+        registerAdminKodeAkses.value = '';
+        registerAdminKodeAkses.focus();
+        return;
+      }
+      if (regErr.code === 'invalid-argument') {
+        showRegisterAdminError(regErr.message);
+        return;
+      }
+      throw regErr;
     }
-
-    const passwordHash = await hashPassword(password);
-    const fb = window.gudangFirebase;
-    await fb.addDoc(fb.adminCol, {
-      nama,
-      namaLower: normalizeNamaKey(nama),
-      idKaryawan: nikKey,
-      passwordHash,
-      createdAt: Date.now(),
-    });
 
     formRegisterAdmin.reset();
     switchAdminMode('login');
@@ -1578,26 +1668,39 @@ formLoginOperator.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+    const fb = window.gudangFirebase;
 
-    const akun = await findOperatorAccountByNik(nik);
-    if (!akun) {
-      showLoginOperatorError('NIK belum terdaftar. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
+    // signInWithEmailAndPassword memverifikasi password lewat Firebase
+    // Authentication sendiri — tidak ada lagi passwordHash yang dibaca
+    // dari Firestore. Firebase Auth modern menyatukan "user tidak ada"
+    // dan "password salah" jadi satu error code (auth/invalid-credential)
+    // sehingga tidak membocorkan NIK mana yang terdaftar (user
+    // enumeration) — cara ini otomatis mempertahankan prinsip yang sama
+    // dengan pesan error seragam yang dipakai versi sebelumnya.
+    const email = nikToSyntheticEmail('operator', nik);
+    const cred = await fb.signInWithEmailAndPassword(fb.auth, email, password);
+
+    // Tidak ada custom claim lagi (butuh Admin SDK) — profil & role
+    // sekarang diambil langsung dari dokumen Firestore operator/{uid}.
+    // Ini juga sekaligus fungsi sebagai pengecekan "akun masih aktif":
+    // kalau admin sudah menghapus dokumen profil ini (soft-delete),
+    // dokumennya tidak akan ketemu di sini walau login Firebase Auth-nya
+    // sendiri masih berhasil — user tetap ditolak masuk.
+    const profileSnap = await fb.getDoc(fb.doc(fb.db, 'operator', cred.user.uid));
+    if (!profileSnap.exists()) {
+      await fb.signOut(fb.auth);
+      showLoginOperatorError('Akun ini sudah tidak aktif. Hubungi admin gudang.');
       return;
     }
+    const nama = profileSnap.data().nama || cred.user.displayName || nik;
 
-    const passwordHash = await hashPassword(password);
-    if (passwordHash !== akun.passwordHash) {
-      showLoginOperatorError('Kata sandi salah. Coba lagi.');
-      loginOperatorPassword.value = '';
-      loginOperatorPassword.focus();
-      return;
-    }
-
-    setSession({ role: 'operator', nama: akun.nama });
-    enterApp({ role: 'operator', nama: akun.nama });
+    setSession({ role: 'operator', nama });
+    enterApp({ role: 'operator', nama });
   } catch (err) {
-    console.error('Gagal memeriksa akun operator:', err);
-    showLoginOperatorError('Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.');
+    console.error('Gagal login operator:', err);
+    showLoginOperatorError(loginErrorMessage(err));
+    loginOperatorPassword.value = '';
+    loginOperatorPassword.focus();
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = originalText;
@@ -1621,42 +1724,26 @@ formLoginAdmin.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+    const fb = window.gudangFirebase;
 
-    // Cek dulu akun admin yang mendaftar sendiri (Firestore, password
-    // tersimpan sebagai hash). Kalau tidak ketemu, fallback ke daftar
-    // admin lama yang masih hardcode di data.js (password teks polos).
-    const nikKey = normalizeNikKey(nik);
-    const akunFirestore = await findAdminAccountByNik(nik);
+    const email = nikToSyntheticEmail('admin', nik);
+    const cred = await fb.signInWithEmailAndPassword(fb.auth, email, password);
 
-    if (akunFirestore) {
-      const passwordHash = await hashPassword(password);
-      if (passwordHash !== akunFirestore.passwordHash) {
-        showLoginAdminError('Kata sandi salah. Coba lagi.');
-        loginAdminPassword.value = '';
-        loginAdminPassword.focus();
-        return;
-      }
-      setSession({ role: 'admin', nama: akunFirestore.nama });
-      enterApp({ role: 'admin', nama: akunFirestore.nama });
+    const profileSnap = await fb.getDoc(fb.doc(fb.db, 'admin', cred.user.uid));
+    if (!profileSnap.exists()) {
+      await fb.signOut(fb.auth);
+      showLoginAdminError('Akun ini sudah tidak aktif. Hubungi admin gudang lain.');
       return;
     }
+    const nama = profileSnap.data().nama || cred.user.displayName || nik;
 
-    const akunLegacy = ADMIN_ACCOUNTS.find(a => normalizeNikKey(a.idKaryawan) === nikKey);
-    if (!akunLegacy) {
-      showLoginAdminError('NIK belum terdaftar sebagai admin. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
-      return;
-    }
-    if (password !== akunLegacy.password) {
-      showLoginAdminError('Kata sandi salah. Coba lagi.');
-      loginAdminPassword.value = '';
-      loginAdminPassword.focus();
-      return;
-    }
-    setSession({ role: 'admin', nama: akunLegacy.nama });
-    enterApp({ role: 'admin', nama: akunLegacy.nama });
+    setSession({ role: 'admin', nama });
+    enterApp({ role: 'admin', nama });
   } catch (err) {
-    console.error('Gagal memeriksa akun admin:', err);
-    showLoginAdminError('Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.');
+    console.error('Gagal login admin:', err);
+    showLoginAdminError(loginErrorMessage(err));
+    loginAdminPassword.value = '';
+    loginAdminPassword.focus();
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = originalText;
@@ -1664,6 +1751,7 @@ formLoginAdmin.addEventListener('submit', async (e) => {
 });
 
 // Ambil inisial dari nama (maks 2 huruf) untuk ditampilkan di lingkaran
+
 // avatar header, contoh: "Budi Santoso" -> "BS", "Admin" -> "AD".
 function getInitials(nama) {
   if (!nama) return '-';
@@ -1692,9 +1780,18 @@ function enterApp(session) {
   initFirestoreConnection();
 }
 
-document.getElementById('btn-logout').addEventListener('click', () => {
+document.getElementById('btn-logout').addEventListener('click', async () => {
   if (unsubscribeLaporan) unsubscribeLaporan();
   clearSession();
+  // PENTING: harus sign-out dari Firebase Auth juga, bukan cuma menghapus
+  // sessionStorage — kalau tidak, sesi Auth yang sesungguhnya (yang
+  // memberi akses baca/tulis Firestore) tetap aktif walau tampilan sudah
+  // kembali ke layar login.
+  try {
+    await window.gudangFirebase?.signOut(window.gudangFirebase.auth);
+  } catch (err) {
+    console.warn('Gagal sign-out dari Firebase Auth:', err);
+  }
   window.location.reload();
 });
 
@@ -1704,6 +1801,8 @@ document.getElementById('btn-logout').addEventListener('click', () => {
 const RINGKASAN_SHEET = 'Ringkasan Stok';
 
 let unsubscribeLaporan = null;
+let unsubscribeBarangBaru = null;
+let unsubscribePemilikBaru = null;
 let firestoreReady = false;
 
 // periodMode & periodDate dipindah ke sini (sebelum initFirestoreConnection()
@@ -1762,6 +1861,47 @@ function buildStokList(entries) {
     if (t.updatedAt > item.updated) item.updated = t.updatedAt;
   });
   return Object.values(map).sort((a, b) => a.nama.localeCompare(b.nama));
+}
+
+// Susun barang menjadi KARTU per kombinasi unik Kode Barang + Supplier +
+// Pemilik (bukan per kode barang saja). Ini yang dipakai Katalog Barang
+// (mode 'barang') supaya barang yang sama tapi beda supplier/pemilik TIDAK
+// digabung jadi satu kartu — sedangkan kedatangan (batch masuk) yang
+// kombinasi ketiganya persis sama TETAP digabung/dinetkan jadi satu kartu,
+// baru rinciannya per-batch terlihat saat kartu itu diklik.
+function buildBarangComboList(entries) {
+  const map = {};
+  entries.forEach(t => {
+    const kode = t.kodeBarang || t.namaBarang;
+    const supplier = t.supplier || '-';
+    const pemilik = t.pemilik || '-';
+    const key = [kode, supplier, pemilik].join('␟');
+    if (!map[key]) {
+      map[key] = {
+        kode: t.kodeBarang, nama: t.namaBarang, supplier, pemilik,
+        masuk: 0, keluar: 0, masukPallet: 0, keluarPallet: 0,
+        lokasiSet: new Set(), history: [], updated: 0,
+      };
+    }
+    const c = map[key];
+    c.history.push(t);
+    if (t.lokasi) c.lokasiSet.add(t.lokasi);
+    if (t.jenis === 'masuk') {
+      c.masuk += t.jumlah;
+      if (t.jumlahPallet != null) c.masukPallet += t.jumlahPallet;
+    } else {
+      c.keluar += t.jumlah;
+      if (t.jumlahPallet != null) c.keluarPallet += t.jumlahPallet;
+    }
+    if (t.updatedAt > c.updated) c.updated = t.updatedAt;
+  });
+  return Object.values(map).sort((a, b) => {
+    const byNama = a.nama.localeCompare(b.nama);
+    if (byNama !== 0) return byNama;
+    const bySupplier = a.supplier.localeCompare(b.supplier);
+    if (bySupplier !== 0) return bySupplier;
+    return a.pemilik.localeCompare(b.pemilik);
+  });
 }
 
 function buildLocationStock(entries) {
@@ -2257,6 +2397,17 @@ function initFirestoreConnection() {
         }
       );
     }
+
+    // PENTING: listener barangBaru & pemilikBaru DIPINDAH ke sini (dari
+    // dulunya dipanggil langsung di top-level file, lihat catatan di
+    // definisi fungsinya di bawah). Rules Firestore mensyaratkan
+    // isAppUser() (auth != null && role di token), jadi listener ini HANYA
+    // boleh dipasang SETELAH user beneran login — bukan saat script.js
+    // pertama kali dimuat (waktu itu auth.currentUser masih null, jadi
+    // langsung kena permission-denied dan listener-nya mati permanen,
+    // tidak pernah nyambung lagi walau user berhasil login sesudahnya).
+    startBarangBaruListener();
+    startPemilikBaruListener();
   }
 
   if (window.gudangFirebase) {
@@ -2377,10 +2528,22 @@ async function tambahBarangBaru(item) {
   });
 }
 
+// CATATAN: fungsi ini SENGAJA tidak lagi dipanggil otomatis di top-level
+// (dulu dipanggil langsung di sini begitu file ini dimuat — itu akar
+// masalah error "Missing or insufficient permissions" yang muncul di
+// console sebelum user login, dan menyebabkan dropdown "kode barang baru"
+// tidak pernah tersinkron seumur sesi). Sekarang dipanggil dari dalam
+// initFirestoreConnection() -> startListening(), yaitu SETELAH user
+// benar-benar login (enterApp sudah dipanggil, auth.currentUser sudah
+// terisi dengan role yang valid).
 function startBarangBaruListener() {
   const fb = window.gudangFirebase;
   if (!fb || !fb.barangBaruCol) return;
-  fb.onSnapshot(fb.barangBaruCol, (snapshot) => {
+  // Unsubscribe listener lama dulu (kalau ada) supaya tidak numpuk listener
+  // ganda kalau fungsi ini terpanggil berkali-kali (retry koneksi, logout
+  // lalu login lagi, dsb).
+  if (unsubscribeBarangBaru) unsubscribeBarangBaru();
+  unsubscribeBarangBaru = fb.onSnapshot(fb.barangBaruCol, (snapshot) => {
     customBarang = snapshot.docs.map(d => {
       const data = d.data();
       return { kode: data.kode, nama: data.nama };
@@ -2389,12 +2552,6 @@ function startBarangBaruListener() {
   }, (err) => {
     console.error('Gagal memuat daftar barang baru:', err);
   });
-}
-
-if (window.gudangFirebase) {
-  startBarangBaruListener();
-} else {
-  window.addEventListener('gudang-firebase-ready', startBarangBaruListener, { once: true });
 }
 
 /* ==========================================================================
@@ -2443,21 +2600,19 @@ async function tambahPemilikBaru(nama) {
   });
 }
 
+// Sama seperti startBarangBaruListener() di atas — sekarang dipanggil dari
+// initFirestoreConnection() -> startListening(), bukan otomatis di
+// top-level saat file dimuat.
 function startPemilikBaruListener() {
   const fb = window.gudangFirebase;
   if (!fb || !fb.pemilikBaruCol) return;
-  fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
+  if (unsubscribePemilikBaru) unsubscribePemilikBaru();
+  unsubscribePemilikBaru = fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
     customPemilik = snapshot.docs.map(d => d.data().nama);
     rebuildPemilikOptions();
   }, (err) => {
     console.error('Gagal memuat daftar pemilik baru:', err);
   });
-}
-
-if (window.gudangFirebase) {
-  startPemilikBaruListener();
-} else {
-  window.addEventListener('gudang-firebase-ready', startPemilikBaruListener, { once: true });
 }
 
 /* ==========================================================================
@@ -2619,6 +2774,51 @@ function refreshKombinasiUI(kodeBarang) {
 // Lokasi Penyimpanan BUKAN dropdown pilihan manual — nilainya hanya bisa
 // diisi lewat hasil scan barcode (lihat onScanSuccess di bawah).
 const lokasiValueEl = document.getElementById('sel-lokasi-value');
+const capacityInfoBox = document.getElementById('capacity-info');
+
+// Fungsi untuk memperbarui display kapasitas pallet berdasarkan lokasi SPESIFIK yang dipilih
+// Setiap lokasi (A-01-01, B-05-03, dll) punya batas tersendiri: 43 pallet (A-F) atau 47 pallet (G-L)
+function updateCapacityDisplay(lokasi) {
+  if (!lokasi || !capacityInfoBox) return;
+  
+  const cek = cekKapasitasBlok(lokasi, 0, currentEntries);
+  const capacityCurrentEl = document.getElementById('capacity-current');
+  const capacityMaxEl = document.getElementById('capacity-max');
+  const capacityRemainingEl = document.getElementById('capacity-remaining');
+  const capacityBarFill = document.getElementById('capacity-bar-fill');
+  
+  if (cek.batas) {
+    // Hapus atribut hidden untuk menampilkan info
+    capacityInfoBox.removeAttribute('hidden');
+    
+    // Update nilai kapasitas lokasi
+    if (capacityCurrentEl) capacityCurrentEl.textContent = roundPalletDisplay(cek.sekarang);
+    if (capacityMaxEl) capacityMaxEl.textContent = cek.batas.toLocaleString('id-ID');
+    if (capacityRemainingEl) {
+      capacityRemainingEl.textContent = roundPalletDisplay(cek.sisa);
+      
+      // Update kelas warna berdasarkan persentase penggunaan
+      capacityRemainingEl.classList.remove('warning', 'danger');
+      const persenTerpakai = (cek.sekarang / cek.batas) * 100;
+      if (persenTerpakai >= 90) {
+        capacityRemainingEl.classList.add('danger');  // Merah: >90%
+      } else if (persenTerpakai >= 70) {
+        capacityRemainingEl.classList.add('warning'); // Kuning: 70-89%
+      }
+      // Hijau (normal): <70% — tidak perlu class khusus
+    }
+    
+    // Update progress bar dengan warna gradient
+    if (capacityBarFill) {
+      const persenTerpakai = Math.min(100, (cek.sekarang / cek.batas) * 100);
+      capacityBarFill.style.width = persenTerpakai + '%';
+    }
+  } else {
+    // Lokasi tidak terdaftar dalam sistem batasan, sembunyikan info
+    capacityInfoBox.setAttribute('hidden', '');
+  }
+}
+
 const selLokasi = {
   _value: null,
   getValue: () => selLokasi._value,
@@ -2628,6 +2828,8 @@ const selLokasi = {
       lokasiValueEl.textContent = 'Belum di-scan...';
       lokasiValueEl.classList.remove('has-value');
     }
+    // Sembunyikan kapasitas info saat lokasi di-reset
+    if (capacityInfoBox) capacityInfoBox.setAttribute('hidden', '');
   },
   setValue: (v) => {
     selLokasi._value = v;
@@ -2635,6 +2837,8 @@ const selLokasi = {
       lokasiValueEl.textContent = v;
       lokasiValueEl.classList.add('has-value');
     }
+    // Update display kapasitas saat lokasi berubah
+    updateCapacityDisplay(v);
   },
 };
 
@@ -2910,21 +3114,21 @@ form.addEventListener('submit', async (e) => {
     }
   }
 
-  // ---- BLOKIR KAPASITAS BLOK — khusus BARANG MASUK ----
+  // ---- BLOKIR KAPASITAS LOKASI — khusus BARANG MASUK ----
   // Sebelum laporan disimpan, cek apakah pallet baru ini akan membuat
-  // total pallet di Blok tujuan (huruf pertama kode lokasi) melebihi
-  // batas kapasitas Blok tsb (lihat BATAS_PALLET_BLOK). Kalau melebihi,
-  // laporan DIBLOKIR TOTAL — tidak bisa disimpan sama sekali sampai
-  // operator pilih lokasi/blok lain yang masih ada sisa kapasitas.
+  // total pallet di LOKASI SPESIFIK tujuan melebihi batas kapasitas lokasi
+  // (43 pallet untuk lorong A-F, 47 untuk G-L).
+  // Kalau melebihi, laporan DIBLOKIR TOTAL — tidak bisa disimpan sama sekali sampai
+  // operator pilih lokasi lain yang masih ada sisa kapasitas.
   if (jenis === 'masuk') {
     const cek = cekKapasitasBlok(lokasi, jumlahPallet || 0);
     if (!cek.ok) {
       return showError(
-        `❌ Kapasitas Blok ${cek.blok} tidak mencukupi. ` +
-        `Pallet saat ini: ${roundPalletDisplay(cek.sekarang)}, batas: ${cek.batas.toLocaleString('id-ID')} pallet ` +
-        `(sisa kapasitas: ${roundPalletDisplay(cek.sisa)} pallet). ` +
-        `Laporan ini butuh ${roundPalletDisplay(jumlahPallet || 0)} pallet — melebihi sisa kapasitas Blok ${cek.blok}. ` +
-        `Pilih lokasi di blok lain atau kurangi jumlah barang.`
+        `❌ Kapasitas Lokasi ${escapeHtml(cek.lokasi)} tidak mencukupi.\n` +
+        `Pallet saat ini: ${roundPalletDisplay(cek.sekarang)}, batas: ${cek.batas.toLocaleString('id-ID')} pallet\n` +
+        `(sisa kapasitas: ${roundPalletDisplay(cek.sisa)} pallet).\n\n` +
+        `Laporan ini butuh ${roundPalletDisplay(jumlahPallet || 0)} pallet — melebihi sisa kapasitas di ${escapeHtml(cek.lokasi)}.\n` +
+        `Pilih lokasi lain di lorong yang sama atau kurangi jumlah barang.`
       );
     }
   }
@@ -3227,31 +3431,42 @@ periodDatePicker.addEventListener('change', () => {
 // yang membuat suatu Blok melebihi batas ini (lihat pengecekan di
 // form.addEventListener('submit', ...) untuk jenis === 'masuk').
 // Ubah angka di bawah ini kalau batas kapasitas gudang berubah.
-const BATAS_PALLET_BLOK = {
-  A: 1505, B: 5117, C: 5117, D: 4515, E: 5117, F: 4816,
-  G: 1645, H: 5593, I: 5593, J: 4935, K: 5593, L: 5264,
-};
+// ---- Batasan Kapasitas Per Lokasi ----
+// Setiap lokasi individual (A-01-01, A-01-02, dll) punya batasan pallet maksimal.
+// Lorong A-F: max 43 pallet per lokasi
+// Lorong G-L: max 47 pallet per lokasi
+function getBatasLokasiPallet(lokasi) {
+  if (!lokasi) return null;
+  const lorong = String(lokasi).trim().charAt(0).toUpperCase();
+  if (['A', 'B', 'C', 'D', 'E', 'F'].includes(lorong)) return 43;
+  if (['G', 'H', 'I', 'J', 'K', 'L'].includes(lorong)) return 47;
+  return null;  // Lorong lain tidak punya batasan
+}
 
-// ---- Helper terpusat: cek sisa kapasitas pallet suatu Blok ----
-// Dipakai di SEMUA jalur yang bisa menambah pallet ke suatu blok (form
+// ---- Helper terpusat: cek sisa kapasitas pallet suatu LOKASI ----
+// Dipakai di SEMUA jalur yang bisa menambah pallet ke suatu lokasi (form
 // laporan Barang Masuk, Penyesuaian Stok admin, Edit Laporan admin) supaya
 // tidak ada celah satu jalur ke-cek sementara jalur lain tidak.
-//   lokasi          -> kode lokasi tujuan (blok diambil dari huruf/segmen pertamanya)
-//   deltaPallet     -> jumlah pallet yang MAU ditambahkan (0 kalau cuma mau tahu kondisi blok saat ini)
+//   lokasi          -> kode lokasi tujuan spesifik (mis. A-01-01, B-05-03, dll)
+//   deltaPallet     -> jumlah pallet yang MAU ditambahkan (0 kalau cuma mau tahu kondisi lokasi saat ini)
 //   entriesUntukHitung -> basis data transaksi yang dipakai (default currentEntries).
 //                          Dipakai saat simulasi edit laporan, di mana entri yang
 //                          sedang diedit sengaja dikeluarkan dulu dari daftar supaya
 //                          tidak dihitung dobel (kontribusi lama + kontribusi baru).
-// Kalau blok tidak terdaftar di BATAS_PALLET_BLOK, dianggap tidak ada batas (ok: true).
+// Kalau lokasi tidak terdaftar di batas lorong, dianggap tidak ada batas (ok: true).
 function cekKapasitasBlok(lokasi, deltaPallet, entriesUntukHitung) {
-  const blok = getBlokFromLokasi(lokasi);
-  const batas = BATAS_PALLET_BLOK[blok];
-  if (!batas) return { ok: true, blok, batas: null, sekarang: 0, sisa: null, setelah: 0 };
-  const blokData = buildLokasiOccupancy(entriesUntukHitung || currentEntries).find(b => b.blok === blok);
-  const sekarang = blokData ? blokData.totalPallet : 0;
+  const batas = getBatasLokasiPallet(lokasi);
+  if (!batas) return { ok: true, lokasi, batas: null, sekarang: 0, sisa: null, setelah: 0 };
+  
+  // Hitung pallet yang sudah ada di LOKASI SPESIFIK ini (bukan seluruh blok)
+  const sekarang = (entriesUntukHitung || currentEntries)
+    .filter(t => t.lokasi === lokasi && t.jumlahPallet != null)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+  
   const setelah = sekarang + (deltaPallet || 0);
+  const lorong = String(lokasi).trim().charAt(0).toUpperCase();
   return {
-    ok: setelah <= batas, blok, batas, sekarang,
+    ok: setelah <= batas, lokasi, lorong, batas, sekarang,
     sisa: Math.max(batas - sekarang, 0), setelah,
   };
 }
@@ -3341,80 +3556,6 @@ function buildItemLokasiOccupancy(entries, kode) {
   return Object.values(bloks).sort((a, b) => a.blok.localeCompare(b.blok));
 }
 
-// Bangun HTML peta blok/rak (Terisi & Kosong) untuk SATU barang tertentu,
-// plus attach event listener-nya setelah HTML ini dipasang ke DOM (dipanggil
-// lewat attachItemLokasiMapEvents). Dipakai di modal detail barang, baik
-// yang sudah punya riwayat transaksi maupun yang belum sama sekali.
-function buildItemLokasiMapHtml(kode) {
-  const bloks = buildItemLokasiOccupancy(currentEntries, kode);
-  const totalSlot = bloks.reduce((s, b) => s + b.terisi + b.kosong, 0);
-  const totalTerisi = bloks.reduce((s, b) => s + b.terisi, 0);
-
-  if (totalSlot === 0) {
-    return '<p class="muted">Belum ada data lokasi (rak) di master data untuk dipetakan.</p>';
-  }
-
-  return `
-    <div class="lokasi-map-legend">
-      <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-terisi"></i>Terisi barang ini</span>
-      <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-kosong"></i>Kosong</span>
-    </div>
-    <p class="modal-history-hint muted">${totalTerisi.toLocaleString('id-ID')} dari ${totalSlot.toLocaleString('id-ID')} lokasi terisi barang ini. Klik nama blok untuk buka/tutup peta raknya.</p>
-    <div class="item-blok-list">
-      ${bloks.map(b => {
-        const total = b.terisi + b.kosong;
-        const isOpen = b.terisi > 0;
-        return `
-        <div class="item-blok-group">
-          <button type="button" class="item-blok-header" data-action="toggle-item-blok" aria-expanded="${isOpen}">
-            <span class="katalog-group-chevron ${isOpen ? 'is-open' : ''}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
-            </span>
-            <span class="katalog-group-title mono">Blok ${escapeHtml(b.blok)}</span>
-            <span class="katalog-group-count${b.terisi > 0 ? ' has-stock' : ''}">${b.terisi}/${total} terisi</span>
-          </button>
-          <div class="item-blok-grid-wrap" ${isOpen ? '' : 'hidden'}>
-            <div class="lokasi-map-grid">
-              ${b.slots.map(s => {
-                const shortLabel = s.lokasi.replace(new RegExp('^' + b.blok + '[-_./\\\\s]?'), '') || s.lokasi;
-                const title = s.status === 'terisi'
-                  ? `${s.lokasi} — Terisi (${s.qty.toLocaleString('id-ID')} pcs${s.pallet ? `, ${roundPalletDisplay(s.pallet)} pallet` : ''})`
-                  : `${s.lokasi} — Kosong, barang ini belum ada di sini`;
-                return `<button type="button" class="lokasi-map-cell is-${s.status}" data-lokasi="${escapeHtml(s.lokasi)}" data-status="${s.status}" title="${escapeHtml(title)}">${escapeHtml(shortLabel)}</button>`;
-              }).join('')}
-            </div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-  `;
-}
-
-// Pasang event listener untuk peta blok hasil buildItemLokasiMapHtml() di
-// atas. Dipisah dari fungsi pembuat HTML supaya bisa dipanggil ulang tiap
-// kali HTML-nya baru saja disisipkan ke modalBody.
-function attachItemLokasiMapEvents(root) {
-  root.querySelectorAll('[data-action="toggle-item-blok"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const wrap = btn.parentElement.querySelector('.item-blok-grid-wrap');
-      const chevron = btn.querySelector('.katalog-group-chevron');
-      const willOpen = wrap.hidden;
-      wrap.hidden = !willOpen;
-      chevron.classList.toggle('is-open', willOpen);
-      btn.setAttribute('aria-expanded', String(willOpen));
-    });
-  });
-  root.querySelectorAll('.lokasi-map-cell').forEach(cell => {
-    cell.addEventListener('click', () => {
-      if (cell.dataset.status === 'terisi') {
-        openLokasiModal(cell.dataset.lokasi);
-      } else {
-        showToast(`Barang ini belum ada di lokasi ${cell.dataset.lokasi}.`, 'info');
-      }
-    });
-  });
-}
-
 function renderBlokPallet() {
   const blokListEl = document.getElementById('blok-list');
   const blokEmptyEl = document.getElementById('blok-empty');
@@ -3444,17 +3585,10 @@ function renderBlokPallet() {
 
   blokData.forEach(b => {
     const total = b.terisi + b.kosong;
-    // Kalau Blok ini punya batas kapasitas pallet yang diketahui
-    // (BATAS_PALLET_BLOK), progress bar mengukur PALLET TERPAKAI vs BATAS
-    // KAPASITAS-nya (bukan lagi persentase rak terisi/kosong) supaya admin
-    // langsung lihat blok mana yang sudah mendekati/lewat kapasitas.
-    // Kalau blok tidak dikenal di BATAS_PALLET_BLOK, tetap pakai persentase
-    // rak terisi seperti sebelumnya (fallback lama).
-    const batasBlok = BATAS_PALLET_BLOK[b.blok];
-    const isOver = batasBlok ? b.totalPallet > batasBlok : false;
-    const pct = batasBlok
-      ? Math.round((b.totalPallet / batasBlok) * 100)
-      : (total > 0 ? Math.round((b.terisi / total) * 100) : 0);
+    // CATATAN: Validasi input sekarang berbasis PER LOKASI SPESIFIK (A-01-01, dll).
+    // Ringkasan di sini untuk monitoring trend per blok saja (informatif).
+    // Setiap lokasi individual punya batas: 43 pallet (lorong A-F) atau 47 pallet (lorong G-L).
+    const pct = total > 0 ? Math.round((b.terisi / total) * 100) : 0;
     const barWidthPct = Math.min(pct, 100);
 
     const row = document.createElement('div');
@@ -3814,6 +3948,7 @@ function renderRingkasan() {
    konsisten & gampang dipahami — klik baris mana pun membuka modal detail
    yang sesuai.
 ========================================================================== */
+const katalogSection = document.getElementById('katalog');
 const katalogList = document.getElementById('katalog-list');
 const katalogEmpty = document.getElementById('katalog-empty');
 const searchKatalog = document.getElementById('search-katalog');
@@ -3860,6 +3995,272 @@ function formatSetList(set, max = 2) {
   if (arr.length === 0) return '-';
   if (arr.length <= max) return arr.join(', ');
   return `${arr.slice(0, max).join(', ')} +${arr.length - max} lainnya`;
+}
+
+/* ==========================================================================
+   KATALOG BARANG — tampilan gabungan "Katalog Barang" (kiri) & "Lokasi
+   Penyimpanan" (kanan). Ini adalah tampilan mode 'barang' (default) yang
+   dilihat operator saat membuka tab "Katalog Barang", dan juga dilihat
+   admin saat memilih tab "Barang" di "Katalog & Stok".
+
+   Alur navigasinya:
+   - Klik barang di kiri  -> Detail Barang (openItemModal) -> tabel semua
+     batch/lokasi barang itu -> klik satu baris -> Riwayat Transaksi
+     (openRiwayatTransaksiView), lokasi & barangnya sama, tapi tampilkan
+     semua transaksi (masuk & keluar) yang pernah terjadi di sana.
+   - Klik lokasi di kanan -> Detail Lokasi (openLokasiModal) -> tabel semua
+     barang/batch di lokasi itu -> klik salah satu baris -> Detail Barang.
+
+   Modal detail dan Riwayat Transaksi sama-sama memakai #item-modal yang
+   sudah ada (isinya diganti tiap kali pindah tampilan), konsisten dengan
+   pola cross-link yang sudah dipakai modal lain di aplikasi ini — jadi
+   tidak perlu modal/overlay baru.
+========================================================================== */
+// Kapasitas per RAK/SLOT INDIVIDUAL sengaja TIDAK dipakai lagi (dulu ada
+// angka standar 30 pallet untuk semua rak, tapi itu tidak akurat — banyak
+// rak yang secara wajar menampung lebih dari 30 pallet, jadi progress bar
+// "Terisi" nya selalu mentok 100% dan menyesatkan). Kapasitas yang BENAR
+// datanya ada di tingkat BLOK (lihat BATAS_PALLET_BLOK di atas), jadi itu
+// yang dipakai untuk info kapasitas di panel & modal Lokasi Penyimpanan.
+// (Kapasitas per LORONG/area belum ada data masternya — kalau nanti ada
+// angkanya, tinggal ditambahkan pola yang sama seperti BATAS_PALLET_BLOK.)
+
+let katalogSplitBarangQuery = '';
+let katalogSplitLokasiQuery = '';
+// Halaman katalog Barang yang sedang aktif (pagination kartu kombinasi).
+// Direset ke 1 tiap kali pencarian berubah lewat cek "signature" di
+// renderKatalogBarangSplit.
+let katalogSplitBarangPage = 1;
+let katalogSplitBarangQuerySignature = '';
+const KATALOG_COMBO_PAGE_SIZE = 6;
+
+// "Area Penyimpanan" = kode lokasi tanpa nomor slot terakhir
+// (mis. "B-16-01" -> "B-16"), supaya ringkasan di Katalog Barang cukup
+// menunjukkan blok+rak tanpa perlu sampai detail nomor slot.
+function getAreaFromLokasi(lokasi) {
+  if (!lokasi) return '-';
+  const parts = String(lokasi).split('-');
+  return parts.length > 1 ? parts.slice(0, -1).join('-') : lokasi;
+}
+
+function renderKatalogBarangSplit() {
+  const combos = buildBarangComboList(currentEntries);
+  const bq = katalogSplitBarangQuery.trim().toLowerCase();
+  const filteredCombos = bq
+    ? combos.filter(c =>
+        c.nama.toLowerCase().includes(bq) ||
+        String(c.kode).toLowerCase().includes(bq) ||
+        (c.supplier || '').toLowerCase().includes(bq) ||
+        (c.pemilik || '').toLowerCase().includes(bq)
+      )
+    : combos;
+
+  const allLokasi = buildLocationStock(currentEntries);
+  const lq = katalogSplitLokasiQuery.trim().toLowerCase();
+  const filteredLokasi = lq ? allLokasi.filter(l => l.lokasi.toLowerCase().includes(lq)) : allLokasi;
+
+  // Reset ke halaman 1 tiap kali kata kuncinya berubah, supaya operator
+  // tidak "nyangkut" di halaman 3 pas hasil pencariannya cuma 1 halaman.
+  if (bq !== katalogSplitBarangQuerySignature) {
+    katalogSplitBarangQuerySignature = bq;
+    katalogSplitBarangPage = 1;
+  }
+  const totalPages = Math.max(1, Math.ceil(filteredCombos.length / KATALOG_COMBO_PAGE_SIZE));
+  if (katalogSplitBarangPage > totalPages) katalogSplitBarangPage = totalPages;
+  if (katalogSplitBarangPage < 1) katalogSplitBarangPage = 1;
+  const pageStart = (katalogSplitBarangPage - 1) * KATALOG_COMBO_PAGE_SIZE;
+  const pageCombos = filteredCombos.slice(pageStart, pageStart + KATALOG_COMBO_PAGE_SIZE);
+
+  // Satu kartu = satu kombinasi unik Barang + Supplier + Pemilik. Kedatangan
+  // (batch masuk) dengan kombinasi ketiganya persis sama sudah dinetkan jadi
+  // satu angka stok/pallet di sini — rincian per-batchnya baru kelihatan
+  // saat kartu ini diklik (lihat openComboModal).
+  const renderComboCard = (c) => {
+    const stok = c.masuk - c.keluar;
+    const totalPallet = (c.masukPallet || 0) - (c.keluarPallet || 0);
+    const jumlahLokasi = c.lokasiSet.size;
+    return `
+      <button type="button" class="barang-pick-row combo-card"
+        data-kode="${escapeHtml(c.kode || '')}"
+        data-supplier="${escapeHtml(c.supplier || '')}"
+        data-pemilik="${escapeHtml(c.pemilik || '')}">
+        <div class="barang-pick-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>
+        </div>
+        <div class="barang-pick-info">
+          <div class="barang-pick-nama" title="${escapeHtml(c.nama)}">${escapeHtml(c.nama)}</div>
+          <div class="barang-pick-kode mono">Kode Barang: ${escapeHtml(c.kode || '-')}</div>
+          <div class="combo-card-attrs">
+            <div class="combo-card-attr"><span class="combo-card-attr-label">Supplier:</span> <span class="combo-card-attr-val">${escapeHtml(c.supplier || '-')}</span></div>
+            <div class="combo-card-attr"><span class="combo-card-attr-label">Pemilik:</span> <span class="combo-card-attr-val">${escapeHtml(c.pemilik || '-')}</span></div>
+          </div>
+          <div class="barang-pick-meta">
+            <span class="barang-pick-lokasi-badge">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.6 7-11.5A7 7 0 0 0 5 9.5C5 14.4 12 21 12 21Z"/><circle cx="12" cy="9.5" r="2.3"/></svg>
+              Disimpan di ${jumlahLokasi} lokasi
+            </span>
+          </div>
+        </div>
+        <div class="barang-pick-qty">
+          <span class="qty-num ${stok <= 0 ? 'neg' : ''}">${stok.toLocaleString('id-ID')} <small>pcs</small></span>
+          ${totalPallet ? `<span class="qty-pallet">${roundPalletDisplay(totalPallet)} pallet</span>` : ''}
+        </div>
+        <svg class="barang-pick-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    `;
+  };
+
+  const barangRowsHtml = pageCombos.length ? pageCombos.map(renderComboCard).join('')
+    : `<div class="empty-state">Tidak ada barang yang cocok dengan pencarian.</div>`;
+
+  // Pager nomor halaman — cukup tampilkan beberapa nomor di sekitar halaman
+  // aktif kalau jumlah halamannya banyak, supaya tidak terlalu panjang.
+  const pagerHtml = (filteredCombos.length && totalPages > 1) ? (() => {
+    const maxButtons = 5;
+    let start = Math.max(1, katalogSplitBarangPage - Math.floor(maxButtons / 2));
+    let end = Math.min(totalPages, start + maxButtons - 1);
+    start = Math.max(1, end - maxButtons + 1);
+    let numberBtns = '';
+    for (let p = start; p <= end; p++) {
+      numberBtns += `<button type="button" class="katalog-pager-btn${p === katalogSplitBarangPage ? ' is-active' : ''}" data-page="${p}">${p}</button>`;
+    }
+    return `
+      <div class="katalog-pager">
+        <button type="button" class="katalog-pager-btn" data-page="prev" ${katalogSplitBarangPage <= 1 ? 'disabled' : ''} aria-label="Halaman sebelumnya">«</button>
+        ${numberBtns}
+        <button type="button" class="katalog-pager-btn" data-page="next" ${katalogSplitBarangPage >= totalPages ? 'disabled' : ''} aria-label="Halaman berikutnya">»</button>
+      </div>
+    `;
+  })() : '';
+
+  // Bar kapasitas & badge status ditambahkan sebagai INFO TAMBAHAN di
+  // bawah baris yang sudah ada (lokasi/total pallet/aksi tetap sama persis
+  // seperti sebelumnya) — pakai helper getBatasLokasiPallet() yang sudah
+  // ada & sebelumnya cuma dipakai di modal detail lokasi. Lokasi tanpa
+  // batas terdaftar (lorong di luar A-L) tetap tampil apa adanya, tanpa bar.
+  const lokasiRowsHtml = filteredLokasi.length ? filteredLokasi.map(l => {
+    // PENTING: roundPalletDisplay() mengembalikan STRING terformat locale
+    // id-ID (mis. "33.440,21" — titik ribuan, koma desimal). String itu
+    // TIDAK BOLEH dipakai untuk perhitungan (Number("33.440,21") = NaN).
+    // Jadi nilai numerik mentah (palletNum) dan teks tampilan (palletDisplay)
+    // dipisah: yang satu buat hitung persen, yang satu buat ditulis di layar.
+    const palletNum = Number(l.totalPallet) || 0;
+    const palletDisplay = l.totalPallet ? roundPalletDisplay(l.totalPallet) : '0';
+    const batas = getBatasLokasiPallet(l.lokasi);
+    // Blok kapasitas SELALU dirender (baik ada batas maupun tidak) supaya
+    // tinggi tiap baris konsisten — sebelumnya baris tanpa batas terdaftar
+    // jadi lebih pendek dari yang lain dan bikin daftar terlihat berantakan.
+    let capacityHtml;
+    if (batas) {
+      const pct = Math.min(100, Math.max(0, Math.round((palletNum / batas) * 100)));
+      let statusClass = 'ltr-cap-ok', statusLabel = 'Tersedia';
+      if (pct >= 100) { statusClass = 'ltr-cap-full'; statusLabel = 'Penuh'; }
+      else if (pct >= 70) { statusClass = 'ltr-cap-warn'; statusLabel = 'Hampir penuh'; }
+      capacityHtml = `
+        <div class="ltr-capacity">
+          <div class="ltr-capacity-bar"><div class="ltr-capacity-fill ${statusClass}" style="width:${pct}%"></div></div>
+          <span class="ltr-capacity-label ${statusClass}">${statusLabel} · ${pct}%</span>
+        </div>
+      `;
+    } else {
+      capacityHtml = `
+        <div class="ltr-capacity">
+          <div class="ltr-capacity-bar"><div class="ltr-capacity-fill ltr-cap-none" style="width:0%"></div></div>
+          <span class="ltr-capacity-label ltr-cap-none">Tanpa batas terdaftar</span>
+        </div>
+      `;
+    }
+    return `
+      <div class="lokasi-table-row" data-lokasi="${escapeHtml(l.lokasi)}" role="button" tabindex="0">
+        <div class="ltr-main">
+          <div class="ltr-col ltr-lokasi mono">${escapeHtml(l.lokasi)}</div>
+          <div class="ltr-col ltr-pallet">${palletDisplay}${batas ? ` / ${batas.toLocaleString('id-ID')}` : ''} pallet</div>
+          <button type="button" class="ltr-aksi" data-lokasi-aksi="${escapeHtml(l.lokasi)}" aria-label="Lihat detail lokasi ${escapeHtml(l.lokasi)}" title="Lihat detail lokasi">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        ${capacityHtml}
+      </div>
+    `;
+  }).join('') : `<div class="empty-state">Tidak ada lokasi yang cocok dengan pencarian.</div>`;
+
+  katalogList.className = 'katalog-split';
+  katalogList.innerHTML = `
+    <div class="katalog-panel">
+      <div class="katalog-panel-head">
+        <h3>📦 Katalog Barang</h3>
+        <div class="search-inline search-inline-mini">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="katalog-split-barang-search" placeholder="Cari barang, supplier, atau pemilik..." value="${escapeHtml(katalogSplitBarangQuery)}">
+        </div>
+      </div>
+      <div class="katalog-panel-count">${filteredCombos.length} grup barang</div>
+      <div class="barang-group-list">${barangRowsHtml}</div>
+      ${pagerHtml}
+    </div>
+    <div class="katalog-panel">
+      <div class="katalog-panel-head">
+        <h3>📍 Lokasi Penyimpanan</h3>
+        <div class="search-inline search-inline-mini">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" id="katalog-split-lokasi-search" placeholder="Cari lokasi..." value="${escapeHtml(katalogSplitLokasiQuery)}">
+        </div>
+      </div>
+      <div class="katalog-panel-count">Total ${allLokasi.length} lokasi</div>
+      <div class="lokasi-table">
+        <div class="lokasi-table-row lokasi-table-head">
+          <div class="ltr-col ltr-lokasi">Lokasi</div>
+          <div class="ltr-col ltr-pallet">Total Pallet</div>
+          <div class="ltr-col ltr-aksi-head">Aksi</div>
+        </div>
+        <div class="lokasi-table-body">${lokasiRowsHtml}</div>
+      </div>
+    </div>
+  `;
+
+  katalogList.querySelectorAll('.combo-card').forEach(row => {
+    row.addEventListener('click', () => openComboModal(row.dataset.kode, row.dataset.supplier, row.dataset.pemilik));
+  });
+  katalogList.querySelectorAll('.katalog-pager-btn[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.page;
+      if (val === 'prev') katalogSplitBarangPage = Math.max(1, katalogSplitBarangPage - 1);
+      else if (val === 'next') katalogSplitBarangPage = Math.min(totalPages, katalogSplitBarangPage + 1);
+      else katalogSplitBarangPage = parseInt(val, 10) || 1;
+      renderKatalogBarangSplit();
+    });
+  });
+  katalogList.querySelectorAll('.lokasi-table-row:not(.lokasi-table-head)').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.ltr-aksi')) return;
+      openLokasiModal(row.dataset.lokasi);
+    });
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLokasiModal(row.dataset.lokasi); }
+    });
+  });
+  katalogList.querySelectorAll('.ltr-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); openLokasiModal(btn.dataset.lokasiAksi); });
+  });
+
+  const focusEnd = (el) => { if (el) { el.focus(); const v = el.value; el.setSelectionRange(v.length, v.length); } };
+
+  const barangSearchInput = document.getElementById('katalog-split-barang-search');
+  if (barangSearchInput) {
+    barangSearchInput.addEventListener('input', () => {
+      katalogSplitBarangQuery = barangSearchInput.value;
+      renderKatalogBarangSplit();
+      focusEnd(document.getElementById('katalog-split-barang-search'));
+    });
+  }
+  const lokasiSearchInput = document.getElementById('katalog-split-lokasi-search');
+  if (lokasiSearchInput) {
+    lokasiSearchInput.addEventListener('input', () => {
+      katalogSplitLokasiQuery = lokasiSearchInput.value;
+      renderKatalogBarangSplit();
+      focusEnd(document.getElementById('katalog-split-lokasi-search'));
+    });
+  }
 }
 
 // Baris tabel katalog — versi "gampang dibaca" untuk operator: nama/judul,
@@ -3912,29 +4313,16 @@ function renderKatalog() {
   katalogList.classList.add('stok-table');
   katalogList.classList.remove('folder-grid');
   katalogList.classList.remove('bar-list');
+  // Mode 'barang' pakai tampilan gabungan Katalog Barang + Lokasi
+  // Penyimpanan berdampingan (lihat renderKatalogBarangSplit) yang punya
+  // search & judul sendiri per panel — sembunyikan search/hint umum di
+  // atas supaya tidak dobel.
+  katalogSection.classList.toggle('katalog-split-active', katalogMode === 'barang');
 
   if (katalogMode === 'barang') {
-    const items = buildStokList(currentEntries);
-    const filtered = q ? items.filter(it => it.nama.toLowerCase().includes(q) || String(it.kode).toLowerCase().includes(q)) : items;
-    if (items.length === 0) return setKatalogEmpty('Belum ada barang yang tercatat.');
-    if (filtered.length === 0) return setKatalogEmpty('Tidak ada barang yang cocok dengan pencarian.');
     katalogEmpty.hidden = true;
-    katalogHint.textContent = `📁 ${items.length} barang. Klik baris untuk lihat riwayat transaksi lengkap.`;
-    filtered.forEach(it => {
-      const stok = it.masuk - it.keluar;
-      const totalPallet = (it.masukPallet || 0) - (it.keluarPallet || 0);
-      const statusClass = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
-      const statusLabel = stok > 0 ? 'Stok Tersedia' : (stok < 0 ? 'Stok Minus' : 'Stok Kosong');
-      appendStokRow(katalogList, {
-        nama: it.nama, sub: it.kode, subMono: true, stok, statusClass, statusLabel, pallet: totalPallet,
-        meta: [
-          { icon: '📍', label: 'Lokasi', value: formatSetList(it.lokasi) },
-          { icon: '🚚', label: 'Supplier', value: formatSetList(it.supplierSet) },
-          { icon: '🏭', label: 'Pemilik', value: formatSetList(it.pemilikSet) },
-        ],
-        onClick: () => openItemModal(it.kode),
-      });
-    });
+    renderKatalogBarangSplit();
+    return;
 
   } else if (katalogMode === 'lokasi') {
     const all = buildLocationStock(currentEntries);
@@ -4094,8 +4482,17 @@ function renderAkunOperator() {
       if (!confirm(`Hapus akun operator "${a.nama}"? Operator ini tidak akan bisa masuk lagi sampai mendaftar ulang.`)) return;
       try {
         const fb = window.gudangFirebase;
+        // TANPA Cloud Functions: ini SOFT-DELETE. Dokumen profil di
+        // operator/{uid} dihapus langsung (diizinkan firestore.rules
+        // untuk isAdmin()), yang membuat operator ini langsung kehilangan
+        // akses ke semua data (exists() check di rules gagal). Akun
+        // Firebase Auth-nya sendiri TIDAK ikut terhapus (client SDK cuma
+        // bisa hapus akun sendiri) — kalau perlu dibersihkan total, hapus
+        // manual lewat Firebase Console > Authentication > Users.
+        // `a.id` di sini adalah UID Firebase Auth (document ID di koleksi
+        // operator), bukan NIK lagi.
         await fb.deleteDoc(fb.doc(fb.db, 'operator', a.id));
-        showToast('Akun operator dihapus.');
+        showToast('Akun operator dinonaktifkan (profil dihapus). Akun Auth-nya masih ada di sistem — bersihkan manual lewat Firebase Console kalau perlu.');
       } catch (err) {
         showToast('Gagal menghapus akun: ' + err.message, 'error');
       }
@@ -4112,46 +4509,235 @@ function openLokasiModal(lokasi) {
   const data = all.find(l => l.lokasi === lokasi);
   if (!data) return;
 
+  // Kapasitas per lokasi spesifik: 43 pallet (lorong A-F) atau 47 pallet (lorong G-L)
+  // Setiap lokasi individual punya batasan tersendiri untuk mencegah overstock.
+  const kapasitasLokasi = cekKapasitasBlok(lokasi, 0, currentEntries);
+  const pctLokasi = kapasitasLokasi.batas ? Math.min(100, Math.round((kapasitasLokasi.sekarang / kapasitasLokasi.batas) * 100)) : null;
+
+  // Baris tabel = tiap BATCH kedatangan (transaksi MASUK) di lokasi ini,
+  // bukan digabung/dinetkan per barang — supaya kelihatan riwayat
+  // kedatangan barang satu-satu, dan operator bisa langsung klik satu
+  // baris untuk membuka Detail Barang-nya.
+  const batchRows = currentEntries
+    .filter(t => t.lokasi === lokasi && t.jenis === 'masuk')
+    .slice()
+    .sort((a, b) => b.createdAt - a.createdAt);
+
   modalBody.innerHTML = `
     <div class="modal-item-head">
       <div class="modal-item-kode">LOKASI PENYIMPANAN</div>
       <h2 class="modal-item-nama mono">${escapeHtml(data.lokasi)}</h2>
     </div>
-    <div class="modal-stat-grid">
-      <div class="modal-stat"><span>Jenis Barang</span><strong>${data.itemCount}</strong></div>
-      <div class="modal-stat"><span>Total Stok</span><strong>${data.totalQty.toLocaleString('id-ID')}</strong></div>
-      <div class="modal-stat"><span>Total Pallet</span><strong>${data.totalPallet ? roundPalletDisplay(data.totalPallet) : '-'}</strong></div>
-      <div class="modal-stat"><span>Tanggal Kedatangan</span><strong class="modal-stat-small">${data.tanggalKedatangan ? formatTanggal(data.tanggalKedatangan) : '-'}</strong></div>
-      <div class="modal-stat"><span>Terakhir Diperbarui</span><strong class="modal-stat-small">${data.lastActivity ? formatWaktu(data.lastActivity) : '-'}</strong></div>
+    <div class="modal-stat-grid modal-stat-grid-4">
+      <div class="modal-stat"><span>Total Jenis Barang</span><strong>${data.itemCount}</strong></div>
+      <div class="modal-stat"><span>Total PCS</span><strong>${data.totalQty.toLocaleString('id-ID')}</strong></div>
+      <div class="modal-stat"><span>Total Pallet di Lokasi Ini</span><strong>${data.totalPallet ? roundPalletDisplay(data.totalPallet) : 0}</strong></div>
+      <div class="modal-stat">
+        <span>Kapasitas Maksimal Lokasi</span>
+        <strong class="modal-stat-small${pctLokasi !== null && pctLokasi >= 100 ? ' neg' : ''}">${kapasitasLokasi.batas ? `${roundPalletDisplay(kapasitasLokasi.sekarang)} / ${kapasitasLokasi.batas.toLocaleString('id-ID')} pallet \u00b7 ${pctLokasi}%` : 'Lorong tidak terdaftar'}</strong>
+      </div>
     </div>
     <div class="modal-section">
-      <h4>Barang di Lokasi Ini</h4>
-      <p class="modal-history-hint muted">Diurutkan dari tanggal kedatangan paling lama (FIFO) di atas.</p>
-      <div id="modal-lokasi-stok-table" class="stok-table stok-table-modal"></div>
+      <h4>Barang &amp; Batch di Lokasi Ini (${batchRows.length})</h4>
+      <p class="modal-history-hint muted">Diurutkan dari kedatangan paling baru. Klik salah satu baris untuk lihat Detail Barangnya.</p>
+      <div class="batch-table batch-table-lokasi">
+        <div class="batch-table-row batch-table-head">
+          <div class="btc btc-nama">Barang</div>
+          <div class="btc btc-pemilik">Pemilik</div>
+          <div class="btc btc-tanggal">Tanggal Kedatangan</div>
+          <div class="btc btc-supplier">Supplier</div>
+          <div class="btc btc-jumlah">Jumlah PCS</div>
+          <div class="btc btc-pcspal">PCS/Pallet</div>
+          <div class="btc btc-pallet">Pallet</div>
+          <div class="btc btc-operator">Operator</div>
+          <div class="btc btc-aksi-head">Aksi</div>
+        </div>
+        <div class="batch-table-body">
+          ${batchRows.length ? batchRows.map(t => `
+            <div class="batch-table-row" data-kode="${escapeHtml(t.kodeBarang || t.namaBarang || '')}" data-supplier="${escapeHtml(t.supplier || '')}" data-pemilik="${escapeHtml(t.pemilik || '')}">
+              <div class="btc btc-nama" title="${escapeHtml(t.namaBarang || '-')}">${escapeHtml(t.namaBarang || '-')}</div>
+              <div class="btc btc-pemilik">${escapeHtml(t.pemilik || '-')}</div>
+              <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-supplier">${escapeHtml(t.supplier || '-')}</div>
+              <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
+              <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
+              <button type="button" class="btc-aksi" data-kode-aksi="${escapeHtml(t.kodeBarang || t.namaBarang || '')}" data-supplier-aksi="${escapeHtml(t.supplier || '')}" data-pemilik-aksi="${escapeHtml(t.pemilik || '')}" aria-label="Lihat detail barang" title="Detail Barang">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          `).join('') : `<div class="empty-state">Belum ada barang masuk yang tercatat di lokasi ini.</div>`}
+        </div>
+      </div>
     </div>
   `;
-  const container = modalBody.querySelector('#modal-lokasi-stok-table');
-  const itemsUrut = [...data.items].sort((a, b) => {
-    if (a.tanggalKedatangan && b.tanggalKedatangan && a.tanggalKedatangan !== b.tanggalKedatangan) {
-      return a.tanggalKedatangan < b.tanggalKedatangan ? -1 : 1;
-    }
-    if (!!a.tanggalKedatangan !== !!b.tanggalKedatangan) return a.tanggalKedatangan ? -1 : 1;
-    return b.qty - a.qty;
-  });
-  itemsUrut.forEach(it => {
-    const statusClass = it.qty > 0 ? 'pos' : (it.qty < 0 ? 'neg' : 'zero');
-    const statusLabel = it.qty > 0 ? 'Stok Tersedia' : (it.qty < 0 ? 'Stok Minus' : 'Stok Kosong');
-    appendStokRow(container, {
-      nama: it.nama, sub: it.kode, subMono: true, stok: it.qty, statusClass, statusLabel, pallet: it.pallet,
-      meta: [
-        { icon: '🚚', label: 'Supplier', value: formatSetList(it.supplierSet) },
-        { icon: '🏭', label: 'Pemilik', value: formatSetList(it.pemilikSet) },
-        { icon: '📅', label: 'Tanggal Kedatangan', value: it.tanggalKedatangan ? formatTanggal(it.tanggalKedatangan) : '-' },
-        { icon: '🕒', label: 'Terakhir', value: it.lastActivity ? formatWaktu(it.lastActivity) : '-' },
-      ],
-      onClick: () => openItemModal(it.kode),
+  modalBody.querySelectorAll('.batch-table-row[data-kode]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.btc-aksi')) return;
+      const kode = row.dataset.kode;
+      if (kode) openComboModal(kode, row.dataset.supplier, row.dataset.pemilik);
     });
   });
+  modalBody.querySelectorAll('.btc-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const kode = btn.dataset.kodeAksi;
+      if (kode) openComboModal(kode, btn.dataset.supplierAksi, btn.dataset.pemilikAksi);
+    });
+  });
+  itemModal.hidden = false;
+}
+
+/* ---- Modal detail KARTU KATALOG (satu kombinasi Barang + Supplier +
+   Pemilik) ---- Ini yang dibuka saat kartu di panel "Katalog Barang"
+   diklik. Beda dari openItemModal (yang menjumlahkan SEMUA supplier/
+   pemilik untuk satu kode barang), modal ini hanya menghitung & menampilkan
+   batch-batch kedatangan yang kombinasi Barang+Supplier+Pemilik-nya PERSIS
+   sama dengan kartu yang diklik. ---- */
+function openComboModal(kode, supplier, pemilik) {
+  if (!kode) return;
+  const combos = buildBarangComboList(currentEntries);
+  const supplierKey = supplier || '-';
+  const pemilikKey = pemilik || '-';
+  const combo = combos.find(c => c.kode === kode && c.supplier === supplierKey && c.pemilik === pemilikKey);
+  if (!combo) return;
+
+  const stok = combo.masuk - combo.keluar;
+  const totalPallet = (combo.masukPallet || 0) - (combo.keluarPallet || 0);
+  const avgPcsPerPallet = totalPallet > 0
+    ? Math.round(stok / totalPallet)
+    : (() => {
+        const lastMasukPallet = [...combo.history]
+          .filter(t => t.jenis === 'masuk' && t.qtyPerPallet)
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        return lastMasukPallet ? lastMasukPallet.qtyPerPallet : null;
+      })();
+  const areaSet = new Set(Array.from(combo.lokasiSet || []).map(getAreaFromLokasi));
+
+  // Baris tabel = tiap BATCH kedatangan (transaksi MASUK) untuk kombinasi
+  // ini saja — bukan digabung/dinetkan, supaya kelihatan riwayat
+  // kedatangannya satu-satu. Klik satu baris membuka Riwayat Transaksi
+  // lengkap (masuk & keluar) kombinasi ini di lokasi tersebut.
+  const batchRows = [...combo.history]
+    .filter(t => t.jenis === 'masuk')
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  modalBody.innerHTML = `
+    <div class="modal-item-head">
+      <div class="modal-item-kode mono">Kode Barang: ${escapeHtml(combo.kode || '-')}</div>
+      <h2 class="modal-item-nama">${escapeHtml(combo.nama)}</h2>
+    </div>
+
+    <div class="modal-section-inline">
+      <div><span class="lbl">🚚 Supplier</span><span>${escapeHtml(combo.supplier || '-')}</span></div>
+      <div><span class="lbl">🏭 Pemilik Barang</span><span>${escapeHtml(combo.pemilik || '-')}</span></div>
+    </div>
+
+    <div class="modal-stat-grid modal-stat-grid-4">
+      <div class="modal-stat"><span>Total PCS</span><strong class="${stok <= 0 ? 'neg' : ''}">${stok.toLocaleString('id-ID')}</strong></div>
+      <div class="modal-stat"><span>Total Pallet</span><strong>${totalPallet ? roundPalletDisplay(totalPallet) : 0}</strong></div>
+      <div class="modal-stat"><span>PCS per Pallet (Rata-rata)</span><strong>${avgPcsPerPallet ? avgPcsPerPallet.toLocaleString('id-ID') : '-'}</strong></div>
+      <div class="modal-stat"><span>Area Penyimpanan</span><strong class="modal-stat-small">${escapeHtml(formatSetList(areaSet))}</strong></div>
+    </div>
+
+    <div class="modal-section">
+      <h4>Lokasi &amp; Batch Kedatangan (${batchRows.length})</h4>
+      <p class="modal-history-hint muted">Setiap baris adalah satu batch kedatangan untuk kombinasi barang + supplier + pemilik ini. Klik salah satu baris untuk lihat riwayat transaksinya.</p>
+      <div class="batch-table">
+        <div class="batch-table-row batch-table-head">
+          <div class="btc btc-lokasi">Lokasi</div>
+          <div class="btc btc-tanggal">Tanggal Kedatangan</div>
+          <div class="btc btc-jumlah">Jumlah PCS</div>
+          <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-pallet">Total Pallet</div>
+          <div class="btc btc-operator">Operator Input</div>
+          <div class="btc btc-aksi-head">Aksi</div>
+        </div>
+        <div class="batch-table-body">
+          ${batchRows.length ? batchRows.map(t => `
+            <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}">
+              <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
+              <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
+              <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
+              <button type="button" class="btc-aksi" data-batch-lokasi="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          `).join('') : `<div class="empty-state">Belum ada batch masuk yang tercatat.</div>`}
+        </div>
+      </div>
+    </div>
+  `;
+  modalBody.querySelectorAll('.batch-table-row[data-lokasi]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.btc-aksi')) return;
+      openComboRiwayatView(combo.kode, combo.supplier, combo.pemilik, row.dataset.lokasi);
+    });
+  });
+  modalBody.querySelectorAll('.btc-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openComboRiwayatView(combo.kode, combo.supplier, combo.pemilik, btn.dataset.batchLokasi);
+    });
+  });
+  itemModal.hidden = false;
+}
+
+// ---- Riwayat Transaksi untuk satu KOMBINASI (Barang + Supplier + Pemilik)
+// di satu lokasi ---- Sama seperti openRiwayatTransaksiView, tapi hanya
+// menampilkan transaksi yang kombinasi ketiganya persis sama dengan kartu
+// katalog yang sedang dibuka (bukan semua transaksi kode barang itu di
+// lokasi tsb, yang bisa saja tercampur dari supplier/pemilik lain).
+function openComboRiwayatView(kode, supplier, pemilik, lokasi) {
+  const combos = buildBarangComboList(currentEntries);
+  const supplierKey = supplier || '-';
+  const pemilikKey = pemilik || '-';
+  const combo = combos.find(c => c.kode === kode && c.supplier === supplierKey && c.pemilik === pemilikKey);
+  if (!combo) return;
+
+  const historyDiLokasi = combo.history
+    .filter(t => t.lokasi === lokasi)
+    .slice()
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  modalBody.innerHTML = `
+    <button type="button" class="modal-back-link" id="riwayat-back-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+      Kembali ke Detail Barang
+    </button>
+    <div class="modal-item-head" style="margin-top:10px;">
+      <div class="modal-item-kode mono">Lokasi: ${escapeHtml(lokasi || '-')} · Supplier: ${escapeHtml(combo.supplier || '-')} · Pemilik: ${escapeHtml(combo.pemilik || '-')}</div>
+      <h2 class="modal-item-nama">Riwayat Transaksi</h2>
+      <div class="modal-item-sub muted">${escapeHtml(combo.nama)} <span class="mono">(${escapeHtml(combo.kode || '-')})</span></div>
+    </div>
+    <div class="riwayat-tx-list">
+      ${historyDiLokasi.length ? historyDiLokasi.map(t => `
+        <div class="riwayat-tx-card">
+          <div class="riwayat-tx-top">
+            <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · Penyesuaian' : ''}</span>
+            <span class="riwayat-tx-time">${formatTanggal(t.tanggal)} · ${formatJam(t.createdAt)}</span>
+          </div>
+          <div class="riwayat-tx-grid">
+            <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
+            ${t.qtyPerPallet ? `<div><span class="lbl">PCS per Pallet</span><span>${t.qtyPerPallet.toLocaleString('id-ID')}</span></div>` : ''}
+            ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
+            ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
+            <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
+            <div><span class="lbl">Operator Input</span><span>${escapeHtml(t.operator || '-')}</span></div>
+          </div>
+          ${t.keterangan ? `<div class="riwayat-tx-note">${escapeHtml(t.keterangan)}</div>` : ''}
+          ${(t.editLog && t.editLog.length)
+            ? `<div class="riwayat-tx-note riwayat-tx-edited">✏️ ${t.editLog.length}× diedit — terakhir oleh ${escapeHtml(t.editLog[t.editLog.length - 1].oleh)} · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}</div>`
+            : ''}
+        </div>
+      `).join('') : `<div class="empty-state">Belum ada transaksi kombinasi ini di lokasi tersebut.</div>`}
+    </div>
+  `;
+  document.getElementById('riwayat-back-btn')?.addEventListener('click', () => openComboModal(kode, supplier, pemilik));
   itemModal.hidden = false;
 }
 
@@ -4244,19 +4830,31 @@ function openItemModal(kode, namaFallback) {
         <div class="modal-item-kode mono">Kode Barang: ${escapeHtml(kode)}</div>
         <h2 class="modal-item-nama">${escapeHtml(nama)}</h2>
       </div>
-      <p class="muted" style="margin-top:-8px;">Barang ini belum pernah tercatat masuk/keluar, jadi belum ada stok. Peta di bawah menunjukkan barang ini memang belum ada di lokasi manapun.</p>
-      <div class="modal-section">
-        <h4>🧱 Status Lokasi Barang Ini — Terisi &amp; Kosong</h4>
-        ${buildItemLokasiMapHtml(kode)}
-      </div>
+      <p class="muted" style="margin-top:-8px;">Barang ini belum pernah tercatat masuk/keluar, jadi belum ada stok maupun lokasi yang tercatat.</p>
     `;
-    attachItemLokasiMapEvents(modalBody);
     itemModal.hidden = false;
     return;
   }
 
   const stok = item.masuk - item.keluar;
-  const historySorted = [...item.history].sort((a, b) => b.createdAt - a.createdAt);
+  const totalPallet = (item.masukPallet || 0) - (item.keluarPallet || 0);
+  const avgPcsPerPallet = totalPallet > 0
+    ? Math.round(stok / totalPallet)
+    : (() => {
+        const lastMasukPallet = [...item.history]
+          .filter(t => t.jenis === 'masuk' && t.qtyPerPallet)
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        return lastMasukPallet ? lastMasukPallet.qtyPerPallet : null;
+      })();
+  const areaSet = new Set(Array.from(item.lokasi || []).map(getAreaFromLokasi));
+
+  // Baris tabel = tiap BATCH kedatangan (transaksi MASUK) barang ini,
+  // ditampilkan per lokasi & tanggal — bukan digabung/dinetkan, supaya
+  // kelihatan riwayat kedatangannya satu-satu. Klik satu baris membuka
+  // Riwayat Transaksi lengkap (masuk & keluar) untuk lokasi tersebut.
+  const batchRows = [...item.history]
+    .filter(t => t.jenis === 'masuk')
+    .sort((a, b) => b.createdAt - a.createdAt);
 
   modalBody.innerHTML = `
     <div class="modal-item-head">
@@ -4264,75 +4862,115 @@ function openItemModal(kode, namaFallback) {
       <h2 class="modal-item-nama">${escapeHtml(item.nama)}</h2>
     </div>
 
-    <div class="modal-headline">
-      <span class="modal-headline-label">Stok Saat Ini</span>
-      <strong class="modal-headline-value ${stok <= 0 ? 'neg' : ''}">${stok.toLocaleString('id-ID')} <small>pcs</small></strong>
+    <div class="modal-stat-grid modal-stat-grid-4">
+      <div class="modal-stat"><span>Total PCS</span><strong class="${stok <= 0 ? 'neg' : ''}">${stok.toLocaleString('id-ID')}</strong></div>
+      <div class="modal-stat"><span>Total Pallet</span><strong>${totalPallet ? roundPalletDisplay(totalPallet) : 0}</strong></div>
+      <div class="modal-stat"><span>PCS per Pallet (Rata-rata)</span><strong>${avgPcsPerPallet ? avgPcsPerPallet.toLocaleString('id-ID') : '-'}</strong></div>
+      <div class="modal-stat"><span>Area Penyimpanan</span><strong class="modal-stat-small">${escapeHtml(formatSetList(areaSet))}</strong></div>
     </div>
-    <div class="modal-stat-grid modal-stat-grid-sub">
-      <div class="modal-stat"><span>Total Masuk (semua waktu)</span><strong>${item.masuk.toLocaleString('id-ID')} pcs</strong></div>
-      <div class="modal-stat"><span>Total Keluar (semua waktu)</span><strong>${item.keluar.toLocaleString('id-ID')} pcs</strong></div>
+
+    <div class="modal-section-inline">
+      <div><span class="lbl">🚚 Supplier</span><span>${escapeHtml(formatSetList(item.supplierSet))}</span></div>
+      <div><span class="lbl">🏭 Pemilik Barang</span><span>${escapeHtml(formatSetList(item.pemilikSet))}</span></div>
     </div>
 
     <div class="modal-section">
-      <h4>🧱 Status Lokasi Barang Ini — Terisi &amp; Kosong</h4>
-      ${buildItemLokasiMapHtml(item.kode)}
-    </div>
-
-    <div class="modal-section">
-      <h4>Riwayat Transaksi Masuk &amp; Keluar (${historySorted.length})</h4>
-      <p class="modal-history-hint muted">Diurutkan dari yang paling baru. Klik satu baris untuk lihat detail lengkapnya.</p>
-      <div class="modal-history-list">
-        ${historySorted.map((t, idx) => `
-          <div class="modal-history-row" data-idx="${idx}" role="button" tabindex="0">
-            <div class="modal-history-main">
-              <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · Penyesuaian' : ''}</span>
-              <span>${formatTanggal(t.tanggal)} · Rak ${escapeHtml(t.lokasi)}</span>
-              <span>${t.jumlah.toLocaleString('id-ID')} pcs</span>
-              <span class="muted">Operator: ${escapeHtml(t.operator)}</span>
-              <svg class="modal-history-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      <h4>Lokasi &amp; Batch Barang Ini (${batchRows.length})</h4>
+      <p class="modal-history-hint muted">Setiap baris adalah satu batch kedatangan. Klik salah satu baris untuk lihat riwayat transaksinya.</p>
+      <div class="batch-table">
+        <div class="batch-table-row batch-table-head">
+          <div class="btc btc-lokasi">Lokasi</div>
+          <div class="btc btc-tanggal">Tanggal Kedatangan</div>
+          <div class="btc btc-jumlah">Jumlah PCS</div>
+          <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-pallet">Total Pallet</div>
+          <div class="btc btc-operator">Operator Input</div>
+          <div class="btc btc-aksi-head">Aksi</div>
+        </div>
+        <div class="batch-table-body">
+          ${batchRows.length ? batchRows.map(t => `
+            <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}">
+              <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
+              <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
+              <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
+              <button type="button" class="btc-aksi" data-batch-lokasi="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
             </div>
-            <div class="modal-history-sub muted">
-              <span>Kode Pemilik: ${escapeHtml(t.pemilik || '-')}</span>
-              ${t.jumlahPallet ? `<span>${t.jumlahPallet.toLocaleString('id-ID')} pallet${t.qtyPerPallet ? ` (${t.qtyPerPallet.toLocaleString('id-ID')} pcs/pallet)` : ''}</span>` : ''}
-            </div>
-            <div class="modal-history-detail" hidden>
-              ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
-              <div><span class="lbl">Lokasi</span><span class="link-inline" data-lokasi="${escapeHtml(t.lokasi)}">Rak ${escapeHtml(t.lokasi)}</span></div>
-              <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
-              <div><span class="lbl">Keterangan</span><span>${escapeHtml(t.keterangan || '-')}</span></div>
-              <div><span class="lbl">Diinput</span><span>${t.createdAt ? formatWaktu(t.createdAt) : '-'}</span></div>
-              ${(t.editLog && t.editLog.length)
-                ? `<div><span class="lbl">Riwayat Edit</span><span>${t.editLog.length}× diedit — terakhir oleh ${escapeHtml(t.editLog[t.editLog.length - 1].oleh)} · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}</span></div>`
-                : ''}
-            </div>
-          </div>
-        `).join('')}
+          `).join('') : `<div class="empty-state">Belum ada batch masuk yang tercatat.</div>`}
+        </div>
       </div>
     </div>
   `;
-  attachItemLokasiMapEvents(modalBody);
-  modalBody.querySelectorAll('.modal-history-row').forEach(row => {
-    const detail = row.querySelector('.modal-history-detail');
-    const toggle = () => {
-      const willOpen = detail.hidden;
-      detail.hidden = !willOpen;
-      row.classList.toggle('is-open', willOpen);
-    };
+  modalBody.querySelectorAll('.batch-table-row[data-lokasi]').forEach(row => {
     row.addEventListener('click', (e) => {
-      if (e.target.closest('.link-inline')) return; // ditangani listener lokasi terpisah
-      toggle();
+      if (e.target.closest('.btc-aksi')) return;
+      openRiwayatTransaksiView(item.kode, row.dataset.lokasi);
     });
-    row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
-    });
-    const lokasiLink = detail.querySelector('.link-inline');
-    if (lokasiLink) {
-      lokasiLink.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openLokasiModal(lokasiLink.dataset.lokasi);
-      });
-    }
   });
+  modalBody.querySelectorAll('.btc-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openRiwayatTransaksiView(item.kode, btn.dataset.batchLokasi);
+    });
+  });
+  itemModal.hidden = false;
+}
+
+// ---- Riwayat Transaksi (per barang + lokasi) ----
+// Dibuka dari satu baris batch di Detail Barang (atau dari Detail Lokasi
+// lewat Detail Barang). Menampilkan SEMUA transaksi (masuk & keluar,
+// termasuk penyesuaian) barang tsb yang pernah terjadi di lokasi tsb,
+// dari yang paling baru. Isi modal diganti di tempat (modal yang sama
+// tetap terbuka), dengan tombol "Kembali" untuk balik ke Detail Barang.
+function openRiwayatTransaksiView(kode, lokasi) {
+  const items = buildStokList(currentEntries);
+  const item = items.find(i => i.kode === kode);
+  if (!item) return;
+
+  const historyDiLokasi = item.history
+    .filter(t => t.lokasi === lokasi)
+    .slice()
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const pemilikDiLokasi = formatSetList(new Set(historyDiLokasi.map(t => t.pemilik).filter(Boolean)));
+
+  modalBody.innerHTML = `
+    <button type="button" class="modal-back-link" id="riwayat-back-btn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+      Kembali ke Detail Barang
+    </button>
+    <div class="modal-item-head" style="margin-top:10px;">
+      <div class="modal-item-kode mono">Lokasi: ${escapeHtml(lokasi || '-')} · Kode Pemilik: ${escapeHtml(pemilikDiLokasi)}</div>
+      <h2 class="modal-item-nama">Riwayat Transaksi</h2>
+      <div class="modal-item-sub muted">${escapeHtml(item.nama)} <span class="mono">(${escapeHtml(item.kode || '-')})</span></div>
+    </div>
+    <div class="riwayat-tx-list">
+      ${historyDiLokasi.length ? historyDiLokasi.map(t => `
+        <div class="riwayat-tx-card">
+          <div class="riwayat-tx-top">
+            <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · Penyesuaian' : ''}</span>
+            <span class="riwayat-tx-time">${formatTanggal(t.tanggal)} · ${formatJam(t.createdAt)}</span>
+          </div>
+          <div class="riwayat-tx-grid">
+            <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
+            ${t.qtyPerPallet ? `<div><span class="lbl">PCS per Pallet</span><span>${t.qtyPerPallet.toLocaleString('id-ID')}</span></div>` : ''}
+            ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
+            ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
+            <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
+            <div><span class="lbl">Operator Input</span><span>${escapeHtml(t.operator || '-')}</span></div>
+          </div>
+          ${t.keterangan ? `<div class="riwayat-tx-note">${escapeHtml(t.keterangan)}</div>` : ''}
+          ${(t.editLog && t.editLog.length)
+            ? `<div class="riwayat-tx-note riwayat-tx-edited">✏️ ${t.editLog.length}× diedit — terakhir oleh ${escapeHtml(t.editLog[t.editLog.length - 1].oleh)} · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}</div>`
+            : ''}
+        </div>
+      `).join('') : `<div class="empty-state">Belum ada transaksi barang ini di lokasi tersebut.</div>`}
+    </div>
+  `;
+  document.getElementById('riwayat-back-btn')?.addEventListener('click', () => openItemModal(kode));
   itemModal.hidden = false;
 }
 
@@ -4433,17 +5071,18 @@ function buildTicketCard(t) {
     // ---- BLOKIR KAPASITAS BLOK — Edit Laporan ----
     // Kalau laporan yang diedit ini BARANG MASUK dan lokasinya diubah,
     // pallet-nya (t.jumlahPallet, tidak berubah oleh edit ini) akan
-    // "pindah" dari blok lama ke blok baru. Pastikan blok baru tidak jadi
+    // "pindah" dari lokasi lama ke lokasi baru. Pastikan lokasi baru tidak jadi
     // melebihi kapasitas akibat perpindahan ini — entriesTanpaIni dipakai
     // sebagai basis (laporan ini sendiri dikeluarkan dulu) supaya
-    // kontribusi lamanya tidak ikut terhitung dobel di blok baru.
+    // kontribusi lamanya tidak ikut terhitung dobel di lokasi baru.
     if (t.jenis === 'masuk' && t.jumlahPallet) {
       const cekEdit = cekKapasitasBlok(newLokasi, t.jumlahPallet, entriesTanpaIni);
       if (!cekEdit.ok) {
         return showToast(
-          `Perubahan lokasi ini membuat Blok ${cekEdit.blok} melebihi kapasitas ` +
-          `(butuh ${roundPalletDisplay(t.jumlahPallet)} pallet, sisa kapasitas cuma ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet). ` +
-          `Pilih lokasi lain atau batalkan perubahan lokasi.`, 'error'
+          `Perubahan lokasi ke ${escapeHtml(cekEdit.lokasi)} melebihi kapasitas.\n` +
+          `Dibutuhkan: ${roundPalletDisplay(t.jumlahPallet)} pallet\n` +
+          `Sisa kapasitas: hanya ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet.\n` +
+          `Pilih lokasi lain atau batalkan perubahan.`, 'error'
         );
       }
     }
@@ -4721,10 +5360,43 @@ document.getElementById('btn-clear').addEventListener('click', async () => {
 /* ==========================================================================
    STARTUP
 ========================================================================== */
-(function start() {
+(async function start() {
   const existing = getSession();
   if (existing) {
-    enterApp(existing);
+    // Tunggu Firebase Auth selesai memulihkan sesi (dari reload di tab
+    // yang sama) SEBELUM memasang listener Firestore — kalau tidak,
+    // listener bisa terpasang lebih dulu dan gagal dengan
+    // permission-denied karena request.auth belum terisi.
+    try {
+      await waitForFirebaseAuth();
+    } catch (err) {
+      console.warn('Menunggu Firebase Auth saat startup gagal/timeout:', err);
+    }
+    const fb = window.gudangFirebase;
+    let stillValid = false;
+    if (fb && fb.currentUser) {
+      // Sesi Firebase Auth-nya masih ada, tapi tetap cek ulang dokumen
+      // profil Firestore-nya — kalau sudah dihapus admin (soft-delete)
+      // sejak sesi ini dibuat, akun ini harus dianggap sudah tidak aktif
+      // walau token Auth-nya sendiri masih valid.
+      try {
+        const snap = await fb.getDoc(fb.doc(fb.db, existing.role, fb.currentUser.uid));
+        stillValid = snap.exists();
+      } catch (err) {
+        console.warn('Gagal memverifikasi ulang profil saat startup:', err);
+      }
+    }
+    if (stillValid) {
+      enterApp(existing);
+    } else {
+      // Sesi aplikasi (sessionStorage) ada, tapi sesi Firebase Auth sudah
+      // tidak ada / profil sudah dihapus — anggap sudah logout supaya
+      // tidak menampilkan aplikasi tanpa akses data yang sesungguhnya.
+      clearSession();
+      try { await fb?.signOut(fb.auth); } catch (err) { /* abaikan */ }
+      switchLoginTab('operator');
+      loginOperatorNik.focus();
+    }
   } else {
     switchLoginTab('operator');
     loginOperatorNik.focus();

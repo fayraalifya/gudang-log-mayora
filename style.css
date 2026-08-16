@@ -649,6 +649,206 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 .stok-table-modal { max-height: 320px; }
 
 /* ==========================================================================
+   KATALOG BARANG — tampilan gabungan (mode 'barang'): panel "Katalog
+   Barang" & "Lokasi Penyimpanan" berdampingan. Search & judul umum di atas
+   (.katalog-header / #katalog-hint) disembunyikan lewat .katalog-split-active
+   karena tiap panel sudah punya search & judulnya sendiri.
+========================================================================== */
+#katalog.katalog-split-active .katalog-header,
+#katalog.katalog-split-active > #katalog-hint {
+  display: none;
+}
+body.role-operator .katalog-mode-tabs { display: none; }
+
+.katalog-split {
+  display: grid; grid-template-columns: 1.05fr 1fr; gap: 16px; align-items: start;
+}
+@media (max-width: 860px) {
+  .katalog-split { grid-template-columns: 1fr; }
+}
+
+.katalog-panel {
+  background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 14px;
+  padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+}
+.katalog-panel-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.katalog-panel-head h3 {
+  font-family: var(--font-display); font-weight: 700; font-size: 15px; margin: 0; white-space: nowrap;
+}
+.search-inline-mini { padding: 6px 10px; }
+.search-inline-mini input { width: 130px; font-size: 12.5px; }
+.katalog-panel-count { font-size: 11.5px; color: var(--text-muted); margin-top: -4px; }
+
+/* ---- Panel kiri: daftar barang (klik -> Detail Barang) ---- */
+.barang-pick-list { display: flex; flex-direction: column; gap: 8px; }
+.barang-pick-row {
+  display: flex; align-items: center; gap: 10px; text-align: left; width: 100%;
+  background: var(--kraft); border: 2px solid transparent; border-radius: 12px; padding: 10px 12px;
+  transition: border-color .12s, transform .1s, background-color .12s;
+}
+.barang-pick-row:hover { border-color: var(--emas); background: var(--navy-pale); transform: translateY(-1px); }
+.barang-pick-row:active { transform: translateY(0) scale(0.995); }
+.barang-pick-icon {
+  flex-shrink: 0; line-height: 1; color: var(--navy); background: var(--navy-pale);
+  width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+}
+.barang-pick-info { flex: 1; min-width: 0; }
+.barang-pick-lokasi-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--kraft-line); color: var(--ink-soft);
+  padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600;
+}
+.barang-pick-nama {
+  font-weight: 700; font-size: 13px; color: var(--ink); line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.barang-pick-kode { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+/* ---- Kartu kombinasi Barang + Supplier + Pemilik (satu kartu = satu
+   kombinasi unik) di panel Katalog Barang ---- */
+.combo-card-attrs { display: flex; flex-direction: column; gap: 2px; margin-top: 5px; }
+.combo-card-attr { font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
+.combo-card-attr-label { color: var(--text-muted); }
+.combo-card-attr-val { font-weight: 600; color: var(--ink); }
+.barang-pick-meta {
+  display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 5px;
+  font-size: 10.5px; color: var(--ink-soft);
+}
+.barang-pick-qty { text-align: right; flex-shrink: 0; }
+.barang-pick-qty .qty-num { display: block; font-family: var(--font-display); font-weight: 700; font-size: 14.5px; color: var(--hijau); white-space: nowrap; }
+.barang-pick-qty .qty-num.neg { color: var(--merah-flag); }
+.barang-pick-qty .qty-num small { font-family: var(--font-body); font-weight: 600; font-size: 10px; }
+.barang-pick-qty .qty-pallet { display: block; font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.barang-pick-chevron { color: var(--text-muted); flex-shrink: 0; }
+
+.katalog-pager { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 2px; }
+.katalog-pager-btn {
+  min-width: 28px; height: 28px; padding: 0 6px; border-radius: 7px;
+  border: 2px solid var(--kraft-line); background: var(--kertas); color: var(--ink-soft);
+  font-family: var(--font-display); font-weight: 700; font-size: 12px;
+}
+.katalog-pager-btn.is-active { background: var(--navy); color: var(--text-on-dark); border-color: var(--navy); }
+.katalog-pager-btn:disabled { opacity: 0.4; }
+
+/* ---- Panel kanan: tabel lokasi (klik -> Detail Lokasi) ---- */
+.lokasi-table { display: flex; flex-direction: column; gap: 6px; }
+/* Baris header (.lokasi-table-head) tidak berubah sama sekali: masih grid
+   3-kolom langsung seperti sebelumnya. */
+.lokasi-table-row {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.5fr); align-items: center; gap: 6px;
+  padding: 8px 8px; border-radius: 9px; background: transparent;
+}
+.lokasi-table-head {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted);
+  font-family: var(--font-display); font-weight: 700;
+}
+.lokasi-table-body { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; }
+/* Baris data (di dalam .lokasi-table-body) dibungkus jadi flex-column
+   supaya bar kapasitas bisa ditambahkan DI BAWAH baris info yang sudah
+   ada, tanpa mengubah kolom lokasi/pallet/aksi itu sendiri. */
+.lokasi-table-body .lokasi-table-row {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--kraft); cursor: pointer; transition: background-color .12s, transform .1s;
+}
+.lokasi-table-body .ltr-main {
+  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.5fr); align-items: center; gap: 6px;
+}
+.lokasi-table-body .lokasi-table-row:hover { background: var(--navy-pale); transform: translateY(-1px); }
+.ltr-col { font-size: 12px; color: var(--ink-soft); min-width: 0; }
+.ltr-lokasi { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ltr-pallet { font-weight: 600; color: var(--ink); white-space: normal; line-height: 1.3; word-break: break-word; }
+.ltr-aksi, .ltr-aksi-head { text-align: center; }
+.ltr-aksi {
+  justify-self: center; padding: 5px; border-radius: 7px; color: var(--navy); background: transparent;
+}
+.ltr-aksi:hover { background: var(--navy-pale); }
+
+/* ---- Bar kapasitas (info tambahan, tidak menggantikan apapun) ---- */
+.ltr-capacity { display: flex; align-items: center; gap: 8px; padding: 0 1px; }
+.ltr-capacity-bar {
+  flex: 1; height: 5px; border-radius: 4px; background: var(--kraft-line); overflow: hidden;
+}
+.ltr-capacity-fill { height: 100%; border-radius: 4px; transition: width .15s; }
+.ltr-capacity-fill.ltr-cap-ok { background: var(--hijau); }
+.ltr-capacity-fill.ltr-cap-warn { background: var(--emas); }
+.ltr-capacity-fill.ltr-cap-full { background: var(--merah-flag); }
+.ltr-capacity-label {
+  font-size: 10px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
+}
+.ltr-capacity-label.ltr-cap-ok { color: var(--hijau); }
+.ltr-capacity-label.ltr-cap-warn { color: var(--oranye); }
+.ltr-capacity-label.ltr-cap-full { color: var(--merah-flag); }
+.ltr-capacity-fill.ltr-cap-none { background: transparent; }
+.ltr-capacity-label.ltr-cap-none { color: var(--text-muted); font-weight: 500; font-style: italic; }
+
+@media (max-width: 480px) {
+  .lokasi-table-row, .ltr-main { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 0.4fr); }
+  .ltr-col { font-size: 10.5px; }
+}
+
+/* ==========================================================================
+   MODAL DETAIL BARANG / DETAIL LOKASI — tabel batch (Lokasi & Batch Barang
+   Ini / Barang & Batch di Lokasi Ini) dan kartu Riwayat Transaksi
+========================================================================== */
+.modal-stat-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.modal-stat-grid-5 { grid-template-columns: repeat(5, 1fr); }
+.modal-stat-unit { font-size: 10px; font-weight: 600; color: var(--text-muted); }
+@media (max-width: 620px) {
+  .modal-stat-grid-4, .modal-stat-grid-5 { grid-template-columns: repeat(2, 1fr); }
+}
+
+.modal-section-inline {
+  display: flex; flex-wrap: wrap; gap: 8px 24px; margin: -8px 0 18px; font-size: 13px;
+}
+.modal-section-inline .lbl { color: var(--text-muted); font-weight: 600; margin-right: 6px; }
+
+.modal-item-sub { font-size: 12.5px; margin-top: 4px; }
+
+.modal-back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--navy); background: var(--navy-pale);
+  border-radius: 20px; padding: 6px 12px; margin-bottom: 4px;
+}
+.modal-back-link:hover { background: var(--kraft); }
+
+.batch-table { display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; }
+.batch-table-row {
+  display: grid; grid-template-columns: 1fr 1.15fr 1fr 0.9fr 0.8fr 0.9fr 0.5fr;
+  align-items: center; gap: 6px; padding: 8px 8px; border-radius: 8px; font-size: 11.5px;
+}
+.batch-table-lokasi .batch-table-row { grid-template-columns: 1.3fr 0.8fr 1fr 1fr 0.9fr 0.7fr 0.7fr 0.8fr 0.5fr; }
+.batch-table-head {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-muted);
+  font-family: var(--font-display); font-weight: 700; position: sticky; top: 0; background: var(--kertas); z-index: 1;
+}
+.batch-table-body { display: flex; flex-direction: column; gap: 4px; }
+.batch-table-body .batch-table-row { background: var(--kraft); cursor: pointer; transition: background-color .12s; }
+.batch-table-body .batch-table-row:hover { background: var(--navy-pale); }
+.btc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
+.btc-lokasi, .btc-nama { font-weight: 700; color: var(--ink); }
+.btc-aksi, .btc-aksi-head { text-align: center; }
+.btc-aksi { justify-self: center; padding: 5px; border-radius: 7px; color: var(--navy); }
+.btc-aksi:hover { background: var(--navy-pale); }
+@media (max-width: 620px) {
+  .batch-table { overflow-x: auto; }
+  .batch-table-row, .batch-table-lokasi .batch-table-row { min-width: 620px; }
+}
+
+.riwayat-tx-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+.riwayat-tx-card {
+  background: var(--kertas); border: 1px solid var(--kraft-line); border-radius: 10px; padding: 10px 12px;
+}
+.riwayat-tx-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.riwayat-tx-time { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+.riwayat-tx-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 4px 14px; font-size: 12.5px;
+}
+.riwayat-tx-grid .lbl { display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-muted); font-family: var(--font-display); font-weight: 600; }
+.riwayat-tx-note { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--kraft-line); font-size: 12px; color: var(--ink-soft); }
+.riwayat-tx-edited { color: var(--text-warning-soft); }
+
+/* ==========================================================================
    TOGGLE JENIS — operator only
 ========================================================================== */
 .jenis-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
@@ -698,6 +898,20 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
   min-width: 0;
 }
 .input-icon input[type="date"] { color: var(--ink-soft); }
+
+/* Tombol "lihat/sembunyikan kata sandi" — ditaruh di dalam .input-icon
+   yang sama, di kanan field, supaya menyatu dengan desain field lain
+   (tanpa border/background sendiri, cuma ikon). */
+.input-icon .btn-toggle-password {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; padding: 2px; margin: 0; cursor: pointer;
+  color: var(--text-muted);
+}
+.input-icon .btn-toggle-password:hover { color: var(--navy); }
+.input-icon .btn-toggle-password svg { display: block; }
+.input-icon .btn-toggle-password .icon-eye-off { display: none; }
+.input-icon .btn-toggle-password.is-visible .icon-eye { display: none; }
+.input-icon .btn-toggle-password.is-visible .icon-eye-off { display: block; }
 
 .kode-box {
   display: flex; align-items: center; gap: 8px;
@@ -1127,27 +1341,6 @@ html[data-theme="dark"] .btn-theme-toggle .icon-moon { display: block; }
 }
 .lokasi-map-cell.is-terisi .lokasi-map-code { color: var(--hijau); }
 
-/* Peta lokasi per barang (di dalam modal detail barang) — daftar blok yang
-   bisa dibuka/tutup satu-satu, tiap blok berisi grid rak yang sama seperti
-   "Status Lokasi per Blok" di dashboard, tapi statusnya khusus barang ini. */
-.item-blok-list { display: flex; flex-direction: column; gap: 8px; }
-.item-blok-group {
-  border: 1px solid var(--kraft-line); border-radius: 10px; overflow: hidden;
-}
-.item-blok-header {
-  width: 100%; display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; background: var(--kertas); border: none; cursor: pointer;
-  text-align: left; font: inherit; color: var(--ink);
-}
-.item-blok-header:hover { filter: brightness(0.97); }
-.item-blok-header .katalog-group-title { font-weight: 700; font-size: 13px; }
-.item-blok-header .katalog-group-count {
-  margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
-  background: #fff; border: 1px solid var(--kraft-line); border-radius: 999px; padding: 2px 10px;
-}
-.item-blok-header .katalog-group-count.has-stock { color: var(--hijau); border-color: var(--hijau); }
-.item-blok-grid-wrap { padding: 10px 12px; }
-.item-blok-grid-wrap[hidden] { display: none; }
 .lokasi-map-barang {
   font-size: 10.5px; font-weight: 600; color: var(--ink-soft); line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
@@ -1582,6 +1775,26 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   padding: 10px; padding-top: 0;
 }
 .katalog-group-body[hidden] { display: none; }
+
+/* Subgrup Pemilik di dalam grup Supplier (panel Katalog Barang operator) —
+   sama polanya dengan .katalog-group tapi lebih kecil/indented supaya
+   kelihatan sebagai level ke-2, bukan level yang sejajar dengan Supplier. */
+.katalog-subgroup {
+  border: 1px solid var(--border-color); border-radius: 9px; overflow: hidden;
+  margin-left: 4px;
+}
+.katalog-subgroup-header {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; background: var(--bg-primary);
+  border: none; cursor: pointer; text-align: left; font: inherit;
+  color: var(--text-primary);
+}
+.katalog-subgroup-header:hover { filter: brightness(0.97); }
+.katalog-subgroup-chevron { width: 12px; height: 12px; }
+.katalog-subgroup-title { font-weight: 600; font-size: 12.5px; }
+.katalog-subgroup-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; padding-top: 0; }
+.katalog-subgroup-body[hidden] { display: none; }
+.barang-group-list { display: flex; flex-direction: column; gap: 10px; }
 
 .katalog-item {
   display: flex; justify-content: space-between; align-items: center;
