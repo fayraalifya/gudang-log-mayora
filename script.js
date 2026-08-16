@@ -2246,6 +2246,8 @@ function renderAll() {
 
 let currentOperatorAccounts = [];
 let unsubscribeOperatorAccounts = null;
+let unsubscribeBarangBaru = null;
+let unsubscribePemilikBaru = null;
 let pendingSyncCount = 0;
 
 function initFirestoreConnection() {
@@ -2304,6 +2306,17 @@ function initFirestoreConnection() {
         }
       );
     }
+
+    // PENTING: listener barangBaru & pemilikBaru dipanggil DI SINI, SETELAH
+    // startListening() terpanggil dari initFirestoreConnection() -> yaitu
+    // SETELAH enterApp() -> yaitu SETELAH login benar-benar berhasil.
+    // Sebelumnya dua fungsi ini dipanggil sendiri di top-level file (saat
+    // window.gudangFirebase belum tentu berarti user sudah login — objek
+    // itu sudah ada begitu firebase-config.js selesai load, jauh sebelum
+    // ada yang sempat mengisi form login) sehingga langsung kena
+    // permission-denied dan listener-nya mati permanen seumur sesi.
+    startBarangBaruListener();
+    startPemilikBaruListener();
   }
 
   if (window.gudangFirebase) {
@@ -2427,7 +2440,8 @@ async function tambahBarangBaru(item) {
 function startBarangBaruListener() {
   const fb = window.gudangFirebase;
   if (!fb || !fb.barangBaruCol) return;
-  fb.onSnapshot(fb.barangBaruCol, (snapshot) => {
+  if (unsubscribeBarangBaru) unsubscribeBarangBaru();
+  unsubscribeBarangBaru = fb.onSnapshot(fb.barangBaruCol, (snapshot) => {
     customBarang = snapshot.docs.map(d => {
       const data = d.data();
       return { kode: data.kode, nama: data.nama };
@@ -2438,11 +2452,18 @@ function startBarangBaruListener() {
   });
 }
 
-if (window.gudangFirebase) {
-  startBarangBaruListener();
-} else {
-  window.addEventListener('gudang-firebase-ready', startBarangBaruListener, { once: true });
-}
+// PENTING: TIDAK dipanggil di top-level lagi (dulu di sini ada blok
+// `if (window.gudangFirebase) { startBarangBaruListener(); } else {
+// window.addEventListener('gudang-firebase-ready', ...) }` — itu bug:
+// window.gudangFirebase sudah ada JAUH sebelum user login (dibuat
+// sinkron begitu firebase-config.js selesai load), jadi listener ini
+// langsung terpasang saat request.auth MASIH NULL -> permission-denied
+// dari Firestore Rules -> listener onSnapshot MATI PERMANEN (Firestore
+// tidak otomatis retry listener yang gagal karena error, bukan
+// disconnect biasa) -> dropdown "kode barang baru" tidak pernah
+// tersinkron seumur sesi, walau user berhasil login sesudahnya.
+// Sekarang dipanggil dari initFirestoreConnection() -> startListening(),
+// SETELAH login benar-benar berhasil (lihat di bawah).
 
 /* ==========================================================================
    PEMILIK BARANG (PABRIK) — diambil dari MASTER_DATA.pemilik (data.js),
@@ -2493,7 +2514,8 @@ async function tambahPemilikBaru(nama) {
 function startPemilikBaruListener() {
   const fb = window.gudangFirebase;
   if (!fb || !fb.pemilikBaruCol) return;
-  fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
+  if (unsubscribePemilikBaru) unsubscribePemilikBaru();
+  unsubscribePemilikBaru = fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
     customPemilik = snapshot.docs.map(d => d.data().nama);
     rebuildPemilikOptions();
   }, (err) => {
@@ -2501,11 +2523,9 @@ function startPemilikBaruListener() {
   });
 }
 
-if (window.gudangFirebase) {
-  startPemilikBaruListener();
-} else {
-  window.addEventListener('gudang-firebase-ready', startPemilikBaruListener, { once: true });
-}
+// Sama seperti startBarangBaruListener() di atas — TIDAK LAGI dipanggil
+// di top-level (itu penyebab permission-denied yang mati permanen).
+// Sekarang dipanggil dari initFirestoreConnection() -> startListening().
 
 /* ==========================================================================
    DATALIST LOKASI GLOBAL
