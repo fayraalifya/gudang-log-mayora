@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260809">
-<link rel="manifest" href="manifest.json?v=20260809">
+<link rel="stylesheet" href="style.css?v=20260816">
+<link rel="manifest" href="manifest.json?v=20260816">
 <meta name="theme-color" content="#0F2038">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
@@ -108,14 +108,18 @@
             <label for="login-operator-nik">NIK</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6M7 12h10M7 16h6"/></svg>
-              <input type="text" id="login-operator-nik" inputmode="numeric" placeholder="Masukkan NIK Anda" autocomplete="off">
+              <input type="text" id="login-operator-nik" placeholder="Masukkan NIK Anda" autocomplete="username">
             </div>
           </div>
           <div class="field">
             <label for="login-operator-password">Kata Sandi</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <input type="password" id="login-operator-password" placeholder="Masukkan kata sandi Anda" autocomplete="off">
+              <input type="password" id="login-operator-password" placeholder="Masukkan kata sandi Anda" autocomplete="current-password">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
           </div>
           <div id="login-operator-error" class="error-box" hidden></div>
@@ -136,7 +140,7 @@
             <label for="register-operator-id-karyawan">ID Karyawan / NIK</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6M7 12h10M7 16h6"/></svg>
-              <input type="text" id="register-operator-id-karyawan" placeholder="Masukkan ID karyawan / NIK Anda" autocomplete="off">
+              <input type="text" id="register-operator-id-karyawan" placeholder="Masukkan ID karyawan / NIK Anda" autocomplete="username">
             </div>
           </div>
           <div class="field">
@@ -144,6 +148,10 @@
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.5"/></svg>
               <input type="password" id="register-operator-kode-akses" placeholder="Minta kode ini ke admin gudang" autocomplete="off">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
             <p class="field-hint">Kode internal dari admin gudang — mencegah orang di luar Mayora ikut mendaftar.</p>
           </div>
@@ -151,14 +159,23 @@
             <label for="register-operator-password">Kata Sandi</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <input type="password" id="register-operator-password" placeholder="Buat kata sandi" autocomplete="off">
+              <input type="password" id="register-operator-password" placeholder="Buat kata sandi" autocomplete="new-password">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
+            <p class="field-hint">Minimal 6 karakter.</p>
           </div>
           <div class="field">
             <label for="register-operator-password-confirm">Konfirmasi Kata Sandi</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <input type="password" id="register-operator-password-confirm" placeholder="Konfirmasi kata sandi" autocomplete="off">
+              <input type="password" id="register-operator-password-confirm" placeholder="Konfirmasi kata sandi" autocomplete="new-password">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
           </div>
           <div id="register-operator-error" class="error-box" hidden></div>
@@ -172,14 +189,18 @@
             <label for="login-admin-nik">NIK</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6M7 12h10M7 16h6"/></svg>
-              <input type="text" id="login-admin-nik" inputmode="numeric" placeholder="Masukkan NIK Anda" autocomplete="off">
+              <input type="text" id="login-admin-nik" placeholder="Masukkan NIK Anda" autocomplete="username">
             </div>
           </div>
           <div class="field">
             <label for="login-admin-password">Kata Sandi</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <input type="password" id="login-admin-password" placeholder="Masukkan kata sandi Anda" autocomplete="off">
+              <input type="password" id="login-admin-password" placeholder="Masukkan kata sandi Anda" autocomplete="current-password">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
           </div>
           <div id="login-error" class="error-box" hidden></div>
@@ -200,7 +221,7 @@
             <label for="register-admin-id-karyawan">ID Karyawan / NIK</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h6M7 12h10M7 16h6"/></svg>
-              <input type="text" id="register-admin-id-karyawan" placeholder="Masukkan ID karyawan / NIK Anda" autocomplete="off">
+              <input type="text" id="register-admin-id-karyawan" placeholder="Masukkan ID karyawan / NIK Anda" autocomplete="username">
             </div>
           </div>
           <div class="field">
@@ -208,6 +229,10 @@
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.5"/></svg>
               <input type="password" id="register-admin-kode-akses" placeholder="Kode khusus pendaftaran admin" autocomplete="off">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
             <p class="field-hint">Kode ini berbeda dari Kode Akses Pendaftaran operator — hanya dipegang oleh pihak yang berwenang menunjuk admin baru.</p>
           </div>
@@ -215,14 +240,23 @@
             <label for="register-admin-password">Kata Sandi</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <input type="password" id="register-admin-password" placeholder="Buat kata sandi" autocomplete="off">
+              <input type="password" id="register-admin-password" placeholder="Buat kata sandi" autocomplete="new-password">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
+            <p class="field-hint">Minimal 6 karakter.</p>
           </div>
           <div class="field">
             <label for="register-admin-password-confirm">Konfirmasi Kata Sandi</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-              <input type="password" id="register-admin-password-confirm" placeholder="Konfirmasi kata sandi" autocomplete="off">
+              <input type="password" id="register-admin-password-confirm" placeholder="Konfirmasi kata sandi" autocomplete="new-password">
+              <button type="button" class="btn-toggle-password" data-toggle-password aria-label="Lihat/sembunyikan kata sandi" tabindex="-1">
+                <svg class="icon-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-eye-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19M6.61 6.61A18.5 18.5 0 0 0 1 12s4 8 11 8a10.94 10.94 0 0 0 5.39-1.61M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              </button>
             </div>
           </div>
           <div id="register-admin-error" class="error-box" hidden></div>
@@ -450,6 +484,19 @@
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
               <input type="text" id="input-jumlah-pallet" placeholder="-" readonly disabled>
+            </div>
+          </div>
+
+          <!-- KAPASITAS SISA LOKASI — tampil dynamically saat lokasi dipilih -->
+          <div id="capacity-info" class="capacity-info-box" hidden>
+            <div class="capacity-info-label">📦 Kapasitas Lokasi</div>
+            <div class="capacity-info-details">
+              <span id="capacity-current">0</span> / 
+              <span id="capacity-max">-</span> pallet 
+              (<span id="capacity-remaining" class="capacity-remaining-text">-</span> pallet tersisa)
+            </div>
+            <div class="capacity-bar" id="capacity-bar">
+              <div class="capacity-bar-fill" id="capacity-bar-fill" style="width: 0%"></div>
             </div>
           </div>
 
@@ -742,12 +789,6 @@
         <div id="katalog-empty" class="empty-state">Belum ada barang yang tercatat.</div>
         <div id="katalog-list" class="folder-grid"></div>
       </section>
-
-      <!-- KATALOG & STOK — tampilan ADMIN: filter lanjutan + tabel hasil
-           per kedatangan (batch), dibangun sepenuhnya lewat JS
-           (renderKatalogAdminView di script.js). Operator tidak pernah
-           melihat section ini. -->
-      <section id="katalog-admin-view" class="katalog-admin-view" hidden></section>
 
       </div>
       <!-- /PANEL: KATALOG BARANG -->
@@ -1145,8 +1186,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script src="data.js?v=20260809"></script>
-  <script type="module" src="firebase-config.js?v=20260809"></script>
-  <script src="script.js?v=20260809"></script>
+  <script src="data.js?v=20260816"></script>
+  <script type="module" src="firebase-config.js?v=20260816"></script>
+  <script src="script.js?v=20260816"></script>
 </body>
 </html>
