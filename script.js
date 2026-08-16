@@ -8,6 +8,55 @@ let currentEntries = [];
 let currentEntriesRaw = [];
 
 /* ==========================================================================
+   OVERLAY MASTER DATA — barang, supplier, pemilik, lokasi
+   Data induk (kode barang, nama supplier, dst) berasal dari data.js
+   (statis, dikirim sama persis ke semua pengunjung — tidak bisa diedit
+   dari aplikasi). Panel admin "Pengelolaan Barang" TIDAK mengubah data.js
+   — sebagai gantinya setiap tambah/ubah/hapus ditulis sebagai dokumen
+   "overlay" ke Firestore (koleksi barangBaru, supplierBaru, pemilikBaru,
+   lokasiBaru — lihat startBarangBaruListener() dkk di bawah), dan
+   disinkronkan REAL-TIME ke semua perangkat lewat onSnapshot. Dropdown
+   operator (form Barang Masuk/Keluar) SELALU memakai variabel *_OPTIONS
+   di bawah ini (gabungan data statis + overlay), jadi begitu admin
+   menyimpan perubahan di satu perangkat, operator di perangkat lain
+   otomatis melihatnya tanpa reload manual.
+   Hapus = tombstone (dokumen overlay dengan deleted:true), BUKAN
+   deleteDoc — supaya entri bawaan data.js (yang tidak mungkin dihapus
+   dari file statisnya) tetap bisa "disembunyikan" secara konsisten di
+   semua perangkat.
+   Dideklarasikan di ATAS (sebelum KatalogManager) supaya tidak kena
+   Temporal Dead Zone — katalogManager.init() dipanggil sinkron begitu
+   file ini dimuat, jauh sebelum listener Firestore di bawah sempat jalan.
+========================================================================== */
+let barangOverlay = new Map();    // kode -> { kode, nama, deleted }
+let supplierOverlay = new Map();  // id -> { nama, deleted }
+let pemilikOverlay = new Map();   // id -> { nama, deleted }
+let lokasiOverlay = new Map();    // id -> { nama, deleted }
+
+let BARANG_OPTIONS = MASTER_DATA.barang || [];
+let SUPPLIER_OPTIONS = MASTER_DATA.supplier || [];
+let PEMILIK_OPTIONS_MERGED = MASTER_DATA.pemilik || [];
+let LOKASI_OPTIONS = MASTER_DATA.lokasi || [];
+let LOKASI_SET = new Set(LOKASI_OPTIONS);
+
+// Widget dropdown/select yang perlu di-refresh (updateOptions) begitu
+// salah satu daftar di atas berubah. Diisi belakangan saat form input
+// laporan dibuat (lihat sekitar "FORM INPUT — OPERATOR ONLY" di bawah) —
+// dideklarasikan `let` di sini lebih dulu supaya rebuild*Options() yang
+// mungkin terpanggil lebih awal (dari listener Firestore) tidak kena
+// ReferenceError.
+let selBarang;
+let selSupplier;
+let selPemilik;
+
+// Doc ID Firestore tidak boleh mengandung "/". Nama supplier/pemilik/
+// lokasi di aplikasi ini praktiknya tidak pernah memakai "/", tapi tetap
+// dijaga (diganti "-") supaya tidak pernah menyebabkan error tak terduga.
+function sanitizeMasterId(nama) {
+  return String(nama || '').trim().replace(/\//g, '-');
+}
+
+/* ==========================================================================
    UTILITY FUNCTIONS
 ========================================================================== */
 
@@ -2200,8 +2249,6 @@ function setConnectUI(state) {
   // dulu ke perangkat (lihat updatePendingSyncUI & submit handler).
   const submitBtn = document.getElementById('btn-submit');
   if (submitBtn) submitBtn.disabled = state !== 'connected';
-  const adjSubmitBtn = document.getElementById('btn-adj-submit');
-  if (adjSubmitBtn) adjSubmitBtn.disabled = state !== 'connected';
 
   if (currentRole() === 'operator') {
     operatorNotReady.hidden = state === 'connected';
@@ -2476,30 +2523,36 @@ function showToast(message, type = 'success') {
 }
 
 /* ==========================================================================
-   BARANG BARU — kode barang yang belum ada di MASTER_DATA
-   Disimpan di koleksi Firestore "barangBaru" supaya begitu satu operator/
-   admin menambahkan kode barang baru, semua orang lain (di device lain)
-   otomatis melihatnya juga tanpa perlu update file data.js.
+   BARANG BARU / DIUBAH / DIHAPUS — overlay Firestore koleksi "barangBaru"
+   (lihat blok komentar "OVERLAY MASTER DATA" di atas file untuk konsep
+   lengkapnya). Hanya admin yang boleh menulis ke sini (lihat
+   firestore.rules) — panel "Pengelolaan Barang" adalah satu-satunya
+   pemakai penulisan koleksi ini sekarang.
 ========================================================================== */
-let customBarang = [];
-let BARANG_OPTIONS = MASTER_DATA.barang;
-
-// Dideklarasikan lebih dulu (belum diberi nilai) — sama seperti selPemilik.
-// rebuildBarangOptions() bisa terpanggil (lewat listener realtime Firestore)
-// sebelum selBarang/selAdjBarang selesai dibuat lebih bawah di file ini.
-// `typeof x !== 'undefined'` TIDAK melindungi dari kasus ini untuk
-// variabel let/const yang masih di "temporal dead zone" — tetap melempar
-// ReferenceError. Solusinya: deklarasikan lebih awal dengan `let`, baru
-// diisi (assign) belakangan tanpa redeklarasi const.
-let selBarang;
-let selAdjBarang;
+function computeBarangMerged() {
+  const result = [];
+  const seen = new Set();
+  (MASTER_DATA.barang || []).forEach(b => {
+    seen.add(b.kode);
+    const o = barangOverlay.get(b.kode);
+    if (o) {
+      if (!o.deleted) result.push({ kode: b.kode, nama: o.nama });
+    } else {
+      result.push(b);
+    }
+  });
+  barangOverlay.forEach((o, kode) => {
+    if (!seen.has(kode) && !o.deleted) result.push({ kode, nama: o.nama });
+  });
+  return result;
+}
 
 function rebuildBarangOptions() {
-  const known = new Set(MASTER_DATA.barang.map(o => String(o.kode)));
-  const extra = customBarang.filter(o => !known.has(String(o.kode)));
-  BARANG_OPTIONS = [...MASTER_DATA.barang, ...extra];
+  BARANG_OPTIONS = computeBarangMerged();
   if (selBarang && selBarang.updateOptions) selBarang.updateOptions(BARANG_OPTIONS);
-  if (selAdjBarang && selAdjBarang.updateOptions) selAdjBarang.updateOptions(BARANG_OPTIONS);
+  if (typeof katalogManager !== 'undefined') {
+    katalogManager.renderBarangList(document.getElementById('search-barang')?.value || '');
+  }
 }
 
 // firebase-config.js dimuat sebagai <script type="module">, yang butuh waktu
@@ -2587,14 +2640,12 @@ let customPemilik = [];
 // dieksekusi baris deklarasinya berada di "temporal dead zone" dan tetap
 // melempar ReferenceError walau dicek pakai typeof.
 let selPemilik;
-let selAdjPemilik;
 
 function rebuildPemilikOptions() {
   const known = new Set(PEMILIK_OPTIONS.map(o => String(o).toLowerCase()));
   const extra = customPemilik.filter(o => !known.has(String(o).toLowerCase()));
   const merged = [...PEMILIK_OPTIONS, ...extra];
   if (selPemilik && selPemilik.updateOptions) selPemilik.updateOptions(merged);
-  if (selAdjPemilik && selAdjPemilik.updateOptions) selAdjPemilik.updateOptions(merged);
   return merged;
 }
 
@@ -3189,180 +3240,6 @@ form.addEventListener('submit', async (e) => {
 });
 
 /* ==========================================================================
-   PENYESUAIAN STOK — ADMIN ONLY
-========================================================================== */
-let adjArah = 'tambah';
-const btnAdjTambah = document.getElementById('btn-adj-tambah');
-const btnAdjKurang = document.getElementById('btn-adj-kurang');
-
-if (btnAdjTambah && btnAdjKurang) {
-  btnAdjTambah.addEventListener('click', () => setAdjArah('tambah'));
-  btnAdjKurang.addEventListener('click', () => setAdjArah('kurang'));
-}
-
-function setAdjArah(a) {
-  adjArah = a;
-  btnAdjTambah.classList.toggle('is-active', a === 'tambah');
-  btnAdjKurang.classList.toggle('is-active', a === 'kurang');
-}
-
-selAdjBarang = setupSearchableSelect({
-  id: 'sel-adj-barang',
-  options: BARANG_OPTIONS,
-  getLabel: o => o.nama,
-  getSub: o => o.kode,
-  placeholder: 'Pilih barang...',
-  allowAdd: true,
-  onAdd: tambahBarangBaru,
-  onSelect: (o) => {
-    document.getElementById('adj-kode-box').hidden = false;
-    document.getElementById('adj-kode-value').textContent = o.kode;
-  },
-});
-
-selAdjPemilik = setupSearchableSelect({
-  id: 'sel-adj-pemilik',
-  options: rebuildPemilikOptions(),
-  getLabel: o => o,
-  placeholder: 'Pilih pemilik barang...',
-  allowAdd: true,
-  addMode: 'simple',
-  onAdd: tambahPemilikBaru,
-  onSelect: () => {},
-});
-
-
-const selAdjLokasi = setupSearchableSelect({
-  id: 'sel-adj-lokasi',
-  options: MASTER_DATA.lokasi,
-  getLabel: o => o,
-  placeholder: 'Pilih lokasi...',
-  onSelect: () => {},
-});
-
-const formPenyesuaian = document.getElementById('form-penyesuaian');
-const adjTanggal = document.getElementById('adj-tanggal');
-const adjJumlah = document.getElementById('adj-jumlah');
-const adjKeterangan = document.getElementById('adj-keterangan');
-const adjError = document.getElementById('adj-error');
-
-if (adjTanggal) adjTanggal.value = todayISO();
-
-function showAdjError(msg) {
-  adjError.hidden = false;
-  adjError.textContent = msg;
-}
-
-function hideAdjError() {
-  adjError.hidden = true;
-  adjError.textContent = '';
-}
-
-function resetAdjForm() {
-  selAdjBarang.reset();
-  selAdjPemilik.reset();
-  selAdjLokasi.reset();
-  document.getElementById('adj-kode-box').hidden = true;
-  adjJumlah.value = '';
-  adjKeterangan.value = '';
-  adjTanggal.value = todayISO();
-  setAdjArah('tambah');
-  hideAdjError();
-}
-
-let isSubmittingAdj = false;
-
-if (formPenyesuaian) {
-  formPenyesuaian.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    hideAdjError();
-
-    if (isSubmittingAdj) return;
-    if (!firestoreReady) return showAdjError('Database belum terhubung.');
-
-    const barang = selAdjBarang.getValue();
-    const pemilik = selAdjPemilik.getValue();
-    const lokasi = selAdjLokasi.getValue();
-    const tanggal = adjTanggal.value;
-    const jumlah = parseInt(adjJumlah.value, 10);
-    const keterangan = adjKeterangan.value.trim();
-
-    if (!barang) return showAdjError('Pilih nama barang terlebih dahulu.');
-    if (!pemilik) return showAdjError('Pilih pemilik barang terlebih dahulu.');
-    if (!lokasi) return showAdjError('Pilih lokasi terlebih dahulu.');
-    if (!tanggal) return showAdjError('Tanggal wajib diisi.');
-    if (!jumlah || jumlah <= 0) return showAdjError('Jumlah harus berupa angka lebih dari 0.');
-
-    if (adjArah === 'kurang') {
-      const stokDiLokasi = getStokAtLokasi(currentEntries, barang.kode, lokasi);
-      if (jumlah > stokDiLokasi) {
-        return showAdjError(`Jumlah pengurangan (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok barang ini di lokasi ${lokasi} (${stokDiLokasi.toLocaleString('id-ID')} pcs).`);
-      }
-    }
-
-    // ---- BLOKIR KAPASITAS BLOK — Penyesuaian Stok (tambah) ----
-    // Form ini tidak punya field qty-per-pallet, jadi kontribusi pallet
-    // dari penyesuaian TIDAK bisa dihitung persis. Sebagai jaring pengaman
-    // minimum: kalau Blok tujuan SUDAH di batas/lewat kapasitas (berdasar
-    // data yang tercatat), penambahan stok baru ke blok itu tetap DIBLOKIR
-    // TOTAL sampai ada barang keluar dari blok itu atau admin pilih lokasi
-    // di blok lain — supaya jalur ini tidak jadi celah untuk menambah stok
-    // ke blok yang sudah penuh.
-    if (adjArah === 'tambah') {
-      const cekAdj = cekKapasitasBlok(lokasi, 0);
-      if (!cekAdj.ok) {
-        return showAdjError(
-          `❌ Kapasitas Blok ${cekAdj.blok} sudah penuh (${roundPalletDisplay(cekAdj.sekarang)} / ${cekAdj.batas.toLocaleString('id-ID')} pallet). ` +
-          `Tidak bisa menambah stok ke lokasi ini sampai ada barang keluar dari Blok ${cekAdj.blok}, atau pilih lokasi di blok lain.`
-        );
-      }
-    }
-
-    isSubmittingAdj = true;
-    const submitBtn = document.getElementById('btn-adj-submit');
-    const submitText = document.getElementById('btn-adj-submit-text');
-    submitBtn.disabled = true;
-    const originalText = submitText.textContent;
-    submitText.textContent = 'MENYIMPAN...';
-
-    try {
-      const session = getSession();
-      const now = Date.now();
-
-      const writePromise = addEntryToFirestore({
-        jenis: adjArah === 'tambah' ? 'masuk' : 'keluar',
-        tipe: 'penyesuaian',
-        operator: session ? session.nama : 'Admin',
-        kodeBarang: barang.kode,
-        namaBarang: barang.nama,
-        supplier: '-',
-        pemilik,
-        lokasi,
-        jumlah,
-        keterangan: keterangan || (adjArah === 'tambah' ? 'Penyesuaian stok (tambah)' : 'Penyesuaian stok (kurangi)'),
-        tanggal,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      resetAdjForm();
-      showToast(navigator.onLine ? 'Penyesuaian stok berhasil disimpan.' : 'Penyesuaian tersimpan di perangkat, akan tersinkron otomatis.', navigator.onLine ? 'success' : 'info');
-
-      writePromise.catch((err) => {
-        console.error('Gagal menyinkronkan penyesuaian ke server:', err);
-        showToast('Gagal menyinkronkan penyesuaian: ' + err.message, 'error');
-      });
-    } catch (err) {
-      showAdjError('Gagal menyimpan penyesuaian: ' + err.message);
-    } finally {
-      isSubmittingAdj = false;
-      submitBtn.disabled = !firestoreReady;
-      submitText.textContent = originalText;
-    }
-  });
-}
-
-/* ==========================================================================
    PERIODE LAPORAN — ADMIN ONLY
    (periodMode & periodDate dideklarasikan lebih awal di atas, dekat
    currentEntries — lihat catatan di sana)
@@ -3453,8 +3330,8 @@ function getBatasLokasiPallet(lokasi) {
 
 // ---- Helper terpusat: cek sisa kapasitas pallet suatu LOKASI ----
 // Dipakai di SEMUA jalur yang bisa menambah pallet ke suatu lokasi (form
-// laporan Barang Masuk, Penyesuaian Stok admin, Edit Laporan admin) supaya
-// tidak ada celah satu jalur ke-cek sementara jalur lain tidak.
+// laporan Barang Masuk, Edit Laporan admin) supaya tidak ada celah satu
+// jalur ke-cek sementara jalur lain tidak.
 //   lokasi          -> kode lokasi tujuan spesifik (mis. A-01-01, B-05-03, dll)
 //   deltaPallet     -> jumlah pallet yang MAU ditambahkan (0 kalau cuma mau tahu kondisi lokasi saat ini)
 //   entriesUntukHitung -> basis data transaksi yang dipakai (default currentEntries).
