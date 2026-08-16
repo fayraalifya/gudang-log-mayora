@@ -250,11 +250,16 @@
     <header class="app-header">
       <div class="header-inner">
         <div class="brand">
-          <div class="brand-icon">📦</div>
+          <div class="brand-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
+          </div>
           <div>
-            <div class="brand-title">GDPM<span class="accent">•</span>LOG</div>
+            <div class="brand-title">GDPM<span class="accent">-</span>LOG</div>
             <div class="brand-sub">PT Mayora Indah Tbk — Central Warehouse</div>
           </div>
+          <button type="button" id="btn-menu-toggle" class="btn-menu-toggle" aria-label="Buka menu" title="Menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          </button>
         </div>
         <div class="header-user">
           <div class="header-status-pill" id="header-status-pill" data-state="connecting">
@@ -542,6 +547,14 @@
 
       <!-- PANEL: DASHBOARD — hanya admin -->
       <div class="op-panel admin-panel admin-only" id="admin-panel-dashboard" data-admin-panel="dashboard">
+
+      <!-- JUDUL DASHBOARD -->
+      <div class="dashboard-heading">
+        <div>
+          <h2 class="dashboard-title">Dashboard</h2>
+          <p class="dashboard-subtitle">Ringkasan aktivitas gudang dan pergerakan barang.</p>
+        </div>
+      </div>
 
       <!-- PILIHAN PERIODE LAPORAN -->
       <div class="period-tabs" id="period-tabs">

@@ -1120,6 +1120,16 @@ if (btnThemeToggle) {
   });
 }
 
+/* Tombol hamburger di header — di layar admin, scroll & sorot sidebar menu
+   supaya gampang pindah panel tanpa perlu geser layar manual di HP. */
+const btnMenuToggle = document.getElementById('btn-menu-toggle');
+if (btnMenuToggle) {
+  btnMenuToggle.addEventListener('click', () => {
+    const nav = document.getElementById('admin-nav');
+    if (nav) nav.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 /* ==========================================================================
    PWA — supaya bisa "diinstall" ke home screen HP dan tetap bisa dibuka
    (tampilannya) walau sinyal internet lagi lemah. Service worker cuma
