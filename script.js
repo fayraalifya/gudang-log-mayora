@@ -1120,16 +1120,6 @@ if (btnThemeToggle) {
   });
 }
 
-/* Tombol hamburger di header — di layar admin, scroll & sorot sidebar menu
-   supaya gampang pindah panel tanpa perlu geser layar manual di HP. */
-const btnMenuToggle = document.getElementById('btn-menu-toggle');
-if (btnMenuToggle) {
-  btnMenuToggle.addEventListener('click', () => {
-    const nav = document.getElementById('admin-nav');
-    if (nav) nav.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-}
-
 /* ==========================================================================
    PWA — supaya bisa "diinstall" ke home screen HP dan tetap bisa dibuka
    (tampilannya) walau sinyal internet lagi lemah. Service worker cuma
@@ -1282,8 +1272,7 @@ tabOperatorRegister.addEventListener('click', () => switchOperatorMode('register
 
 // Sama seperti switchOperatorMode, tapi untuk tab Admin — admin sekarang
 // juga bisa "Daftar Baru" sendiri, dengan Kode Akses Pendaftaran yang
-// berbeda dari operator (divalidasi lewat registrationGate di
-// firestore.rules, lihat konstanta kodeAksesAdmin() di sana).
+// berbeda dari operator (lihat KODE_AKSES_PENDAFTARAN_ADMIN di data.js).
 function switchAdminMode(mode) {
   tabAdminLogin.classList.toggle('is-active', mode === 'login');
   tabAdminRegister.classList.toggle('is-active', mode === 'register');
@@ -1323,34 +1312,19 @@ tabOperator.addEventListener('click', () => switchLoginTab('operator'));
 tabAdmin.addEventListener('click', () => switchLoginTab('admin'));
 
 /* ==========================================================================
-   AKUN OPERATOR & ADMIN — Firebase Authentication (email+password) sungguhan
-   ==========================================================================
-   Skema ini SESUAI dengan firestore.rules (v3, registrationGate, TANPA
-   Cloud Functions — project tetap plan Spark):
-
-   1. NIK diubah jadi "email" sintetis deterministik: role-nik@DOMAIN.
-      Diberi awalan role supaya NIK yang sama bisa dipakai terdaftar
-      sebagai operator MAUPUN admin secara terpisah.
-   2. Pendaftaran = createUserWithEmailAndPassword() dulu (ini otomatis
-      GAGAL kalau NIK+role itu sudah terdaftar — auth/email-already-in-use
-      — jadi tidak perlu cek manual ke Firestore lagi, dan tidak bisa
-      race-condition seperti skema lama).
-   3. Begitu akun Auth dibuat, uid-nya dipakai untuk menulis dulu ke
-      registrationGate/{uid} berisi kode akses yang diketik user — create
-      HANYA diterima kalau kodenya cocok dengan konstanta di
-      firestore.rules. Kalau ditolak (kode salah), akun Auth yang baru
-      dibuat langsung di-rollback (deleteUser) supaya tidak nyangkut.
-   4. Kalau registrationGate sukses, baru tulis profil publik ke
-      operator/{uid} atau admin/{uid} — TIDAK ADA password/hash di sini
-      sama sekali, password sepenuhnya ditangani Firebase Auth di server
-      Google.
-   5. Login = signInWithEmailAndPassword() dengan email sintetis yang
-      sama, lalu profil diambil langsung lewat getDoc(operator/{uid}) /
-      getDoc(admin/{uid}) — document ID SEKARANG = UID Firebase Auth,
-      bukan NIK atau auto-id lagi.
+   AKUN OPERATOR — daftar & login sungguhan lewat Firestore
+   (mencegah orang masuk tanpa mendaftar terlebih dahulu)
 ========================================================================== */
 
-const EMAIL_DOMAIN = 'akun.gudanglog.internal'; // domain palsu, tidak pernah dipakai kirim email sungguhan
+// Hash satu arah (SHA-256) supaya kata sandi tidak tersimpan sebagai teks
+// polos di database. Ini bukan pengganti backend yang sesungguhnya (idealnya
+// hashing + salt dilakukan di server), tapi jauh lebih aman dibanding
+// menyimpan password apa adanya, dan cukup untuk skala aplikasi internal ini.
+async function hashPassword(password) {
+  const enc = new TextEncoder().encode(password);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 function normalizeNamaKey(nama) {
   return String(nama || '').trim().toLowerCase();
@@ -1360,34 +1334,10 @@ function normalizeNikKey(nik) {
   return String(nik || '').trim();
 }
 
-// NIK -> "email" sintetis dipakai sebagai identitas login di Firebase Auth.
-function nikToSyntheticEmail(role, nik) {
-  return `${role}-${normalizeNikKey(nik).toLowerCase()}@${EMAIL_DOMAIN}`;
-}
-
-// Terjemahan kode error Firebase Auth ke pesan berbahasa Indonesia yang
-// ramah untuk ditampilkan di form login/daftar.
-function authErrorMessage(err, context) {
-  const code = err && err.code;
-  if (context === 'register') {
-    if (code === 'auth/email-already-in-use') return 'NIK ini sudah terdaftar. Silakan masuk lewat tab "Masuk".';
-    if (code === 'auth/weak-password') return 'Kata sandi terlalu lemah, minimal 6 karakter.';
-    if (code === 'auth/invalid-email') return 'NIK mengandung karakter yang tidak didukung. Gunakan angka/huruf biasa saja.';
-  } else {
-    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
-      return 'NIK belum terdaftar, atau kata sandi salah.';
-    }
-    if (code === 'auth/too-many-requests') return 'Terlalu banyak percobaan gagal. Coba lagi beberapa saat lagi.';
-  }
-  console.error(`Auth error (${context}):`, err);
-  return 'Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.';
-}
-
-// Halaman login bisa tampil sebelum proses inisialisasi Firebase selesai
-// — bahkan sebelum firebase-config.js (dimuat sebagai <script
+// Halaman login bisa tampil sebelum proses sign-in anonim ke Firebase
+// selesai — bahkan sebelum firebase-config.js (dimuat sebagai <script
 // type="module">, jadi dieksekusi belakangan dan butuh waktu fetch SDK
 // dari internet) sempat membuat window.gudangFirebase sama sekali.
-
 // Fungsi ini menunggu (polling tiap 50ms) sampai window.gudangFirebase
 // ada, lalu menunggu Promise 'authReady'-nya — semua dalam satu batas
 // waktu total (timeoutMs).
@@ -1417,18 +1367,39 @@ function waitForFirebaseAuth(timeoutMs = 12000) {
   });
 }
 
-// Ambil profil operator langsung dari operator/{uid} — document ID
-// SEKARANG adalah UID Firebase Auth (bukan NIK/auto-id lagi), jadi begitu
-// sign-in berhasil kita sudah tahu persis dokumen mana yang harus dibaca.
-async function getOwnOperatorProfile(uid) {
+async function findOperatorAccountByNama(nama) {
   const fb = window.gudangFirebase;
-  const snap = await fb.getDoc(fb.doc(fb.db, 'operator', uid));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  const namaKey = normalizeNamaKey(nama);
+  const q = fb.query(fb.operatorCol, fb.where('namaLower', '==', namaKey));
+  const snapshot = await fb.getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() };
 }
-async function getOwnAdminProfile(uid) {
+
+// Login & pengecekan akun sekarang berdasarkan NIK (bukan nama), karena
+// nama karyawan berpotensi sama antara satu operator dengan operator lain
+// — NIK dijamin unik per karyawan.
+async function findOperatorAccountByNik(nik) {
   const fb = window.gudangFirebase;
-  const snap = await fb.getDoc(fb.doc(fb.db, 'admin', uid));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  const nikKey = normalizeNikKey(nik);
+  const q = fb.query(fb.operatorCol, fb.where('idKaryawan', '==', nikKey));
+  const snapshot = await fb.getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() };
+}
+
+// Sama seperti findOperatorAccountByNik, tapi mencari di koleksi "admin"
+// (akun admin yang mendaftar sendiri lewat "Daftar Baru").
+async function findAdminAccountByNik(nik) {
+  const fb = window.gudangFirebase;
+  const nikKey = normalizeNikKey(nik);
+  const q = fb.query(fb.adminCol, fb.where('idKaryawan', '==', nikKey));
+  const snapshot = await fb.getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() };
 }
 
 function showRegisterError(msg) {
@@ -1477,6 +1448,16 @@ formRegisterOperator.addEventListener('submit', async (e) => {
   if (!nama) { showRegisterError('Nama operator wajib diisi.'); registerOperatorNama.focus(); return; }
   if (!idKaryawan) { showRegisterError('ID Karyawan / NIK wajib diisi.'); registerOperatorIdKaryawan.focus(); return; }
   if (!kodeAkses) { showRegisterError('Kode Akses Pendaftaran wajib diisi. Minta kode ini ke admin gudang.'); registerOperatorKodeAkses.focus(); return; }
+  if (typeof KODE_AKSES_PENDAFTARAN === 'undefined') {
+    showRegisterError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
+    return;
+  }
+  if (kodeAkses !== KODE_AKSES_PENDAFTARAN) {
+    showRegisterError('Kode Akses Pendaftaran salah. Pastikan Anda mendapatkan kode resmi dari admin gudang Mayora.');
+    registerOperatorKodeAkses.value = '';
+    registerOperatorKodeAkses.focus();
+    return;
+  }
   if (!password || password.length < 6) { showRegisterError('Kata sandi minimal 6 karakter.'); registerOperatorPassword.focus(); return; }
   if (password !== passwordConfirm) { showRegisterError('Konfirmasi kata sandi tidak cocok.'); registerOperatorPasswordConfirm.focus(); return; }
 
@@ -1487,42 +1468,23 @@ formRegisterOperator.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+
+    const existing = await findOperatorAccountByNik(idKaryawan);
+    if (existing) {
+      showRegisterError('NIK ini sudah terdaftar. Silakan masuk lewat tab "Masuk", atau hubungi admin gudang jika ini bukan Anda.');
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
     const fb = window.gudangFirebase;
-    const email = nikToSyntheticEmail('operator', idKaryawan);
+    await fb.addDoc(fb.operatorCol, {
+      nama,
+      namaLower: normalizeNamaKey(nama),
+      idKaryawan: normalizeNikKey(idKaryawan),
+      passwordHash,
+      createdAt: Date.now(),
+    });
 
-    let cred;
-    try {
-      cred = await fb.createUserWithEmailAndPassword(fb.auth, email, password);
-    } catch (err) {
-      showRegisterError(authErrorMessage(err, 'register'));
-      return;
-    }
-
-    const uid = cred.user.uid;
-    try {
-      await fb.setDoc(fb.doc(fb.db, 'registrationGate', uid), {
-        role: 'operator',
-        kodeAkses,
-      });
-      await fb.setDoc(fb.doc(fb.db, 'operator', uid), {
-        nama,
-        idKaryawan: normalizeNikKey(idKaryawan),
-        uid,
-        role: 'operator',
-        createdAt: Date.now(),
-      });
-    } catch (err) {
-      // Kode akses salah, atau gagal tulis profil -> rollback akun Auth
-      // yang baru saja dibuat supaya tidak ada akun "yatim".
-      console.error('Gagal menyelesaikan pendaftaran, rollback akun:', err);
-      try { await fb.deleteUser(cred.user); } catch (e2) { /* abaikan */ }
-      showRegisterError('Kode Akses Pendaftaran salah. Pastikan Anda mendapatkan kode resmi dari admin gudang Mayora.');
-      registerOperatorKodeAkses.value = '';
-      registerOperatorKodeAkses.focus();
-      return;
-    }
-
-    await fb.signOut(fb.auth);
     formRegisterOperator.reset();
     switchOperatorMode('login');
     loginOperatorNik.value = idKaryawan;
@@ -1550,6 +1512,19 @@ formRegisterAdmin.addEventListener('submit', async (e) => {
   if (!nama) { showRegisterAdminError('Nama admin wajib diisi.'); registerAdminNama.focus(); return; }
   if (!idKaryawan) { showRegisterAdminError('ID Karyawan / NIK wajib diisi.'); registerAdminIdKaryawan.focus(); return; }
   if (!kodeAkses) { showRegisterAdminError('Kode Akses Pendaftaran Admin wajib diisi.'); registerAdminKodeAkses.focus(); return; }
+  if (typeof KODE_AKSES_PENDAFTARAN_ADMIN === 'undefined') {
+    showRegisterAdminError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
+    return;
+  }
+  // Sengaja dicek terhadap kode ADMIN, bukan kode operator — supaya
+  // operator yang cuma tahu kode pendaftaran operator tidak bisa
+  // mendaftarkan diri sebagai admin.
+  if (kodeAkses !== KODE_AKSES_PENDAFTARAN_ADMIN) {
+    showRegisterAdminError('Kode Akses Pendaftaran Admin salah. Pastikan Anda mendapatkan kode resmi yang khusus untuk admin.');
+    registerAdminKodeAkses.value = '';
+    registerAdminKodeAkses.focus();
+    return;
+  }
   if (!password || password.length < 6) { showRegisterAdminError('Kata sandi minimal 6 karakter.'); registerAdminPassword.focus(); return; }
   if (password !== passwordConfirm) { showRegisterAdminError('Konfirmasi kata sandi tidak cocok.'); registerAdminPasswordConfirm.focus(); return; }
 
@@ -1560,40 +1535,25 @@ formRegisterAdmin.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+
+    const nikKey = normalizeNikKey(idKaryawan);
+    const existingFirestore = await findAdminAccountByNik(idKaryawan);
+    const existingLegacy = ADMIN_ACCOUNTS.some(a => normalizeNikKey(a.idKaryawan) === nikKey);
+    if (existingFirestore || existingLegacy) {
+      showRegisterAdminError('NIK ini sudah terdaftar sebagai admin. Silakan masuk lewat tab "Masuk".');
+      return;
+    }
+
+    const passwordHash = await hashPassword(password);
     const fb = window.gudangFirebase;
-    const email = nikToSyntheticEmail('admin', idKaryawan);
+    await fb.addDoc(fb.adminCol, {
+      nama,
+      namaLower: normalizeNamaKey(nama),
+      idKaryawan: nikKey,
+      passwordHash,
+      createdAt: Date.now(),
+    });
 
-    let cred;
-    try {
-      cred = await fb.createUserWithEmailAndPassword(fb.auth, email, password);
-    } catch (err) {
-      showRegisterAdminError(authErrorMessage(err, 'register').replace('Silakan masuk', 'Silakan masuk sebagai admin'));
-      return;
-    }
-
-    const uid = cred.user.uid;
-    try {
-      await fb.setDoc(fb.doc(fb.db, 'registrationGate', uid), {
-        role: 'admin',
-        kodeAkses,
-      });
-      await fb.setDoc(fb.doc(fb.db, 'admin', uid), {
-        nama,
-        idKaryawan: normalizeNikKey(idKaryawan),
-        uid,
-        role: 'admin',
-        createdAt: Date.now(),
-      });
-    } catch (err) {
-      console.error('Gagal menyelesaikan pendaftaran admin, rollback akun:', err);
-      try { await fb.deleteUser(cred.user); } catch (e2) { /* abaikan */ }
-      showRegisterAdminError('Kode Akses Pendaftaran Admin salah. Pastikan Anda mendapatkan kode resmi yang khusus untuk admin.');
-      registerAdminKodeAkses.value = '';
-      registerAdminKodeAkses.focus();
-      return;
-    }
-
-    await fb.signOut(fb.auth);
     formRegisterAdmin.reset();
     switchAdminMode('login');
     loginAdminNik.value = idKaryawan;
@@ -1625,23 +1585,18 @@ formLoginOperator.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
-    const fb = window.gudangFirebase;
-    const email = nikToSyntheticEmail('operator', nik);
 
-    let cred;
-    try {
-      cred = await fb.signInWithEmailAndPassword(fb.auth, email, password);
-    } catch (err) {
-      showLoginOperatorError(authErrorMessage(err, 'login'));
-      loginOperatorPassword.value = '';
-      loginOperatorPassword.focus();
+    const akun = await findOperatorAccountByNik(nik);
+    if (!akun) {
+      showLoginOperatorError('NIK belum terdaftar. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
       return;
     }
 
-    const akun = await getOwnOperatorProfile(cred.user.uid);
-    if (!akun) {
-      showLoginOperatorError('Profil operator tidak ditemukan. Hubungi admin gudang.');
-      await fb.signOut(fb.auth);
+    const passwordHash = await hashPassword(password);
+    if (passwordHash !== akun.passwordHash) {
+      showLoginOperatorError('Kata sandi salah. Coba lagi.');
+      loginOperatorPassword.value = '';
+      loginOperatorPassword.focus();
       return;
     }
 
@@ -1673,28 +1628,39 @@ formLoginAdmin.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
-    const fb = window.gudangFirebase;
-    const email = nikToSyntheticEmail('admin', nik);
 
-    let cred;
-    try {
-      cred = await fb.signInWithEmailAndPassword(fb.auth, email, password);
-    } catch (err) {
-      showLoginAdminError(authErrorMessage(err, 'login'));
+    // Cek dulu akun admin yang mendaftar sendiri (Firestore, password
+    // tersimpan sebagai hash). Kalau tidak ketemu, fallback ke daftar
+    // admin lama yang masih hardcode di data.js (password teks polos).
+    const nikKey = normalizeNikKey(nik);
+    const akunFirestore = await findAdminAccountByNik(nik);
+
+    if (akunFirestore) {
+      const passwordHash = await hashPassword(password);
+      if (passwordHash !== akunFirestore.passwordHash) {
+        showLoginAdminError('Kata sandi salah. Coba lagi.');
+        loginAdminPassword.value = '';
+        loginAdminPassword.focus();
+        return;
+      }
+      setSession({ role: 'admin', nama: akunFirestore.nama });
+      enterApp({ role: 'admin', nama: akunFirestore.nama });
+      return;
+    }
+
+    const akunLegacy = ADMIN_ACCOUNTS.find(a => normalizeNikKey(a.idKaryawan) === nikKey);
+    if (!akunLegacy) {
+      showLoginAdminError('NIK belum terdaftar sebagai admin. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
+      return;
+    }
+    if (password !== akunLegacy.password) {
+      showLoginAdminError('Kata sandi salah. Coba lagi.');
       loginAdminPassword.value = '';
       loginAdminPassword.focus();
       return;
     }
-
-    const akun = await getOwnAdminProfile(cred.user.uid);
-    if (!akun) {
-      showLoginAdminError('Profil admin tidak ditemukan. Hubungi admin lain untuk memeriksa akun ini.');
-      await fb.signOut(fb.auth);
-      return;
-    }
-
-    setSession({ role: 'admin', nama: akun.nama });
-    enterApp({ role: 'admin', nama: akun.nama });
+    setSession({ role: 'admin', nama: akunLegacy.nama });
+    enterApp({ role: 'admin', nama: akunLegacy.nama });
   } catch (err) {
     console.error('Gagal memeriksa akun admin:', err);
     showLoginAdminError('Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.');
@@ -1733,14 +1699,8 @@ function enterApp(session) {
   initFirestoreConnection();
 }
 
-document.getElementById('btn-logout').addEventListener('click', async () => {
+document.getElementById('btn-logout').addEventListener('click', () => {
   if (unsubscribeLaporan) unsubscribeLaporan();
-  try {
-    const fb = window.gudangFirebase;
-    if (fb && fb.auth) await fb.signOut(fb.auth);
-  } catch (err) {
-    console.warn('Gagal sign-out dari Firebase Auth (dilanjutkan):', err);
-  }
   clearSession();
   window.location.reload();
 });
@@ -3693,10 +3653,6 @@ function renderRingkasan() {
   statKeluarQty.textContent = keluarQty.toLocaleString('id-ID');
   statKeluarCount.textContent = `${keluarCount} laporan`;
   statTotalCount.textContent = currentEntries.length.toLocaleString('id-ID');
-  const statMasukCountNum = document.getElementById('stat-masuk-count-num');
-  const statKeluarCountNum = document.getElementById('stat-keluar-count-num');
-  if (statMasukCountNum) statMasukCountNum.textContent = masukCount.toLocaleString('id-ID');
-  if (statKeluarCountNum) statKeluarCountNum.textContent = keluarCount.toLocaleString('id-ID');
 
   // Pallet masuk/keluar mengikuti periode yang sama seperti kartu di atas.
   // Hanya laporan yang punya info Qty per Pallet (sehingga jumlahPallet
@@ -3770,16 +3726,12 @@ function renderRingkasan() {
     trendEl.hidden = true;
     if (trendMasukEl) trendMasukEl.hidden = true;
     if (trendKeluarEl) trendKeluarEl.hidden = true;
-    const cmt = document.getElementById('stat-masuk-count-trend');
-    const ckt = document.getElementById('stat-keluar-count-trend');
-    if (cmt) cmt.hidden = true;
-    if (ckt) ckt.hidden = true;
   } else {
-    let prevTotal = 0, prevMasukQty = 0, prevKeluarQty = 0, prevMasukCount = 0, prevKeluarCount = 0;
+    let prevTotal = 0, prevMasukQty = 0, prevKeluarQty = 0;
     currentEntries.forEach(t => {
       if (inPeriod(t, prevRange)) {
         prevTotal += t.jumlah;
-        if (t.jenis === 'masuk') { prevMasukQty += t.jumlah; prevMasukCount++; } else { prevKeluarQty += t.jumlah; prevKeluarCount++; }
+        if (t.jenis === 'masuk') prevMasukQty += t.jumlah; else prevKeluarQty += t.jumlah;
       }
     });
     if (prevTotal === 0 && totalArus === 0) {
@@ -3793,8 +3745,6 @@ function renderRingkasan() {
     }
     setTrend(trendMasukEl, masukQty, prevMasukQty);
     setTrend(trendKeluarEl, keluarQty, prevKeluarQty);
-    setTrend(document.getElementById('stat-masuk-count-trend'), masukCount, prevMasukCount);
-    setTrend(document.getElementById('stat-keluar-count-trend'), keluarCount, prevKeluarCount);
   }
 
   const barangCount = {};
@@ -3858,191 +3808,7 @@ function renderRingkasan() {
 
   renderBlokPallet();
   if (searchLokasiBarang && searchLokasiBarang.value.trim()) renderLokasiBarangSearch();
-  renderDashboardV2Widgets();
 }
-
-// ==========================================================================
-// WIDGET DASHBOARD BARU — Kondisi Stok Saat Ini, Barang dengan Stok
-// Terbanyak, Jenis Barang Masuk & Keluar, Aktivitas Operator Hari Ini, dan
-// Aktivitas Terbaru. Dipisah dari renderRingkasan() supaya fungsi lama
-// tidak makin panjang, tapi tetap dipanggil dari sana setiap kali data
-// laporan berubah / filter periode berganti.
-//
-// CATATAN: beberapa angka di sini SENGAJA tidak mengikuti filter periode
-// (mis. Kondisi Stok Saat Ini, Barang Stok Terbanyak) karena itu memang
-// "posisi sekarang" (seperti Total Pallet Saat Ini yang sudah ada
-// sebelumnya) — bukan aktivitas dalam rentang waktu tertentu. Yang lain
-// (Jenis Barang Masuk & Keluar, Aktivitas Operator, Aktivitas Terbaru)
-// mengikuti periode yang sedang dipilih di atas, supaya konsisten dengan
-// kartu KPI di atasnya.
-// ==========================================================================
-function renderDashboardV2Widgets() {
-  if (currentRole() !== 'admin') return;
-  const range = getPeriodRange(periodMode, periodDate);
-  const entriesInPeriod = currentEntries.filter(t => inPeriod(t, range));
-
-  // ---- Kondisi Stok Saat Ini (posisi sekarang, semua data) ----
-  const stokMapAll = katalogManager.calculateAllBarangStok(currentEntries);
-  let totalPcsSekarang = 0;
-  let jenisBarangAda = 0;
-  stokMapAll.forEach((qty) => {
-    totalPcsSekarang += qty;
-    if (qty > 0) jenisBarangAda++;
-  });
-  const elStokPcs = document.getElementById('stat-stok-pcs');
-  const elStokPallet = document.getElementById('stat-stok-pallet');
-  const elStokJenis = document.getElementById('stat-stok-jenis');
-  const elStokSupplier = document.getElementById('stat-stok-supplier');
-  const elStokPemilik = document.getElementById('stat-stok-pemilik');
-  if (elStokPcs) elStokPcs.textContent = totalPcsSekarang.toLocaleString('id-ID');
-  if (elStokPallet) elStokPallet.textContent = document.getElementById('stat-pallet-saat-ini')?.textContent || '0';
-  if (elStokJenis) elStokJenis.textContent = jenisBarangAda.toLocaleString('id-ID');
-  if (elStokSupplier) elStokSupplier.textContent = (MASTER_DATA.supplier || []).length.toLocaleString('id-ID');
-  if (elStokPemilik) elStokPemilik.textContent = (MASTER_DATA.pemilik || []).length.toLocaleString('id-ID');
-
-  // ---- Barang dengan Stok Terbanyak (Top 5, posisi sekarang) ----
-  const namaByKode = {};
-  currentEntries.forEach(t => { if (t.kodeBarang) namaByKode[t.kodeBarang] = t.namaBarang; });
-  const stokRanked = Array.from(stokMapAll.entries())
-    .filter(([, qty]) => qty > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-  const topStokEmpty = document.getElementById('top-stok-barang-empty');
-  const topStokList = document.getElementById('top-stok-barang-list');
-  if (topStokList) {
-    topStokList.innerHTML = '';
-    if (stokRanked.length === 0) {
-      if (topStokEmpty) topStokEmpty.hidden = false;
-    } else {
-      if (topStokEmpty) topStokEmpty.hidden = true;
-      stokRanked.forEach(([kode, qty], idx) => {
-        const nama = namaByKode[kode] || kode;
-        const row = document.createElement('div');
-        row.className = 'rank-item';
-        row.innerHTML = `
-          <span class="rank-item-num">${idx + 1}</span>
-          <span class="rank-item-body"><span class="rank-item-name" title="${escapeHtml(nama)}">${escapeHtml(nama)}</span></span>
-          <span class="rank-item-value">${qty.toLocaleString('id-ID')} pcs</span>
-        `;
-        row.style.cursor = 'pointer';
-        row.addEventListener('click', () => openItemModal(kode));
-        topStokList.appendChild(row);
-      });
-    }
-  }
-
-  // ---- Jenis Barang Masuk & Keluar (mengikuti periode) ----
-  const masukKodeSet = new Set();
-  const keluarKodeSet = new Set();
-  const masukByNama = {};
-  const keluarByNama = {};
-  entriesInPeriod.forEach(t => {
-    if (t.jenis === 'masuk') {
-      if (t.kodeBarang) masukKodeSet.add(t.kodeBarang);
-      masukByNama[t.namaBarang] = (masukByNama[t.namaBarang] || 0) + t.jumlah;
-    } else {
-      if (t.kodeBarang) keluarKodeSet.add(t.kodeBarang);
-      keluarByNama[t.namaBarang] = (keluarByNama[t.namaBarang] || 0) + t.jumlah;
-    }
-  });
-  const elJenisMasuk = document.getElementById('stat-jenis-masuk');
-  const elJenisKeluar = document.getElementById('stat-jenis-keluar');
-  if (elJenisMasuk) elJenisMasuk.textContent = masukKodeSet.size.toLocaleString('id-ID');
-  if (elJenisKeluar) elJenisKeluar.textContent = keluarKodeSet.size.toLocaleString('id-ID');
-
-  function renderMiniRank(listId, emptyId, dataObj, unit) {
-    const listEl = document.getElementById(listId);
-    const emptyEl = document.getElementById(emptyId);
-    if (!listEl) return;
-    const ranked = Object.entries(dataObj).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    listEl.innerHTML = '';
-    if (ranked.length === 0) {
-      if (emptyEl) emptyEl.hidden = false;
-      return;
-    }
-    if (emptyEl) emptyEl.hidden = true;
-    ranked.forEach(([nama, qty]) => {
-      const row = document.createElement('div');
-      row.className = 'mini-rank-item';
-      row.innerHTML = `
-        <span class="mini-rank-item-name" title="${escapeHtml(nama)}">${escapeHtml(nama)}</span>
-        <span class="mini-rank-item-value">${qty.toLocaleString('id-ID')} ${unit}</span>
-      `;
-      listEl.appendChild(row);
-    });
-  }
-  renderMiniRank('top5-jenis-masuk-list', 'top5-jenis-masuk-empty', masukByNama, 'pcs');
-  renderMiniRank('top5-jenis-keluar-list', 'top5-jenis-keluar-empty', keluarByNama, 'pcs');
-
-  // ---- Aktivitas Operator Hari Ini ----
-  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
-  const opToday = {};
-  currentEntries.forEach(t => {
-    if (t.createdAt < startOfToday.getTime()) return;
-    if (!opToday[t.operator]) opToday[t.operator] = { masuk: 0, keluar: 0 };
-    if (t.jenis === 'masuk') opToday[t.operator].masuk++; else opToday[t.operator].keluar++;
-  });
-  const opTodayRanked = Object.entries(opToday).sort((a, b) => (b[1].masuk + b[1].keluar) - (a[1].masuk + a[1].keluar));
-  const opTable = document.getElementById('op-aktivitas-table');
-  const opTbody = document.getElementById('op-aktivitas-tbody');
-  const opEmpty = document.getElementById('op-aktivitas-empty');
-  if (opTbody) {
-    opTbody.innerHTML = '';
-    if (opTodayRanked.length === 0) {
-      if (opEmpty) opEmpty.hidden = false;
-      if (opTable) opTable.hidden = true;
-    } else {
-      if (opEmpty) opEmpty.hidden = true;
-      if (opTable) opTable.hidden = false;
-      opTodayRanked.forEach(([nama, c]) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><span class="op-aktivitas-avatar">${escapeHtml(getInitials(nama))}</span>${escapeHtml(nama)}</td>
-          <td class="op-masuk-cell">${c.masuk}</td>
-          <td class="op-keluar-cell">${c.keluar}</td>
-        `;
-        opTbody.appendChild(tr);
-      });
-    }
-  }
-
-  // ---- Aktivitas Terbaru (5 laporan terakhir, semua operator) ----
-  const terbaru = currentEntries.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
-  const terbaruList = document.getElementById('aktivitas-terbaru-list');
-  const terbaruEmpty = document.getElementById('aktivitas-terbaru-empty');
-  if (terbaruList) {
-    terbaruList.innerHTML = '';
-    if (terbaru.length === 0) {
-      if (terbaruEmpty) terbaruEmpty.hidden = false;
-    } else {
-      if (terbaruEmpty) terbaruEmpty.hidden = true;
-      terbaru.forEach(t => {
-        const isMasuk = t.jenis === 'masuk';
-        const row = document.createElement('div');
-        row.className = 'aktivitas-feed-item';
-        const tgl = t.tanggal || '';
-        row.innerHTML = `
-          <span class="aktivitas-feed-icon ${isMasuk ? 'is-masuk' : 'is-keluar'}">${isMasuk ? '📥' : '📤'}</span>
-          <span class="aktivitas-feed-body">
-            <div class="aktivitas-feed-title ${isMasuk ? 'is-masuk' : 'is-keluar'}">${isMasuk ? 'Barang Masuk' : 'Barang Keluar'}</div>
-            <div class="aktivitas-feed-desc" title="${escapeHtml(t.namaBarang)}">${escapeHtml(t.namaBarang)}</div>
-          </span>
-          <span class="aktivitas-feed-time">${escapeHtml(tgl)}</span>
-        `;
-        row.style.cursor = 'pointer';
-        row.addEventListener('click', () => openItemModal(t.kodeBarang));
-        terbaruList.appendChild(row);
-      });
-    }
-  }
-}
-
-// Tombol "Lihat detail stok →" / "Lihat semua barang →" dst di kartu-kartu
-// dashboard baru — cukup pindah ke panel admin yang relevan, memakai fungsi
-// switchAdminPanel yang sudah ada (sama seperti klik menu di sidebar).
-document.querySelectorAll('[data-goto-panel]').forEach(btn => {
-  btn.addEventListener('click', () => switchAdminPanel(btn.dataset.gotoPanel));
-});
 
 /* ==========================================================================
    KATALOG & STOK — jelajah gabungan (admin & operator)
