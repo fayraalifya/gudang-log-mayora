@@ -731,60 +731,93 @@ body.role-operator .katalog-mode-tabs { display: none; }
 .katalog-pager-btn.is-active { background: var(--navy); color: var(--text-on-dark); border-color: var(--navy); }
 .katalog-pager-btn:disabled { opacity: 0.4; }
 
-/* ---- Panel kanan: tabel lokasi (klik -> Detail Lokasi) ---- */
-.lokasi-table { display: flex; flex-direction: column; gap: 6px; }
-/* Baris header (.lokasi-table-head) tidak berubah sama sekali: masih grid
-   3-kolom langsung seperti sebelumnya. */
-.lokasi-table-row {
-  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.5fr); align-items: center; gap: 6px;
-  padding: 8px 8px; border-radius: 9px; background: transparent;
+/* ---- Panel kanan: kartu lokasi (klik -> Detail Lokasi) ---- */
+.ltr-count-badge {
+  display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
+  background: var(--kraft); border: 2px solid var(--kraft-line); border-radius: 20px;
+  padding: 4px 12px 4px 10px; margin-top: -2px;
 }
-.lokasi-table-head {
-  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted);
-  font-family: var(--font-display); font-weight: 700;
-}
-.lokasi-table-body { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; }
-/* Baris data (di dalam .lokasi-table-body) dibungkus jadi flex-column
-   supaya bar kapasitas bisa ditambahkan DI BAWAH baris info yang sudah
-   ada, tanpa mengubah kolom lokasi/pallet/aksi itu sendiri. */
-.lokasi-table-body .lokasi-table-row {
-  display: flex; flex-direction: column; gap: 6px;
-  background: var(--kraft); cursor: pointer; transition: background-color .12s, transform .1s;
-}
-.lokasi-table-body .ltr-main {
-  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.5fr); align-items: center; gap: 6px;
-}
-.lokasi-table-body .lokasi-table-row:hover { background: var(--navy-pale); transform: translateY(-1px); }
-.ltr-col { font-size: 12px; color: var(--ink-soft); min-width: 0; }
-.ltr-lokasi { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ltr-pallet { font-weight: 600; color: var(--ink); white-space: normal; line-height: 1.3; word-break: break-word; }
-.ltr-aksi, .ltr-aksi-head { text-align: center; }
-.ltr-aksi {
-  justify-self: center; padding: 5px; border-radius: 7px; color: var(--navy); background: transparent;
-}
-.ltr-aksi:hover { background: var(--navy-pale); }
+.ltr-count-badge svg { color: var(--text-muted); flex-shrink: 0; }
 
-/* ---- Bar kapasitas (info tambahan, tidak menggantikan apapun) ---- */
-.ltr-capacity { display: flex; align-items: center; gap: 8px; padding: 0 1px; }
-.ltr-capacity-bar {
-  flex: 1; height: 5px; border-radius: 4px; background: var(--kraft-line); overflow: hidden;
+.lokasi-table { display: flex; flex-direction: column; }
+.lokasi-table-body { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; padding-right: 2px; }
+
+/* Tiap baris = satu kartu, dengan aksen warna 3px di sisi kiri sesuai
+   status kapasitas (border-left TIDAK dibulatkan, sesuai aturan: radius
+   cuma dipakai kalau border-nya penuh di semua sisi). */
+.lokasi-table-row {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--kraft); border: 2px solid transparent; border-left: 3px solid var(--kraft-line);
+  border-radius: 12px; cursor: pointer; padding: 10px 12px 10px 11px;
+  transition: background-color .12s, border-color .12s, transform .1s;
 }
+.lokasi-table-row:hover { background: var(--navy-pale); border-color: var(--emas); border-left-color: var(--emas); transform: translateY(-1px); }
+.lokasi-table-row.ltr-cap-ok { border-left-color: var(--hijau); }
+.lokasi-table-row.ltr-cap-warn { border-left-color: var(--oranye); }
+.lokasi-table-row.ltr-cap-full { border-left-color: var(--merah-flag); }
+
+.ltr-card-head { display: flex; align-items: center; gap: 10px; }
+.ltr-icon-box {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; font-size: 17px;
+  background: var(--kraft-line); color: var(--ink-soft);
+}
+.ltr-icon-box.ltr-cap-ok { background: var(--hijau-soft); color: var(--hijau); }
+.ltr-icon-box.ltr-cap-warn { background: var(--oranye-soft); color: var(--oranye); }
+.ltr-icon-box.ltr-cap-full { background: var(--merah-flag-soft); color: var(--merah-flag); }
+
+.ltr-name-block { flex: 1; min-width: 0; }
+.ltr-lokasi {
+  font-weight: 700; font-size: 13.5px; color: var(--ink); text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.2px;
+}
+.ltr-area { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+.ltr-aksi {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
+  border: 2px solid var(--kraft-line); color: var(--navy); background: var(--kertas);
+  display: flex; align-items: center; justify-content: center;
+}
+.ltr-aksi:hover { background: var(--navy-pale); border-color: var(--navy); }
+
+.ltr-pallet-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ltr-pallet {
+  font-weight: 600; font-size: 13px; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums; min-width: 0;
+}
+.ltr-capacity-pill {
+  flex-shrink: 0; font-size: 10.5px; font-weight: 700; white-space: nowrap;
+  padding: 3px 10px; border-radius: 20px;
+}
+.ltr-capacity-pill.ltr-cap-ok { color: var(--hijau); background: var(--hijau-soft); }
+.ltr-capacity-pill.ltr-cap-warn { color: var(--oranye); background: var(--oranye-soft); }
+.ltr-capacity-pill.ltr-cap-full { color: var(--merah-flag); background: var(--merah-flag-soft); }
+.ltr-capacity-pill.ltr-cap-none { color: var(--text-muted); font-weight: 600; font-style: italic; background: var(--kraft-line); }
+
+.ltr-capacity-bar { height: 6px; border-radius: 4px; background: var(--kraft-line); overflow: hidden; }
 .ltr-capacity-fill { height: 100%; border-radius: 4px; transition: width .15s; }
 .ltr-capacity-fill.ltr-cap-ok { background: var(--hijau); }
-.ltr-capacity-fill.ltr-cap-warn { background: var(--emas); }
+.ltr-capacity-fill.ltr-cap-warn { background: var(--oranye); }
 .ltr-capacity-fill.ltr-cap-full { background: var(--merah-flag); }
-.ltr-capacity-label {
-  font-size: 10px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
-}
-.ltr-capacity-label.ltr-cap-ok { color: var(--hijau); }
-.ltr-capacity-label.ltr-cap-warn { color: var(--oranye); }
-.ltr-capacity-label.ltr-cap-full { color: var(--merah-flag); }
 .ltr-capacity-fill.ltr-cap-none { background: transparent; }
-.ltr-capacity-label.ltr-cap-none { color: var(--text-muted); font-weight: 500; font-style: italic; }
+
+/* ---- Legenda status, di bawah daftar kartu ---- */
+.ltr-legend {
+  display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: center;
+  margin-top: 12px; padding-top: 10px; border-top: 2px solid var(--kraft-line);
+}
+.ltr-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ink-soft); }
+.ltr-legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.ltr-legend-dot.ltr-cap-ok { background: var(--hijau); }
+.ltr-legend-dot.ltr-cap-warn { background: var(--oranye); }
+.ltr-legend-dot.ltr-cap-full { background: var(--merah-flag); }
 
 @media (max-width: 480px) {
-  .lokasi-table-row, .ltr-main { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 0.4fr); }
-  .ltr-col { font-size: 10.5px; }
+  .ltr-lokasi { font-size: 12.5px; }
+  .ltr-pallet { font-size: 12px; }
+  .lokasi-table-row { padding: 9px 10px 9px 9px; }
 }
 
 /* ==========================================================================
