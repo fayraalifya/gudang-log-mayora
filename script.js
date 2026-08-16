@@ -1282,7 +1282,8 @@ tabOperatorRegister.addEventListener('click', () => switchOperatorMode('register
 
 // Sama seperti switchOperatorMode, tapi untuk tab Admin — admin sekarang
 // juga bisa "Daftar Baru" sendiri, dengan Kode Akses Pendaftaran yang
-// berbeda dari operator (lihat KODE_AKSES_PENDAFTARAN_ADMIN di data.js).
+// berbeda dari operator (divalidasi lewat registrationGate di
+// firestore.rules, lihat konstanta kodeAksesAdmin() di sana).
 function switchAdminMode(mode) {
   tabAdminLogin.classList.toggle('is-active', mode === 'login');
   tabAdminRegister.classList.toggle('is-active', mode === 'register');
@@ -1322,19 +1323,34 @@ tabOperator.addEventListener('click', () => switchLoginTab('operator'));
 tabAdmin.addEventListener('click', () => switchLoginTab('admin'));
 
 /* ==========================================================================
-   AKUN OPERATOR — daftar & login sungguhan lewat Firestore
-   (mencegah orang masuk tanpa mendaftar terlebih dahulu)
+   AKUN OPERATOR & ADMIN — Firebase Authentication (email+password) sungguhan
+   ==========================================================================
+   Skema ini SESUAI dengan firestore.rules (v3, registrationGate, TANPA
+   Cloud Functions — project tetap plan Spark):
+
+   1. NIK diubah jadi "email" sintetis deterministik: role-nik@DOMAIN.
+      Diberi awalan role supaya NIK yang sama bisa dipakai terdaftar
+      sebagai operator MAUPUN admin secara terpisah.
+   2. Pendaftaran = createUserWithEmailAndPassword() dulu (ini otomatis
+      GAGAL kalau NIK+role itu sudah terdaftar — auth/email-already-in-use
+      — jadi tidak perlu cek manual ke Firestore lagi, dan tidak bisa
+      race-condition seperti skema lama).
+   3. Begitu akun Auth dibuat, uid-nya dipakai untuk menulis dulu ke
+      registrationGate/{uid} berisi kode akses yang diketik user — create
+      HANYA diterima kalau kodenya cocok dengan konstanta di
+      firestore.rules. Kalau ditolak (kode salah), akun Auth yang baru
+      dibuat langsung di-rollback (deleteUser) supaya tidak nyangkut.
+   4. Kalau registrationGate sukses, baru tulis profil publik ke
+      operator/{uid} atau admin/{uid} — TIDAK ADA password/hash di sini
+      sama sekali, password sepenuhnya ditangani Firebase Auth di server
+      Google.
+   5. Login = signInWithEmailAndPassword() dengan email sintetis yang
+      sama, lalu profil diambil langsung lewat getDoc(operator/{uid}) /
+      getDoc(admin/{uid}) — document ID SEKARANG = UID Firebase Auth,
+      bukan NIK atau auto-id lagi.
 ========================================================================== */
 
-// Hash satu arah (SHA-256) supaya kata sandi tidak tersimpan sebagai teks
-// polos di database. Ini bukan pengganti backend yang sesungguhnya (idealnya
-// hashing + salt dilakukan di server), tapi jauh lebih aman dibanding
-// menyimpan password apa adanya, dan cukup untuk skala aplikasi internal ini.
-async function hashPassword(password) {
-  const enc = new TextEncoder().encode(password);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
+const EMAIL_DOMAIN = 'akun.gudanglog.internal'; // domain palsu, tidak pernah dipakai kirim email sungguhan
 
 function normalizeNamaKey(nama) {
   return String(nama || '').trim().toLowerCase();
@@ -1344,10 +1360,34 @@ function normalizeNikKey(nik) {
   return String(nik || '').trim();
 }
 
-// Halaman login bisa tampil sebelum proses sign-in anonim ke Firebase
-// selesai — bahkan sebelum firebase-config.js (dimuat sebagai <script
+// NIK -> "email" sintetis dipakai sebagai identitas login di Firebase Auth.
+function nikToSyntheticEmail(role, nik) {
+  return `${role}-${normalizeNikKey(nik).toLowerCase()}@${EMAIL_DOMAIN}`;
+}
+
+// Terjemahan kode error Firebase Auth ke pesan berbahasa Indonesia yang
+// ramah untuk ditampilkan di form login/daftar.
+function authErrorMessage(err, context) {
+  const code = err && err.code;
+  if (context === 'register') {
+    if (code === 'auth/email-already-in-use') return 'NIK ini sudah terdaftar. Silakan masuk lewat tab "Masuk".';
+    if (code === 'auth/weak-password') return 'Kata sandi terlalu lemah, minimal 6 karakter.';
+    if (code === 'auth/invalid-email') return 'NIK mengandung karakter yang tidak didukung. Gunakan angka/huruf biasa saja.';
+  } else {
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential' || code === 'auth/wrong-password') {
+      return 'NIK belum terdaftar, atau kata sandi salah.';
+    }
+    if (code === 'auth/too-many-requests') return 'Terlalu banyak percobaan gagal. Coba lagi beberapa saat lagi.';
+  }
+  console.error(`Auth error (${context}):`, err);
+  return 'Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.';
+}
+
+// Halaman login bisa tampil sebelum proses inisialisasi Firebase selesai
+// — bahkan sebelum firebase-config.js (dimuat sebagai <script
 // type="module">, jadi dieksekusi belakangan dan butuh waktu fetch SDK
 // dari internet) sempat membuat window.gudangFirebase sama sekali.
+
 // Fungsi ini menunggu (polling tiap 50ms) sampai window.gudangFirebase
 // ada, lalu menunggu Promise 'authReady'-nya — semua dalam satu batas
 // waktu total (timeoutMs).
@@ -1377,39 +1417,18 @@ function waitForFirebaseAuth(timeoutMs = 12000) {
   });
 }
 
-async function findOperatorAccountByNama(nama) {
+// Ambil profil operator langsung dari operator/{uid} — document ID
+// SEKARANG adalah UID Firebase Auth (bukan NIK/auto-id lagi), jadi begitu
+// sign-in berhasil kita sudah tahu persis dokumen mana yang harus dibaca.
+async function getOwnOperatorProfile(uid) {
   const fb = window.gudangFirebase;
-  const namaKey = normalizeNamaKey(nama);
-  const q = fb.query(fb.operatorCol, fb.where('namaLower', '==', namaKey));
-  const snapshot = await fb.getDocs(q);
-  if (snapshot.empty) return null;
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() };
+  const snap = await fb.getDoc(fb.doc(fb.db, 'operator', uid));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
-
-// Login & pengecekan akun sekarang berdasarkan NIK (bukan nama), karena
-// nama karyawan berpotensi sama antara satu operator dengan operator lain
-// — NIK dijamin unik per karyawan.
-async function findOperatorAccountByNik(nik) {
+async function getOwnAdminProfile(uid) {
   const fb = window.gudangFirebase;
-  const nikKey = normalizeNikKey(nik);
-  const q = fb.query(fb.operatorCol, fb.where('idKaryawan', '==', nikKey));
-  const snapshot = await fb.getDocs(q);
-  if (snapshot.empty) return null;
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() };
-}
-
-// Sama seperti findOperatorAccountByNik, tapi mencari di koleksi "admin"
-// (akun admin yang mendaftar sendiri lewat "Daftar Baru").
-async function findAdminAccountByNik(nik) {
-  const fb = window.gudangFirebase;
-  const nikKey = normalizeNikKey(nik);
-  const q = fb.query(fb.adminCol, fb.where('idKaryawan', '==', nikKey));
-  const snapshot = await fb.getDocs(q);
-  if (snapshot.empty) return null;
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() };
+  const snap = await fb.getDoc(fb.doc(fb.db, 'admin', uid));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
 function showRegisterError(msg) {
@@ -1458,16 +1477,6 @@ formRegisterOperator.addEventListener('submit', async (e) => {
   if (!nama) { showRegisterError('Nama operator wajib diisi.'); registerOperatorNama.focus(); return; }
   if (!idKaryawan) { showRegisterError('ID Karyawan / NIK wajib diisi.'); registerOperatorIdKaryawan.focus(); return; }
   if (!kodeAkses) { showRegisterError('Kode Akses Pendaftaran wajib diisi. Minta kode ini ke admin gudang.'); registerOperatorKodeAkses.focus(); return; }
-  if (typeof KODE_AKSES_PENDAFTARAN === 'undefined') {
-    showRegisterError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
-    return;
-  }
-  if (kodeAkses !== KODE_AKSES_PENDAFTARAN) {
-    showRegisterError('Kode Akses Pendaftaran salah. Pastikan Anda mendapatkan kode resmi dari admin gudang Mayora.');
-    registerOperatorKodeAkses.value = '';
-    registerOperatorKodeAkses.focus();
-    return;
-  }
   if (!password || password.length < 6) { showRegisterError('Kata sandi minimal 6 karakter.'); registerOperatorPassword.focus(); return; }
   if (password !== passwordConfirm) { showRegisterError('Konfirmasi kata sandi tidak cocok.'); registerOperatorPasswordConfirm.focus(); return; }
 
@@ -1478,23 +1487,42 @@ formRegisterOperator.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+    const fb = window.gudangFirebase;
+    const email = nikToSyntheticEmail('operator', idKaryawan);
 
-    const existing = await findOperatorAccountByNik(idKaryawan);
-    if (existing) {
-      showRegisterError('NIK ini sudah terdaftar. Silakan masuk lewat tab "Masuk", atau hubungi admin gudang jika ini bukan Anda.');
+    let cred;
+    try {
+      cred = await fb.createUserWithEmailAndPassword(fb.auth, email, password);
+    } catch (err) {
+      showRegisterError(authErrorMessage(err, 'register'));
       return;
     }
 
-    const passwordHash = await hashPassword(password);
-    const fb = window.gudangFirebase;
-    await fb.addDoc(fb.operatorCol, {
-      nama,
-      namaLower: normalizeNamaKey(nama),
-      idKaryawan: normalizeNikKey(idKaryawan),
-      passwordHash,
-      createdAt: Date.now(),
-    });
+    const uid = cred.user.uid;
+    try {
+      await fb.setDoc(fb.doc(fb.db, 'registrationGate', uid), {
+        role: 'operator',
+        kodeAkses,
+      });
+      await fb.setDoc(fb.doc(fb.db, 'operator', uid), {
+        nama,
+        idKaryawan: normalizeNikKey(idKaryawan),
+        uid,
+        role: 'operator',
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      // Kode akses salah, atau gagal tulis profil -> rollback akun Auth
+      // yang baru saja dibuat supaya tidak ada akun "yatim".
+      console.error('Gagal menyelesaikan pendaftaran, rollback akun:', err);
+      try { await fb.deleteUser(cred.user); } catch (e2) { /* abaikan */ }
+      showRegisterError('Kode Akses Pendaftaran salah. Pastikan Anda mendapatkan kode resmi dari admin gudang Mayora.');
+      registerOperatorKodeAkses.value = '';
+      registerOperatorKodeAkses.focus();
+      return;
+    }
 
+    await fb.signOut(fb.auth);
     formRegisterOperator.reset();
     switchOperatorMode('login');
     loginOperatorNik.value = idKaryawan;
@@ -1522,19 +1550,6 @@ formRegisterAdmin.addEventListener('submit', async (e) => {
   if (!nama) { showRegisterAdminError('Nama admin wajib diisi.'); registerAdminNama.focus(); return; }
   if (!idKaryawan) { showRegisterAdminError('ID Karyawan / NIK wajib diisi.'); registerAdminIdKaryawan.focus(); return; }
   if (!kodeAkses) { showRegisterAdminError('Kode Akses Pendaftaran Admin wajib diisi.'); registerAdminKodeAkses.focus(); return; }
-  if (typeof KODE_AKSES_PENDAFTARAN_ADMIN === 'undefined') {
-    showRegisterAdminError('Sistem belum siap (data.js gagal dimuat). Muat ulang halaman (refresh) lalu coba lagi.');
-    return;
-  }
-  // Sengaja dicek terhadap kode ADMIN, bukan kode operator — supaya
-  // operator yang cuma tahu kode pendaftaran operator tidak bisa
-  // mendaftarkan diri sebagai admin.
-  if (kodeAkses !== KODE_AKSES_PENDAFTARAN_ADMIN) {
-    showRegisterAdminError('Kode Akses Pendaftaran Admin salah. Pastikan Anda mendapatkan kode resmi yang khusus untuk admin.');
-    registerAdminKodeAkses.value = '';
-    registerAdminKodeAkses.focus();
-    return;
-  }
   if (!password || password.length < 6) { showRegisterAdminError('Kata sandi minimal 6 karakter.'); registerAdminPassword.focus(); return; }
   if (password !== passwordConfirm) { showRegisterAdminError('Konfirmasi kata sandi tidak cocok.'); registerAdminPasswordConfirm.focus(); return; }
 
@@ -1545,25 +1560,40 @@ formRegisterAdmin.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+    const fb = window.gudangFirebase;
+    const email = nikToSyntheticEmail('admin', idKaryawan);
 
-    const nikKey = normalizeNikKey(idKaryawan);
-    const existingFirestore = await findAdminAccountByNik(idKaryawan);
-    const existingLegacy = ADMIN_ACCOUNTS.some(a => normalizeNikKey(a.idKaryawan) === nikKey);
-    if (existingFirestore || existingLegacy) {
-      showRegisterAdminError('NIK ini sudah terdaftar sebagai admin. Silakan masuk lewat tab "Masuk".');
+    let cred;
+    try {
+      cred = await fb.createUserWithEmailAndPassword(fb.auth, email, password);
+    } catch (err) {
+      showRegisterAdminError(authErrorMessage(err, 'register').replace('Silakan masuk', 'Silakan masuk sebagai admin'));
       return;
     }
 
-    const passwordHash = await hashPassword(password);
-    const fb = window.gudangFirebase;
-    await fb.addDoc(fb.adminCol, {
-      nama,
-      namaLower: normalizeNamaKey(nama),
-      idKaryawan: nikKey,
-      passwordHash,
-      createdAt: Date.now(),
-    });
+    const uid = cred.user.uid;
+    try {
+      await fb.setDoc(fb.doc(fb.db, 'registrationGate', uid), {
+        role: 'admin',
+        kodeAkses,
+      });
+      await fb.setDoc(fb.doc(fb.db, 'admin', uid), {
+        nama,
+        idKaryawan: normalizeNikKey(idKaryawan),
+        uid,
+        role: 'admin',
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      console.error('Gagal menyelesaikan pendaftaran admin, rollback akun:', err);
+      try { await fb.deleteUser(cred.user); } catch (e2) { /* abaikan */ }
+      showRegisterAdminError('Kode Akses Pendaftaran Admin salah. Pastikan Anda mendapatkan kode resmi yang khusus untuk admin.');
+      registerAdminKodeAkses.value = '';
+      registerAdminKodeAkses.focus();
+      return;
+    }
 
+    await fb.signOut(fb.auth);
     formRegisterAdmin.reset();
     switchAdminMode('login');
     loginAdminNik.value = idKaryawan;
@@ -1595,18 +1625,23 @@ formLoginOperator.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+    const fb = window.gudangFirebase;
+    const email = nikToSyntheticEmail('operator', nik);
 
-    const akun = await findOperatorAccountByNik(nik);
-    if (!akun) {
-      showLoginOperatorError('NIK belum terdaftar. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
+    let cred;
+    try {
+      cred = await fb.signInWithEmailAndPassword(fb.auth, email, password);
+    } catch (err) {
+      showLoginOperatorError(authErrorMessage(err, 'login'));
+      loginOperatorPassword.value = '';
+      loginOperatorPassword.focus();
       return;
     }
 
-    const passwordHash = await hashPassword(password);
-    if (passwordHash !== akun.passwordHash) {
-      showLoginOperatorError('Kata sandi salah. Coba lagi.');
-      loginOperatorPassword.value = '';
-      loginOperatorPassword.focus();
+    const akun = await getOwnOperatorProfile(cred.user.uid);
+    if (!akun) {
+      showLoginOperatorError('Profil operator tidak ditemukan. Hubungi admin gudang.');
+      await fb.signOut(fb.auth);
       return;
     }
 
@@ -1638,39 +1673,28 @@ formLoginAdmin.addEventListener('submit', async (e) => {
 
   try {
     await waitForFirebaseAuth();
+    const fb = window.gudangFirebase;
+    const email = nikToSyntheticEmail('admin', nik);
 
-    // Cek dulu akun admin yang mendaftar sendiri (Firestore, password
-    // tersimpan sebagai hash). Kalau tidak ketemu, fallback ke daftar
-    // admin lama yang masih hardcode di data.js (password teks polos).
-    const nikKey = normalizeNikKey(nik);
-    const akunFirestore = await findAdminAccountByNik(nik);
-
-    if (akunFirestore) {
-      const passwordHash = await hashPassword(password);
-      if (passwordHash !== akunFirestore.passwordHash) {
-        showLoginAdminError('Kata sandi salah. Coba lagi.');
-        loginAdminPassword.value = '';
-        loginAdminPassword.focus();
-        return;
-      }
-      setSession({ role: 'admin', nama: akunFirestore.nama });
-      enterApp({ role: 'admin', nama: akunFirestore.nama });
-      return;
-    }
-
-    const akunLegacy = ADMIN_ACCOUNTS.find(a => normalizeNikKey(a.idKaryawan) === nikKey);
-    if (!akunLegacy) {
-      showLoginAdminError('NIK belum terdaftar sebagai admin. Silakan daftar akun baru terlebih dahulu lewat tab "Daftar Baru".');
-      return;
-    }
-    if (password !== akunLegacy.password) {
-      showLoginAdminError('Kata sandi salah. Coba lagi.');
+    let cred;
+    try {
+      cred = await fb.signInWithEmailAndPassword(fb.auth, email, password);
+    } catch (err) {
+      showLoginAdminError(authErrorMessage(err, 'login'));
       loginAdminPassword.value = '';
       loginAdminPassword.focus();
       return;
     }
-    setSession({ role: 'admin', nama: akunLegacy.nama });
-    enterApp({ role: 'admin', nama: akunLegacy.nama });
+
+    const akun = await getOwnAdminProfile(cred.user.uid);
+    if (!akun) {
+      showLoginAdminError('Profil admin tidak ditemukan. Hubungi admin lain untuk memeriksa akun ini.');
+      await fb.signOut(fb.auth);
+      return;
+    }
+
+    setSession({ role: 'admin', nama: akun.nama });
+    enterApp({ role: 'admin', nama: akun.nama });
   } catch (err) {
     console.error('Gagal memeriksa akun admin:', err);
     showLoginAdminError('Sistem belum siap atau koneksi bermasalah. Coba lagi sebentar.');
@@ -1709,8 +1733,14 @@ function enterApp(session) {
   initFirestoreConnection();
 }
 
-document.getElementById('btn-logout').addEventListener('click', () => {
+document.getElementById('btn-logout').addEventListener('click', async () => {
   if (unsubscribeLaporan) unsubscribeLaporan();
+  try {
+    const fb = window.gudangFirebase;
+    if (fb && fb.auth) await fb.signOut(fb.auth);
+  } catch (err) {
+    console.warn('Gagal sign-out dari Firebase Auth (dilanjutkan):', err);
+  }
   clearSession();
   window.location.reload();
 });
