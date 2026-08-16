@@ -3653,6 +3653,10 @@ function renderRingkasan() {
   statKeluarQty.textContent = keluarQty.toLocaleString('id-ID');
   statKeluarCount.textContent = `${keluarCount} laporan`;
   statTotalCount.textContent = currentEntries.length.toLocaleString('id-ID');
+  const statMasukCountNum = document.getElementById('stat-masuk-count-num');
+  const statKeluarCountNum = document.getElementById('stat-keluar-count-num');
+  if (statMasukCountNum) statMasukCountNum.textContent = masukCount.toLocaleString('id-ID');
+  if (statKeluarCountNum) statKeluarCountNum.textContent = keluarCount.toLocaleString('id-ID');
 
   // Pallet masuk/keluar mengikuti periode yang sama seperti kartu di atas.
   // Hanya laporan yang punya info Qty per Pallet (sehingga jumlahPallet
@@ -3726,12 +3730,16 @@ function renderRingkasan() {
     trendEl.hidden = true;
     if (trendMasukEl) trendMasukEl.hidden = true;
     if (trendKeluarEl) trendKeluarEl.hidden = true;
+    const cmt = document.getElementById('stat-masuk-count-trend');
+    const ckt = document.getElementById('stat-keluar-count-trend');
+    if (cmt) cmt.hidden = true;
+    if (ckt) ckt.hidden = true;
   } else {
-    let prevTotal = 0, prevMasukQty = 0, prevKeluarQty = 0;
+    let prevTotal = 0, prevMasukQty = 0, prevKeluarQty = 0, prevMasukCount = 0, prevKeluarCount = 0;
     currentEntries.forEach(t => {
       if (inPeriod(t, prevRange)) {
         prevTotal += t.jumlah;
-        if (t.jenis === 'masuk') prevMasukQty += t.jumlah; else prevKeluarQty += t.jumlah;
+        if (t.jenis === 'masuk') { prevMasukQty += t.jumlah; prevMasukCount++; } else { prevKeluarQty += t.jumlah; prevKeluarCount++; }
       }
     });
     if (prevTotal === 0 && totalArus === 0) {
@@ -3745,6 +3753,8 @@ function renderRingkasan() {
     }
     setTrend(trendMasukEl, masukQty, prevMasukQty);
     setTrend(trendKeluarEl, keluarQty, prevKeluarQty);
+    setTrend(document.getElementById('stat-masuk-count-trend'), masukCount, prevMasukCount);
+    setTrend(document.getElementById('stat-keluar-count-trend'), keluarCount, prevKeluarCount);
   }
 
   const barangCount = {};
@@ -3808,7 +3818,191 @@ function renderRingkasan() {
 
   renderBlokPallet();
   if (searchLokasiBarang && searchLokasiBarang.value.trim()) renderLokasiBarangSearch();
+  renderDashboardV2Widgets();
 }
+
+// ==========================================================================
+// WIDGET DASHBOARD BARU — Kondisi Stok Saat Ini, Barang dengan Stok
+// Terbanyak, Jenis Barang Masuk & Keluar, Aktivitas Operator Hari Ini, dan
+// Aktivitas Terbaru. Dipisah dari renderRingkasan() supaya fungsi lama
+// tidak makin panjang, tapi tetap dipanggil dari sana setiap kali data
+// laporan berubah / filter periode berganti.
+//
+// CATATAN: beberapa angka di sini SENGAJA tidak mengikuti filter periode
+// (mis. Kondisi Stok Saat Ini, Barang Stok Terbanyak) karena itu memang
+// "posisi sekarang" (seperti Total Pallet Saat Ini yang sudah ada
+// sebelumnya) — bukan aktivitas dalam rentang waktu tertentu. Yang lain
+// (Jenis Barang Masuk & Keluar, Aktivitas Operator, Aktivitas Terbaru)
+// mengikuti periode yang sedang dipilih di atas, supaya konsisten dengan
+// kartu KPI di atasnya.
+// ==========================================================================
+function renderDashboardV2Widgets() {
+  if (currentRole() !== 'admin') return;
+  const range = getPeriodRange(periodMode, periodDate);
+  const entriesInPeriod = currentEntries.filter(t => inPeriod(t, range));
+
+  // ---- Kondisi Stok Saat Ini (posisi sekarang, semua data) ----
+  const stokMapAll = katalogManager.calculateAllBarangStok(currentEntries);
+  let totalPcsSekarang = 0;
+  let jenisBarangAda = 0;
+  stokMapAll.forEach((qty) => {
+    totalPcsSekarang += qty;
+    if (qty > 0) jenisBarangAda++;
+  });
+  const elStokPcs = document.getElementById('stat-stok-pcs');
+  const elStokPallet = document.getElementById('stat-stok-pallet');
+  const elStokJenis = document.getElementById('stat-stok-jenis');
+  const elStokSupplier = document.getElementById('stat-stok-supplier');
+  const elStokPemilik = document.getElementById('stat-stok-pemilik');
+  if (elStokPcs) elStokPcs.textContent = totalPcsSekarang.toLocaleString('id-ID');
+  if (elStokPallet) elStokPallet.textContent = document.getElementById('stat-pallet-saat-ini')?.textContent || '0';
+  if (elStokJenis) elStokJenis.textContent = jenisBarangAda.toLocaleString('id-ID');
+  if (elStokSupplier) elStokSupplier.textContent = (MASTER_DATA.supplier || []).length.toLocaleString('id-ID');
+  if (elStokPemilik) elStokPemilik.textContent = (MASTER_DATA.pemilik || []).length.toLocaleString('id-ID');
+
+  // ---- Barang dengan Stok Terbanyak (Top 5, posisi sekarang) ----
+  const namaByKode = {};
+  currentEntries.forEach(t => { if (t.kodeBarang) namaByKode[t.kodeBarang] = t.namaBarang; });
+  const stokRanked = Array.from(stokMapAll.entries())
+    .filter(([, qty]) => qty > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const topStokEmpty = document.getElementById('top-stok-barang-empty');
+  const topStokList = document.getElementById('top-stok-barang-list');
+  if (topStokList) {
+    topStokList.innerHTML = '';
+    if (stokRanked.length === 0) {
+      if (topStokEmpty) topStokEmpty.hidden = false;
+    } else {
+      if (topStokEmpty) topStokEmpty.hidden = true;
+      stokRanked.forEach(([kode, qty], idx) => {
+        const nama = namaByKode[kode] || kode;
+        const row = document.createElement('div');
+        row.className = 'rank-item';
+        row.innerHTML = `
+          <span class="rank-item-num">${idx + 1}</span>
+          <span class="rank-item-body"><span class="rank-item-name" title="${escapeHtml(nama)}">${escapeHtml(nama)}</span></span>
+          <span class="rank-item-value">${qty.toLocaleString('id-ID')} pcs</span>
+        `;
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', () => openItemModal(kode));
+        topStokList.appendChild(row);
+      });
+    }
+  }
+
+  // ---- Jenis Barang Masuk & Keluar (mengikuti periode) ----
+  const masukKodeSet = new Set();
+  const keluarKodeSet = new Set();
+  const masukByNama = {};
+  const keluarByNama = {};
+  entriesInPeriod.forEach(t => {
+    if (t.jenis === 'masuk') {
+      if (t.kodeBarang) masukKodeSet.add(t.kodeBarang);
+      masukByNama[t.namaBarang] = (masukByNama[t.namaBarang] || 0) + t.jumlah;
+    } else {
+      if (t.kodeBarang) keluarKodeSet.add(t.kodeBarang);
+      keluarByNama[t.namaBarang] = (keluarByNama[t.namaBarang] || 0) + t.jumlah;
+    }
+  });
+  const elJenisMasuk = document.getElementById('stat-jenis-masuk');
+  const elJenisKeluar = document.getElementById('stat-jenis-keluar');
+  if (elJenisMasuk) elJenisMasuk.textContent = masukKodeSet.size.toLocaleString('id-ID');
+  if (elJenisKeluar) elJenisKeluar.textContent = keluarKodeSet.size.toLocaleString('id-ID');
+
+  function renderMiniRank(listId, emptyId, dataObj, unit) {
+    const listEl = document.getElementById(listId);
+    const emptyEl = document.getElementById(emptyId);
+    if (!listEl) return;
+    const ranked = Object.entries(dataObj).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    listEl.innerHTML = '';
+    if (ranked.length === 0) {
+      if (emptyEl) emptyEl.hidden = false;
+      return;
+    }
+    if (emptyEl) emptyEl.hidden = true;
+    ranked.forEach(([nama, qty]) => {
+      const row = document.createElement('div');
+      row.className = 'mini-rank-item';
+      row.innerHTML = `
+        <span class="mini-rank-item-name" title="${escapeHtml(nama)}">${escapeHtml(nama)}</span>
+        <span class="mini-rank-item-value">${qty.toLocaleString('id-ID')} ${unit}</span>
+      `;
+      listEl.appendChild(row);
+    });
+  }
+  renderMiniRank('top5-jenis-masuk-list', 'top5-jenis-masuk-empty', masukByNama, 'pcs');
+  renderMiniRank('top5-jenis-keluar-list', 'top5-jenis-keluar-empty', keluarByNama, 'pcs');
+
+  // ---- Aktivitas Operator Hari Ini ----
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const opToday = {};
+  currentEntries.forEach(t => {
+    if (t.createdAt < startOfToday.getTime()) return;
+    if (!opToday[t.operator]) opToday[t.operator] = { masuk: 0, keluar: 0 };
+    if (t.jenis === 'masuk') opToday[t.operator].masuk++; else opToday[t.operator].keluar++;
+  });
+  const opTodayRanked = Object.entries(opToday).sort((a, b) => (b[1].masuk + b[1].keluar) - (a[1].masuk + a[1].keluar));
+  const opTable = document.getElementById('op-aktivitas-table');
+  const opTbody = document.getElementById('op-aktivitas-tbody');
+  const opEmpty = document.getElementById('op-aktivitas-empty');
+  if (opTbody) {
+    opTbody.innerHTML = '';
+    if (opTodayRanked.length === 0) {
+      if (opEmpty) opEmpty.hidden = false;
+      if (opTable) opTable.hidden = true;
+    } else {
+      if (opEmpty) opEmpty.hidden = true;
+      if (opTable) opTable.hidden = false;
+      opTodayRanked.forEach(([nama, c]) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><span class="op-aktivitas-avatar">${escapeHtml(getInitials(nama))}</span>${escapeHtml(nama)}</td>
+          <td class="op-masuk-cell">${c.masuk}</td>
+          <td class="op-keluar-cell">${c.keluar}</td>
+        `;
+        opTbody.appendChild(tr);
+      });
+    }
+  }
+
+  // ---- Aktivitas Terbaru (5 laporan terakhir, semua operator) ----
+  const terbaru = currentEntries.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
+  const terbaruList = document.getElementById('aktivitas-terbaru-list');
+  const terbaruEmpty = document.getElementById('aktivitas-terbaru-empty');
+  if (terbaruList) {
+    terbaruList.innerHTML = '';
+    if (terbaru.length === 0) {
+      if (terbaruEmpty) terbaruEmpty.hidden = false;
+    } else {
+      if (terbaruEmpty) terbaruEmpty.hidden = true;
+      terbaru.forEach(t => {
+        const isMasuk = t.jenis === 'masuk';
+        const row = document.createElement('div');
+        row.className = 'aktivitas-feed-item';
+        const tgl = t.tanggal || '';
+        row.innerHTML = `
+          <span class="aktivitas-feed-icon ${isMasuk ? 'is-masuk' : 'is-keluar'}">${isMasuk ? '📥' : '📤'}</span>
+          <span class="aktivitas-feed-body">
+            <div class="aktivitas-feed-title ${isMasuk ? 'is-masuk' : 'is-keluar'}">${isMasuk ? 'Barang Masuk' : 'Barang Keluar'}</div>
+            <div class="aktivitas-feed-desc" title="${escapeHtml(t.namaBarang)}">${escapeHtml(t.namaBarang)}</div>
+          </span>
+          <span class="aktivitas-feed-time">${escapeHtml(tgl)}</span>
+        `;
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', () => openItemModal(t.kodeBarang));
+        terbaruList.appendChild(row);
+      });
+    }
+  }
+}
+
+// Tombol "Lihat detail stok →" / "Lihat semua barang →" dst di kartu-kartu
+// dashboard baru — cukup pindah ke panel admin yang relevan, memakai fungsi
+// switchAdminPanel yang sudah ada (sama seperti klik menu di sidebar).
+document.querySelectorAll('[data-goto-panel]').forEach(btn => {
+  btn.addEventListener('click', () => switchAdminPanel(btn.dataset.gotoPanel));
+});
 
 /* ==========================================================================
    KATALOG & STOK — jelajah gabungan (admin & operator)

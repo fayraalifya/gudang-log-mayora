@@ -1972,3 +1972,158 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   .katalog-header h3 { width: 100%; }
 }
 .jejak-log-detail { color: var(--ink-soft); flex: 1 1 auto; min-width: 160px; }
+/* ==========================================================================
+   DASHBOARD ADMIN v2 — layout mengikuti mockup baru: KPI row 6 kartu,
+   grid 3-kolom untuk ringkasan stok/top barang/blok, dan grid 3-kolom
+   untuk jenis barang/aktivitas operator/aktivitas terbaru. Dipakai HANYA
+   di panel Dashboard admin (id="admin-panel-dashboard"); tidak menyentuh
+   style lama (.stat-card, .vis-card, dst) yang masih dipakai di tempat
+   lain, supaya tidak ada efek samping ke bagian app yang lain.
+========================================================================== */
+
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; margin-bottom: 22px;
+}
+.kpi-card {
+  background: var(--kertas); border: 1px solid rgba(0,0,0,0.06); border-radius: 14px;
+  padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04); transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.08); }
+.kpi-card-top { display: flex; align-items: center; gap: 8px; }
+.kpi-icon-badge {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 800; letter-spacing: 0.2px;
+  background: var(--kraft); color: var(--navy);
+}
+.kpi-masuk .kpi-icon-badge { background: var(--hijau-soft); color: var(--hijau); }
+.kpi-keluar .kpi-icon-badge { background: var(--merah-flag-soft); color: var(--merah-flag); }
+.kpi-pcs-masuk .kpi-icon-badge { background: rgba(39,107,68,0.12); color: var(--hijau); }
+.kpi-pcs-keluar .kpi-icon-badge { background: rgba(211,26,32,0.12); color: var(--merah); }
+.kpi-pallet-masuk .kpi-icon-badge { background: var(--emas-soft); color: var(--emas); }
+.kpi-pallet-keluar .kpi-icon-badge { background: var(--oranye-soft); color: var(--oranye); }
+.kpi-label {
+  font-family: var(--font-body); font-weight: 500; font-size: 10.5px; letter-spacing: 0.2px;
+  color: var(--text-muted); line-height: 1.25;
+}
+.kpi-value { font-family: var(--font-display); font-weight: 900; font-size: 30px; line-height: 1; color: var(--ink); }
+.kpi-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--text-muted); }
+.kpi-sub-label { white-space: nowrap; }
+
+@media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.dash-row-3col {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 20px;
+  align-items: start;
+}
+@media (max-width: 1100px) { .dash-row-3col { grid-template-columns: 1fr; } }
+
+.vis-card-sub-plain { font-size: 12px; font-weight: 500; color: var(--text-muted); margin-left: 6px; }
+
+.dash-link-btn { margin-top: 12px; display: inline-block; }
+
+/* ---- Kondisi Stok Saat Ini ---- */
+.kondisi-stok-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 6px;
+}
+.kondisi-stok-item {
+  display: flex; align-items: center; gap: 10px; background: var(--kraft);
+  border-radius: 10px; padding: 10px 12px;
+}
+.kondisi-stok-icon {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
+  background: var(--white);
+}
+.kondisi-stok-label { font-size: 10.5px; color: var(--text-muted); font-weight: 500; line-height: 1.3; }
+.kondisi-stok-value { font-family: var(--font-display); font-weight: 800; font-size: 19px; color: var(--ink); line-height: 1.2; }
+.kondisi-stok-unit { font-size: 10px; color: var(--text-muted); }
+
+/* ---- Barang dengan Stok Terbanyak (rank list) ---- */
+.rank-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.rank-item { display: flex; align-items: center; gap: 10px; }
+.rank-item-num {
+  width: 22px; height: 22px; border-radius: 999px; background: var(--navy-pale); color: var(--navy);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.rank-item-body { flex: 1 1 auto; min-width: 0; }
+.rank-item-name { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank-item-value { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--navy); white-space: nowrap; }
+
+/* ---- Jenis Barang Masuk & Keluar ---- */
+.jenis-barang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.jenis-barang-item {
+  display: flex; align-items: center; gap: 10px; background: var(--kraft);
+  border-radius: 10px; padding: 10px 12px;
+}
+.jenis-barang-icon {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 15px; background: var(--white);
+}
+.jenis-barang-sub { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+.jenis-barang-sub-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 8px; }
+.mini-rank-list { display: flex; flex-direction: column; gap: 6px; }
+.mini-rank-item { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; }
+.mini-rank-item-name { color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-rank-item-value { font-family: var(--font-mono); font-weight: 700; color: var(--navy); flex-shrink: 0; }
+
+/* ---- Aktivitas Operator Hari Ini ---- */
+.op-aktivitas-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
+.op-aktivitas-table th {
+  text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px;
+  color: var(--text-muted); font-weight: 700; padding: 6px 8px; border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+.op-aktivitas-table th:not(:first-child), .op-aktivitas-table td:not(:first-child) { text-align: right; }
+.op-aktivitas-table td { padding: 8px; border-bottom: 1px solid rgba(0,0,0,0.05); color: var(--ink-soft); }
+.op-aktivitas-table td:first-child { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.op-aktivitas-avatar {
+  width: 22px; height: 22px; border-radius: 999px; background: var(--emas); color: var(--navy);
+  font-size: 9.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.op-aktivitas-table .op-masuk-cell { color: var(--hijau); font-weight: 700; }
+.op-aktivitas-table .op-keluar-cell { color: var(--merah); font-weight: 700; }
+
+/* ---- Aktivitas Terbaru (feed) ---- */
+.aktivitas-feed { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.aktivitas-feed-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(0,0,0,0.05); }
+.aktivitas-feed-item:last-child { border-bottom: none; }
+.aktivitas-feed-icon {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.aktivitas-feed-icon.is-masuk { background: var(--hijau-soft); }
+.aktivitas-feed-icon.is-keluar { background: var(--merah-flag-soft); }
+.aktivitas-feed-body { flex: 1 1 auto; min-width: 0; }
+.aktivitas-feed-title { font-size: 12px; font-weight: 700; color: var(--ink-soft); }
+.aktivitas-feed-title.is-masuk { color: var(--hijau); }
+.aktivitas-feed-title.is-keluar { color: var(--merah); }
+.aktivitas-feed-desc { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aktivitas-feed-time { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+
+.vis-empty-small { font-size: 11.5px; padding: 8px 0; }
+
+/* ==========================================================================
+   TATA LETAK DESKTOP UNTUK ADMIN — sidebar sungguhan di kiri + konten di
+   kanan, hanya aktif untuk role admin (body.role-admin) di layar lebar,
+   supaya tampilan admin terasa seperti dashboard sungguhan (sesuai
+   mockup), sementara tampilan operator (dipakai dari lantai gudang, lebih
+   sering dari HP) tetap seperti semula — satu kolom, ramah layar sempit.
+========================================================================== */
+@media (min-width: 1100px) {
+  body.role-admin .app-main { max-width: 1440px; padding-left: 28px; padding-right: 28px; }
+  body.role-admin .admin-shell { flex-direction: row; align-items: flex-start; gap: 26px; }
+  body.role-admin .admin-sidebar {
+    flex-direction: column; flex-wrap: nowrap; width: 232px; flex: 0 0 232px;
+    position: sticky; top: 20px; align-self: flex-start; gap: 3px; padding: 14px 10px;
+  }
+  body.role-admin .admin-sidebar-eyebrow {
+    display: block; font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    letter-spacing: 0.8px; color: var(--text-muted); padding: 6px 12px 10px;
+  }
+  body.role-admin .admin-nav-btn { justify-content: flex-start; padding: 11px 14px; }
+  body.role-admin .admin-content { flex: 1 1 0%; min-width: 0; }
+  body.role-admin .header-inner { max-width: 1440px; padding-left: 28px; padding-right: 28px; }
+}

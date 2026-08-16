@@ -556,89 +556,104 @@
       <!-- RINGKASAN -->
       <section id="ringkasan" class="ringkasan">
         <div class="ringkasan-head">
-          <h3>Ringkasan Laporan</h3>
+          <h3>Pergerakan Barang</h3>
           <span class="ringkasan-date" id="ringkasan-date">-</span>
         </div>
-        <div class="stat-grid">
-          <div class="stat-card stat-masuk">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/></svg>
+
+        <!-- BARIS KPI — 6 kartu sejajar: 2 kartu laporan, 2 kartu total pcs,
+             2 kartu pallet. Semua mengikuti periode yang dipilih di atas. -->
+        <div class="kpi-grid">
+          <div class="kpi-card kpi-masuk">
+            <div class="kpi-card-top">
+              <span class="kpi-icon-badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/></svg>
+              </span>
+              <span class="kpi-label">Laporan Masuk</span>
             </div>
-            <span class="stat-label">Barang Masuk</span>
-            <span class="stat-value" id="stat-masuk-qty">0</span>
-            <span class="stat-sub">
-              <span id="stat-masuk-count">0 laporan</span>
+            <div class="kpi-value" id="stat-masuk-count-num">0</div>
+            <div class="kpi-sub">
+              <span class="kpi-sub-label">laporan</span>
+              <span class="stat-trend" id="stat-masuk-count-trend" hidden></span>
+            </div>
+          </div>
+
+          <div class="kpi-card kpi-keluar">
+            <div class="kpi-card-top">
+              <span class="kpi-icon-badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/></svg>
+              </span>
+              <span class="kpi-label">Laporan Keluar</span>
+            </div>
+            <div class="kpi-value" id="stat-keluar-count-num">0</div>
+            <div class="kpi-sub">
+              <span class="kpi-sub-label">laporan</span>
+              <span class="stat-trend" id="stat-keluar-count-trend" hidden></span>
+            </div>
+          </div>
+
+          <div class="kpi-card kpi-pcs-masuk">
+            <div class="kpi-card-top">
+              <span class="kpi-icon-badge">PCS</span>
+              <span class="kpi-label">Total PCS Masuk</span>
+            </div>
+            <div class="kpi-value" id="stat-masuk-qty">0</div>
+            <div class="kpi-sub">
+              <span class="kpi-sub-label">pcs</span>
               <span class="stat-trend" id="stat-masuk-trend" hidden></span>
-            </span>
-          </div>
-          <div class="stat-card stat-keluar">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/></svg>
             </div>
-            <span class="stat-label">Barang Keluar</span>
-            <span class="stat-value" id="stat-keluar-qty">0</span>
-            <span class="stat-sub">
-              <span id="stat-keluar-count">0 laporan</span>
+          </div>
+
+          <div class="kpi-card kpi-pcs-keluar">
+            <div class="kpi-card-top">
+              <span class="kpi-icon-badge">PCS</span>
+              <span class="kpi-label">Total PCS Keluar</span>
+            </div>
+            <div class="kpi-value" id="stat-keluar-qty">0</div>
+            <div class="kpi-sub">
+              <span class="kpi-sub-label">pcs</span>
               <span class="stat-trend" id="stat-keluar-trend" hidden></span>
-            </span>
-          </div>
-          <div class="stat-card stat-total">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg>
             </div>
-            <span class="stat-label">Total Laporan Tercatat</span>
-            <span class="stat-value" id="stat-total-count">0</span>
-            <span class="stat-sub" id="stat-total-range">sepanjang waktu</span>
           </div>
-          <div class="stat-card stat-operator">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/></svg>
+
+          <div class="kpi-card kpi-pallet-masuk">
+            <div class="kpi-card-top">
+              <span class="kpi-icon-badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
+              </span>
+              <span class="kpi-label">Pallet Masuk</span>
             </div>
-            <span class="stat-label">Operator Teraktif (7 hari)</span>
-            <span class="stat-value stat-value-text" id="stat-top-operator">-</span>
-            <span class="stat-sub" id="stat-top-operator-sub">belum ada data</span>
+            <div class="kpi-value" id="stat-pallet-masuk">0</div>
+            <div class="kpi-sub">
+              <span class="kpi-sub-label" id="stat-pallet-masuk-sub">periode ini</span>
+            </div>
+          </div>
+
+          <div class="kpi-card kpi-pallet-keluar">
+            <div class="kpi-card-top">
+              <span class="kpi-icon-badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
+              </span>
+              <span class="kpi-label">Pallet Keluar</span>
+            </div>
+            <div class="kpi-value" id="stat-pallet-keluar">0</div>
+            <div class="kpi-sub">
+              <span class="kpi-sub-label" id="stat-pallet-keluar-sub">periode ini</span>
+            </div>
           </div>
         </div>
 
-        <!-- RINGKASAN PALLET — Pallet Masuk / Pallet Keluar (sesuai periode
-             yang dipilih di atas) dan Total Pallet Saat Ini (stok pallet
-             riil sepanjang waktu, tidak mengikuti filter periode karena ini
-             adalah "posisi stok sekarang", bukan aktivitas dalam rentang
-             waktu tertentu). Dihitung dari field jumlahPallet tiap laporan
-             (hanya laporan yang mencantumkan Qty per Pallet yang punya nilai
-             ini — laporan tanpa info pallet tidak ikut dihitung). -->
-        <div class="ringkasan-head" style="margin-top:18px;">
-          <h3>Ringkasan Pallet</h3>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-card stat-masuk">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
-            </div>
-            <span class="stat-label">Pallet Masuk</span>
-            <span class="stat-value" id="stat-pallet-masuk">0</span>
-            <span class="stat-sub" id="stat-pallet-masuk-sub">periode ini</span>
-          </div>
-          <div class="stat-card stat-keluar">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
-            </div>
-            <span class="stat-label">Pallet Keluar</span>
-            <span class="stat-value" id="stat-pallet-keluar">0</span>
-            <span class="stat-sub" id="stat-pallet-keluar-sub">periode ini</span>
-          </div>
-          <div class="stat-card stat-total">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
-            </div>
-            <span class="stat-label">Total Pallet Saat Ini</span>
-            <span class="stat-value" id="stat-pallet-saat-ini">0</span>
-            <span class="stat-sub">stok pallet sekarang (semua lokasi)</span>
-          </div>
-        </div>
+        <!-- Total laporan tercatat & pallet saat ini — dipakai di tempat lain
+             (tidak dihapus, cuma disembunyikan dari tampilan; JS tetap
+             mengisinya supaya tidak ada error). -->
+        <span id="stat-masuk-count" hidden>0 laporan</span>
+        <span id="stat-keluar-count" hidden>0 laporan</span>
+        <span id="stat-total-count" hidden>0</span>
+        <span id="stat-total-range" hidden>sepanjang waktu</span>
+        <span id="stat-pallet-saat-ini" hidden>0</span>
+        <span id="stat-top-operator" hidden>-</span>
+        <span id="stat-top-operator-sub" hidden>belum ada data</span>
 
-        <!-- PERINGATAN STOK — muncul kalau ada barang kosong atau menipis,
-             supaya admin tahu duluan sebelum operator lapor "stok habis". -->
+        <!-- PERINGATAN STOK -->
         <div id="stok-warning" class="stok-warning" hidden>
           <div class="stok-warning-head">
             <span class="stok-warning-icon">⚠️</span>
@@ -647,10 +662,140 @@
           <div class="stok-warning-list" id="stok-warning-list"></div>
         </div>
 
-        <!-- Dashboard visual: Arus Barang + Lokasi Terpadat berdampingan,
-             Barang Paling Sering Dicatat full-width di bawahnya. -->
-        <div class="vis-row-top">
+        <!-- BARIS 2 — Kondisi Stok Saat Ini / Barang Stok Terbanyak (Top 5) /
+             Blok-Rak Terpadat (Top 5) -->
+        <div class="dash-row-3col">
 
+          <div class="vis-card">
+            <div class="vis-card-title"><span class="vis-card-icon">📊</span>Kondisi Stok Saat Ini</div>
+            <p class="vis-hint muted" style="margin-top:-4px;">Data stok aktual di gudang</p>
+            <div class="kondisi-stok-grid">
+              <div class="kondisi-stok-item">
+                <span class="kondisi-stok-icon kondisi-icon-pcs">📦</span>
+                <div>
+                  <div class="kondisi-stok-label">Total PCS</div>
+                  <div class="kondisi-stok-value" id="stat-stok-pcs">0</div>
+                  <div class="kondisi-stok-unit">pcs</div>
+                </div>
+              </div>
+              <div class="kondisi-stok-item">
+                <span class="kondisi-stok-icon kondisi-icon-pallet">🚚</span>
+                <div>
+                  <div class="kondisi-stok-label">Total Pallet</div>
+                  <div class="kondisi-stok-value" id="stat-stok-pallet">0</div>
+                  <div class="kondisi-stok-unit">pallet</div>
+                </div>
+              </div>
+              <div class="kondisi-stok-item">
+                <span class="kondisi-stok-icon kondisi-icon-jenis">📋</span>
+                <div>
+                  <div class="kondisi-stok-label">Total Jenis Barang</div>
+                  <div class="kondisi-stok-value" id="stat-stok-jenis">0</div>
+                  <div class="kondisi-stok-unit">jenis</div>
+                </div>
+              </div>
+              <div class="kondisi-stok-item">
+                <span class="kondisi-stok-icon kondisi-icon-supplier">🚛</span>
+                <div>
+                  <div class="kondisi-stok-label">Total Supplier</div>
+                  <div class="kondisi-stok-value" id="stat-stok-supplier">0</div>
+                  <div class="kondisi-stok-unit">supplier</div>
+                </div>
+              </div>
+              <div class="kondisi-stok-item">
+                <span class="kondisi-stok-icon kondisi-icon-pemilik">🏭</span>
+                <div>
+                  <div class="kondisi-stok-label">Total Pemilik Barang</div>
+                  <div class="kondisi-stok-value" id="stat-stok-pemilik">0</div>
+                  <div class="kondisi-stok-unit">pemilik</div>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn-link-small dash-link-btn" data-goto-panel="katalog">Lihat detail stok →</button>
+          </div>
+
+          <div class="vis-card">
+            <div class="vis-card-title"><span class="vis-card-icon">🏆</span>Barang dengan Stok Terbanyak <span class="vis-card-sub-plain">(Top 5)</span></div>
+            <div id="top-stok-barang-empty" class="vis-empty">Belum ada stok tercatat.</div>
+            <div class="rank-list" id="top-stok-barang-list"></div>
+            <button type="button" class="btn-link-small dash-link-btn" data-goto-panel="katalog">Lihat semua barang →</button>
+          </div>
+
+          <div class="vis-card">
+            <div class="vis-card-title"><span class="vis-card-icon">🧱</span>Blok / Rak Terpadat <span class="vis-card-sub-plain">(Top 5)</span></div>
+            <p class="vis-hint muted" id="blok-total-wrap"><span class="vis-blok-total" id="blok-total" hidden></span></p>
+            <div id="blok-empty" class="vis-empty">Belum ada data lokasi tercatat.</div>
+            <div class="bar-list" id="blok-list"></div>
+            <button type="button" class="btn-link-small dash-link-btn" data-goto-panel="katalog" data-goto-mode="blok">Lihat semua lokasi →</button>
+          </div>
+
+        </div>
+
+        <!-- BARIS 3 — Jenis Barang Masuk & Keluar / Aktivitas Operator Hari
+             Ini / Aktivitas Terbaru -->
+        <div class="dash-row-3col">
+
+          <div class="vis-card">
+            <div class="vis-card-title"><span class="vis-card-icon">📦</span>Jenis Barang Masuk &amp; Keluar</div>
+            <div class="jenis-barang-grid">
+              <div class="jenis-barang-item">
+                <span class="jenis-barang-icon jenis-icon-masuk">📥</span>
+                <div>
+                  <div class="kondisi-stok-label">Jenis Barang Masuk</div>
+                  <div class="kondisi-stok-value" id="stat-jenis-masuk">0</div>
+                  <div class="kondisi-stok-unit">jenis barang</div>
+                </div>
+              </div>
+              <div class="jenis-barang-item">
+                <span class="jenis-barang-icon jenis-icon-keluar">📤</span>
+                <div>
+                  <div class="kondisi-stok-label">Jenis Barang Keluar</div>
+                  <div class="kondisi-stok-value" id="stat-jenis-keluar">0</div>
+                  <div class="kondisi-stok-unit">jenis barang</div>
+                </div>
+              </div>
+            </div>
+            <div class="jenis-barang-sub">
+              <div>
+                <div class="jenis-barang-sub-title">Top 5 Barang Masuk</div>
+                <div id="top5-jenis-masuk-empty" class="vis-empty vis-empty-small">Belum ada data.</div>
+                <div class="mini-rank-list" id="top5-jenis-masuk-list"></div>
+              </div>
+              <div>
+                <div class="jenis-barang-sub-title">Top 5 Barang Keluar</div>
+                <div id="top5-jenis-keluar-empty" class="vis-empty vis-empty-small">Belum ada data.</div>
+                <div class="mini-rank-list" id="top5-jenis-keluar-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="vis-card">
+            <div class="vis-card-title"><span class="vis-card-icon">👥</span>Aktivitas Operator Hari Ini</div>
+            <div id="op-aktivitas-empty" class="vis-empty">Belum ada aktivitas operator hari ini.</div>
+            <table class="op-aktivitas-table" id="op-aktivitas-table" hidden>
+              <thead>
+                <tr><th>Operator</th><th>Laporan Masuk</th><th>Laporan Keluar</th></tr>
+              </thead>
+              <tbody id="op-aktivitas-tbody"></tbody>
+            </table>
+            <button type="button" class="btn-link-small dash-link-btn" data-goto-panel="operator">Lihat semua operator →</button>
+          </div>
+
+          <div class="vis-card">
+            <div class="vis-card-title"><span class="vis-card-icon">🕒</span>Aktivitas Terbaru</div>
+            <div id="aktivitas-terbaru-empty" class="vis-empty">Belum ada aktivitas.</div>
+            <div class="aktivitas-feed" id="aktivitas-terbaru-list"></div>
+            <button type="button" class="btn-link-small dash-link-btn" data-goto-panel="riwayat">Lihat semua aktivitas →</button>
+          </div>
+
+        </div>
+
+        <!-- Widget lama (tetap dipertahankan, tidak dihapus, hanya ditaruh
+             lebih ke bawah): Arus Barang & Barang Paling Sering Dicatat
+             (30 hari) — beda dari "Stok Terbanyak" di atas karena ini
+             ranking berdasar FREKUENSI transaksi, bukan jumlah stok
+             sekarang. Berguna untuk lihat barang paling "sibuk". -->
+        <div class="vis-row-top">
           <div class="vis-card">
             <div class="vis-card-title"><span class="vis-card-icon">📈</span>Arus Barang <span class="vis-card-sub" id="arus-trend-wrap"><span class="vis-trend" id="arus-trend" hidden></span></span></div>
             <div id="arus-empty" class="vis-empty">Belum ada transaksi pada periode ini.</div>
@@ -671,7 +816,6 @@
             <div id="top-lokasi-empty" class="vis-empty">Belum ada stok di lokasi manapun.</div>
             <div class="bar-list" id="top-lokasi-list"></div>
           </div>
-
         </div>
 
         <div class="vis-card vis-card-full">
@@ -680,23 +824,7 @@
           <div class="bar-list" id="top-barang-list"></div>
         </div>
 
-        <!-- STOK PALLET PER BLOK — rekap stok pallet & pcs saat ini per blok
-             gudang (blok = huruf pertama kode lokasi, contoh lokasi
-             "A-01-01" masuk blok A). Ini "posisi stok sekarang" jadi selalu
-             dihitung dari SELURUH data (tidak mengikuti filter periode di
-             atas), sama seperti kartu "Total Pallet Saat Ini". -->
-        <div class="vis-card vis-card-full">
-          <div class="vis-card-title"><span class="vis-card-icon">🧱</span>Status Lokasi per Blok — Terisi &amp; Kosong (saat ini) <span class="vis-card-sub" id="blok-total-wrap"><span class="vis-blok-total" id="blok-total" hidden></span></span></div>
-          <p class="vis-hint muted">Klik satu blok untuk lihat peta rak — hijau = terisi, putus-putus = kosong.</p>
-          <div id="blok-empty" class="vis-empty">Belum ada data lokasi tercatat.</div>
-          <div class="bar-list" id="blok-list"></div>
-        </div>
-        <!-- STATUS LOKASI PER BARANG — cari satu barang (dari seluruh master
-             data, bukan cuma yang sudah pernah tercatat), lalu klik untuk
-             lihat peta blok/rak mana saja yang terisi & kosong khusus untuk
-             barang itu. Ditaruh di dashboard (bukan di Pengelolaan Barang)
-             supaya jadi satu tempat untuk "cek stok & lokasi", terpisah dari
-             tempat kelola data master (tambah/edit/hapus SKU). -->
+        <!-- STATUS LOKASI PER BARANG -->
         <div class="vis-card vis-card-full">
           <div class="vis-card-title"><span class="vis-card-icon">🔎</span>Status Lokasi per Barang — Terisi &amp; Kosong (saat ini)</div>
           <p class="vis-hint muted">Cari nama atau kode barang, lalu klik hasilnya untuk lihat peta rak — hijau = terisi, putus-putus = kosong.</p>
@@ -705,7 +833,7 @@
             <input type="text" id="search-lokasi-barang" placeholder="Ketik nama atau kode barang...">
           </div>
           <div id="lokasi-barang-empty" class="vis-empty">Ketik nama atau kode barang di atas untuk mulai mencari.</div>
-          <div class="bar-list" id="lokasi-barang-list"></div>
+          <div id="lokasi-barang-list" class="bar-list"></div>
         </div>
       </section>
 
