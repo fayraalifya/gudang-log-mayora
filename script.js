@@ -1908,9 +1908,18 @@ function buildLocationStock(entries) {
   const map = {};
   entries.forEach(t => {
     if (!t.lokasi) return;
+    // trim() di sini PENTING: kalau ada transaksi lama yang lokasinya
+    // kesimpan dengan spasi nyasar di depan/belakang (mis. " B-16-01" atau
+    // "B-16-01 "), tanpa trim itu akan dianggap kunci BERBEDA dari
+    // "B-16-01" yang bersih — bikin lokasi yang sama kelihatan "pecah" jadi
+    // baris terpisah di Katalog, dan teksnya kelihatan menjorok ke kanan
+    // di kartu (karena white-space: nowrap menampilkan spasi itu apa
+    // adanya, bukan cuma masalah CSS).
+    const lokasiKey = String(t.lokasi).trim();
+    if (!lokasiKey) return;
     const key = t.kodeBarang || t.namaBarang;
-    if (!map[t.lokasi]) map[t.lokasi] = { items: {}, lastActivity: 0, tanggalKedatangan: null, totalPallet: 0 };
-    const loc = map[t.lokasi];
+    if (!map[lokasiKey]) map[lokasiKey] = { items: {}, lastActivity: 0, tanggalKedatangan: null, totalPallet: 0 };
+    const loc = map[lokasiKey];
     if (!loc.items[key]) {
       loc.items[key] = {
         kode: t.kodeBarang, nama: t.namaBarang, qty: 0, pallet: 0, tanggalKedatangan: null,
@@ -2751,22 +2760,21 @@ function refreshKombinasiUI(kodeBarang) {
       selPemilik.setValue(c.pemilik);
       selLokasi.reset();
 
-      // Otomatis isi Jumlah Barang & Tanggal begitu operator memilih
-      // kombinasi stok — mengikuti data stok yang dipilih (bukan diketik
-      // manual lagi). Jumlah diisi dengan SISA STOK kombinasi ini (operator
-      // tetap boleh menurunkan angkanya kalau cuma mau keluarkan sebagian),
-      // dan Tanggal diisi dengan tanggal kedatangan kombinasi ini.
-      if (inputJumlah) {
-        inputJumlah.value = Number(c.stok || 0).toLocaleString('id-ID');
-        hitungJumlahPallet();
-      }
+      // Otomatis isi Tanggal begitu operator memilih kombinasi stok —
+      // mengikuti tanggal kedatangan kombinasi yang dipilih.
+      //
+      // Jumlah Barang SENGAJA TIDAK diisi otomatis (walau tersedia di data
+      // c.stok) — operator WAJIB mengetik sendiri jumlah pcs yang benar-benar
+      // keluar. Ini untuk menghindari risiko operator lupa mengubah angka
+      // dan tanpa sadar melaporkan SELURUH sisa stok sebagai keluar padahal
+      // yang keluar sebenarnya cuma sebagian.
       if (inputTanggal && c.tanggalKedatangan) {
         inputTanggal.value = c.tanggalKedatangan;
       }
 
       list.querySelectorAll('.kombinasi-chip').forEach(b => b.classList.remove('is-selected'));
       btn.classList.add('is-selected');
-      showToast(`Kombinasi dipilih. Jumlah & tanggal terisi otomatis sesuai stok. Sekarang scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
+      showToast(`Kombinasi dipilih (sisa stok ${Number(c.stok || 0).toLocaleString('id-ID')} pcs). Masukkan jumlah pcs yang keluar, lalu scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
     });
   });
 }
@@ -4146,7 +4154,13 @@ function renderKatalogBarangSplit() {
     // dipisah: yang satu buat hitung persen, yang satu buat ditulis di layar.
     const palletNum = Number(l.totalPallet) || 0;
     const palletDisplay = l.totalPallet ? roundPalletDisplay(l.totalPallet) : '0';
+    const lokasiText = String(l.lokasi || '').trim();
     const batas = getBatasLokasiPallet(l.lokasi);
+    // Angka pallet ditulis sebagai satu baris "terpakai / batas pallet" —
+    // dibungkus title="" supaya kalau angkanya sangat panjang (dan terpotong
+    // dengan ellipsis oleh CSS), operator tetap bisa lihat angka lengkapnya
+    // lewat hover/tap-hold, tanpa baris jadi melebar dua baris di layar.
+    const palletFigure = `${palletDisplay}${batas ? ` / ${batas.toLocaleString('id-ID')}` : ''} pallet`;
     // Blok kapasitas SELALU dirender (baik ada batas maupun tidak) supaya
     // tinggi tiap baris konsisten — sebelumnya baris tanpa batas terdaftar
     // jadi lebih pendek dari yang lain dan bikin daftar terlihat berantakan.
@@ -4159,22 +4173,22 @@ function renderKatalogBarangSplit() {
       capacityHtml = `
         <div class="ltr-capacity">
           <div class="ltr-capacity-bar"><div class="ltr-capacity-fill ${statusClass}" style="width:${pct}%"></div></div>
-          <span class="ltr-capacity-label ${statusClass}">${statusLabel} · ${pct}%</span>
+          <span class="ltr-capacity-pill ${statusClass}">${statusLabel} <span class="ltr-capacity-pct">${pct}%</span></span>
         </div>
       `;
     } else {
       capacityHtml = `
         <div class="ltr-capacity">
           <div class="ltr-capacity-bar"><div class="ltr-capacity-fill ltr-cap-none" style="width:0%"></div></div>
-          <span class="ltr-capacity-label ltr-cap-none">Tanpa batas terdaftar</span>
+          <span class="ltr-capacity-pill ltr-cap-none">Tanpa batas terdaftar</span>
         </div>
       `;
     }
     return `
       <div class="lokasi-table-row" data-lokasi="${escapeHtml(l.lokasi)}" role="button" tabindex="0">
         <div class="ltr-main">
-          <div class="ltr-col ltr-lokasi mono">${escapeHtml(l.lokasi)}</div>
-          <div class="ltr-col ltr-pallet">${palletDisplay}${batas ? ` / ${batas.toLocaleString('id-ID')}` : ''} pallet</div>
+          <div class="ltr-col ltr-lokasi mono" title="${escapeHtml(lokasiText)}">${escapeHtml(lokasiText)}</div>
+          <div class="ltr-col ltr-pallet" title="${escapeHtml(palletFigure)}">${palletFigure}</div>
           <button type="button" class="ltr-aksi" data-lokasi-aksi="${escapeHtml(l.lokasi)}" aria-label="Lihat detail lokasi ${escapeHtml(l.lokasi)}" title="Lihat detail lokasi">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>

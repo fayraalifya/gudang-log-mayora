@@ -732,59 +732,83 @@ body.role-operator .katalog-mode-tabs { display: none; }
 .katalog-pager-btn:disabled { opacity: 0.4; }
 
 /* ---- Panel kanan: tabel lokasi (klik -> Detail Lokasi) ---- */
-.lokasi-table { display: flex; flex-direction: column; gap: 6px; }
-/* Baris header (.lokasi-table-head) tidak berubah sama sekali: masih grid
-   3-kolom langsung seperti sebelumnya. */
+.lokasi-table { display: flex; flex-direction: column; gap: 8px; }
+/* Kolom lokasi/pallet/aksi dipakai SAMA PERSIS di header & tiap baris data
+   (grid-template-columns identik) supaya semuanya rapi sejajar vertikal —
+   ini satu-satunya sumber kebenaran lebar kolom, dipakai lagi lewat
+   .lokasi-table-body .ltr-main di bawah. */
 .lokasi-table-row {
-  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.5fr); align-items: center; gap: 6px;
-  padding: 8px 8px; border-radius: 9px; background: transparent;
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 40px);
+  align-items: center; column-gap: 10px;
+  padding: 6px 10px; border-radius: 9px; background: transparent;
 }
 .lokasi-table-head {
-  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted);
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);
   font-family: var(--font-display); font-weight: 700;
+  padding-bottom: 8px; border-bottom: 2px solid var(--kraft-line); margin-bottom: 2px;
 }
-.lokasi-table-body { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; }
+.lokasi-table-body { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; padding-right: 2px; }
 /* Baris data (di dalam .lokasi-table-body) dibungkus jadi flex-column
    supaya bar kapasitas bisa ditambahkan DI BAWAH baris info yang sudah
    ada, tanpa mengubah kolom lokasi/pallet/aksi itu sendiri. */
 .lokasi-table-body .lokasi-table-row {
-  display: flex; flex-direction: column; gap: 6px;
-  background: var(--kraft); cursor: pointer; transition: background-color .12s, transform .1s;
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--kraft); border: 2px solid transparent; cursor: pointer;
+  padding: 10px 12px; transition: background-color .12s, border-color .12s, transform .1s;
 }
 .lokasi-table-body .ltr-main {
-  display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.5fr); align-items: center; gap: 6px;
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 40px);
+  align-items: center; column-gap: 10px;
 }
-.lokasi-table-body .lokasi-table-row:hover { background: var(--navy-pale); transform: translateY(-1px); }
-.ltr-col { font-size: 12px; color: var(--ink-soft); min-width: 0; }
-.ltr-lokasi { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ltr-pallet { font-weight: 600; color: var(--ink); white-space: normal; line-height: 1.3; word-break: break-word; }
-.ltr-aksi, .ltr-aksi-head { text-align: center; }
+.lokasi-table-body .lokasi-table-row:hover { background: var(--navy-pale); border-color: var(--emas); transform: translateY(-1px); }
+.ltr-col { font-size: 12.5px; color: var(--ink-soft); min-width: 0; }
+.ltr-lokasi { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.2px; }
+/* Angka pallet SELALU satu baris, tidak pernah pecah jadi dua baris —
+   kalau kepanjangan, dipotong dengan "…" dan bisa dilihat lengkap lewat
+   title="" (hover/tap-hold) yang sudah ditambahkan di markupnya. */
+.ltr-pallet {
+  font-weight: 600; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+.ltr-aksi-head { text-align: center; }
 .ltr-aksi {
-  justify-self: center; padding: 5px; border-radius: 7px; color: var(--navy); background: transparent;
+  justify-self: center; padding: 6px; border-radius: 8px; color: var(--navy); background: transparent;
+  display: flex; align-items: center; justify-content: center;
 }
 .ltr-aksi:hover { background: var(--navy-pale); }
 
 /* ---- Bar kapasitas (info tambahan, tidak menggantikan apapun) ---- */
-.ltr-capacity { display: flex; align-items: center; gap: 8px; padding: 0 1px; }
+.ltr-capacity { display: flex; align-items: center; gap: 10px; }
 .ltr-capacity-bar {
-  flex: 1; height: 5px; border-radius: 4px; background: var(--kraft-line); overflow: hidden;
+  flex: 1; height: 6px; border-radius: 4px; background: var(--kraft-line); overflow: hidden;
 }
 .ltr-capacity-fill { height: 100%; border-radius: 4px; transition: width .15s; }
 .ltr-capacity-fill.ltr-cap-ok { background: var(--hijau); }
 .ltr-capacity-fill.ltr-cap-warn { background: var(--emas); }
 .ltr-capacity-fill.ltr-cap-full { background: var(--merah-flag); }
-.ltr-capacity-label {
-  font-size: 10px; font-weight: 600; white-space: nowrap; flex-shrink: 0;
-}
-.ltr-capacity-label.ltr-cap-ok { color: var(--hijau); }
-.ltr-capacity-label.ltr-cap-warn { color: var(--oranye); }
-.ltr-capacity-label.ltr-cap-full { color: var(--merah-flag); }
 .ltr-capacity-fill.ltr-cap-none { background: transparent; }
-.ltr-capacity-label.ltr-cap-none { color: var(--text-muted); font-weight: 500; font-style: italic; }
+/* Status kapasitas ditulis sebagai PIL berwarna (bukan cuma teks polos)
+   supaya lebih gampang dipindai sekilas dan konsisten dengan gaya badge
+   lain di aplikasi ini (mis. barang-pick-lokasi-badge). */
+.ltr-capacity-pill {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  font-size: 10px; font-weight: 700; white-space: nowrap;
+  padding: 3px 8px; border-radius: 20px;
+}
+.ltr-capacity-pct { font-weight: 700; opacity: 0.85; }
+.ltr-capacity-pill.ltr-cap-ok { color: var(--hijau); background: color-mix(in srgb, var(--hijau) 14%, transparent); }
+.ltr-capacity-pill.ltr-cap-warn { color: var(--oranye); background: color-mix(in srgb, var(--oranye) 16%, transparent); }
+.ltr-capacity-pill.ltr-cap-full { color: var(--merah-flag); background: color-mix(in srgb, var(--merah-flag) 14%, transparent); }
+.ltr-capacity-pill.ltr-cap-none { color: var(--text-muted); font-weight: 600; font-style: italic; background: var(--kraft-line); }
 
 @media (max-width: 480px) {
-  .lokasi-table-row, .ltr-main { grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr) minmax(0, 0.4fr); }
-  .ltr-col { font-size: 10.5px; }
+  .lokasi-table-row, .lokasi-table-body .ltr-main {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 34px);
+    column-gap: 6px;
+  }
+  .ltr-col { font-size: 11px; }
+  .lokasi-table-body .lokasi-table-row { padding: 9px 10px; }
 }
 
 /* ==========================================================================
