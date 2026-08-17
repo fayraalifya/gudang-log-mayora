@@ -408,20 +408,13 @@ class KatalogManager {
     this.supplierEditing = null;
     this.pemilikEditing = null;
     this.lokasiEditing = null;
-    // Blok mana saja yang sedang dibuka (expanded) di daftar Kode Barang.
-    // Disimpan sebagai Set berisi nama blok, supaya tetap terbuka/tertutup
-    // walau list di-render ulang (misal ada barang baru masuk dari admin lain).
-    this.expandedBarangGroups = new Set();
-  }
-
-  // Ambil "blok" dari nama barang = kata pertama pada nama (contoh: "CRT B1
-  // DANISA 12X454G..." -> blok "CRT"). Dipakai untuk mengelompokkan daftar
-  // kode barang di panel Pengelolaan Barang supaya tidak jadi satu list
-  // panjang yang susah disisir manual saat baris data sudah ratusan.
-  getBlokBarang(nama) {
-    const trimmed = (nama || '').trim();
-    if (!trimmed) return 'LAINNYA';
-    return trimmed.split(/\s+/)[0].toUpperCase();
+    // Paginasi tabel Daftar Kode Barang (panel Pengelolaan Barang).
+    this.barangPage = 1;
+    this.barangPageSize = 10;
+    // Paginasi untuk tabel sederhana (Supplier / Pemilik Barang / Lokasi) —
+    // masing-masing entity punya state halaman & ukuran halaman sendiri.
+    this.simplePage = { supplier: 1, pemilik: 1, lokasi: 1 };
+    this.simplePageSize = { supplier: 10, pemilik: 10, lokasi: 10 };
   }
 
   init() {
@@ -434,13 +427,9 @@ class KatalogManager {
     document.getElementById('btn-tambah-barang')?.addEventListener('click', () => this.openBarangForm());
     document.getElementById('form-barang')?.addEventListener('submit', (e) => this.saveBarang(e));
     document.getElementById('search-barang')?.addEventListener('input', (e) => this.filterBarang(e.target.value));
-    document.getElementById('btn-buka-semua-blok')?.addEventListener('click', () => {
-      const allBlok = new Set((MASTER_DATA.barang || []).map(b => this.getBlokBarang(b.nama)));
-      this.expandedBarangGroups = allBlok;
-      this.renderBarangList(document.getElementById('search-barang')?.value || '');
-    });
-    document.getElementById('btn-tutup-semua-blok')?.addEventListener('click', () => {
-      this.expandedBarangGroups.clear();
+    document.getElementById('barang-page-size')?.addEventListener('change', (e) => {
+      this.barangPageSize = parseInt(e.target.value, 10) || 10;
+      this.barangPage = 1;
       this.renderBarangList(document.getElementById('search-barang')?.value || '');
     });
 
@@ -448,16 +437,31 @@ class KatalogManager {
     document.getElementById('btn-tambah-supplier')?.addEventListener('click', () => this.openSupplierForm());
     document.getElementById('form-supplier')?.addEventListener('submit', (e) => this.saveSupplier(e));
     document.getElementById('search-supplier')?.addEventListener('input', (e) => this.filterSupplier(e.target.value));
+    document.getElementById('supplier-page-size')?.addEventListener('change', (e) => {
+      this.simplePageSize.supplier = parseInt(e.target.value, 10) || 10;
+      this.simplePage.supplier = 1;
+      this.renderSupplierList(document.getElementById('search-supplier')?.value || '');
+    });
 
     // Pemilik
     document.getElementById('btn-tambah-pemilik')?.addEventListener('click', () => this.openPemilikForm());
     document.getElementById('form-pemilik')?.addEventListener('submit', (e) => this.savePemilik(e));
     document.getElementById('search-pemilik')?.addEventListener('input', (e) => this.filterPemilik(e.target.value));
+    document.getElementById('pemilik-page-size')?.addEventListener('change', (e) => {
+      this.simplePageSize.pemilik = parseInt(e.target.value, 10) || 10;
+      this.simplePage.pemilik = 1;
+      this.renderPemilikList(document.getElementById('search-pemilik')?.value || '');
+    });
 
     // Lokasi
     document.getElementById('btn-tambah-lokasi')?.addEventListener('click', () => this.openLokasiForm());
     document.getElementById('form-lokasi')?.addEventListener('submit', (e) => this.saveLokasi(e));
     document.getElementById('search-lokasi')?.addEventListener('input', (e) => this.filterLokasi(e.target.value));
+    document.getElementById('lokasi-page-size')?.addEventListener('change', (e) => {
+      this.simplePageSize.lokasi = parseInt(e.target.value, 10) || 10;
+      this.simplePage.lokasi = 1;
+      this.renderLokasiList(document.getElementById('search-lokasi')?.value || '');
+    });
 
     // Modal close buttons
     document.querySelectorAll('#form-barang-modal .modal-close, #form-barang-modal .modal-cancel').forEach(btn => {
@@ -554,31 +558,23 @@ class KatalogManager {
   }
 
   renderBarangList(filter = '') {
-    const container = document.getElementById('barang-list');
+    const tbody = document.getElementById('barang-list');
     const empty = document.getElementById('barang-empty');
     const countLabel = document.getElementById('barang-total-label');
-    if (!container) return;
+    const tableWrap = document.getElementById('barang-table-wrap');
+    const pagination = document.getElementById('barang-pagination');
+    if (!tbody) return;
 
     const allBarang = [...(MASTER_DATA.barang || [])];
     const q = filter.trim().toLowerCase();
-    
-    // Hitung stok SEKALI SAJA untuk semua barang (single pass)
-    // currentEntries mungkin belum siap saat first render → fallback ke []
-    const stokMap = this.calculateAllBarangStok(typeof currentEntries !== 'undefined' ? currentEntries : []);
-    
-    // SELALU tampilkan semua barang, urutkan dari yang paling banyak stoknya
-    // (most filled first), kemudian alphabetically untuk tie-breaking.
-    let barang = allBarang.sort((a, b) => {
-      const stokA = stokMap.get(a.kode) || 0;
-      const stokB = stokMap.get(b.kode) || 0;
-      if (stokB !== stokA) return stokB - stokA; // Paling banyak stok di atas
-      return (a.nama || '').localeCompare(b.nama || '');
-    });
+
+    // Urutkan alfabetis berdasarkan nama barang.
+    let barang = allBarang.sort((a, b) => (a.nama || '').localeCompare(b.nama || ''));
 
     // Jika ada search query, filter daftar (tapi JANGAN sembunyikan semuanya)
     // — search adalah filter, bukan syarat wajib.
     let displayBarang = barang;
-    let totalMatches = barang.length;
+    const totalMatches = barang.length;
     if (q) {
       displayBarang = barang.filter(b =>
         (b.kode || '').toLowerCase().includes(q) ||
@@ -587,95 +583,112 @@ class KatalogManager {
     }
 
     if (countLabel) {
-      if (q) {
-        countLabel.textContent = `${displayBarang.length} dari ${totalMatches} barang cocok`;
-      } else {
-        countLabel.textContent = `${totalMatches} barang total`;
-      }
+      countLabel.textContent = q
+        ? `${displayBarang.length} dari ${totalMatches} barang cocok`
+        : `${totalMatches} barang total`;
     }
 
     if (displayBarang.length === 0) {
-      container.innerHTML = '';
+      tbody.innerHTML = '';
       empty.hidden = false;
+      if (tableWrap) tableWrap.hidden = true;
+      if (pagination) pagination.hidden = true;
       return;
     }
     empty.hidden = true;
+    if (tableWrap) tableWrap.hidden = false;
+    if (pagination) pagination.hidden = false;
 
-    // Kelompokkan per blok (kata pertama nama barang), TANPA re-sort
-    // (sudah diurutkan oleh stok di atas). Blok tetap grouped untuk UX.
-    const groups = new Map();
-    displayBarang.forEach(b => {
-      const blok = this.getBlokBarang(b.nama);
-      if (!groups.has(blok)) groups.set(blok, []);
-      groups.get(blok).push(b);
-    });
-    
-    // Urutkan blok berdasarkan stok TOTAL di dalam blok (paling banyak di atas)
-    const sortedBlok = [...groups.keys()].sort((a, b) => {
-      const totalA = groups.get(a).reduce((sum, item) => sum + (stokMap.get(item.kode) || 0), 0);
-      const totalB = groups.get(b).reduce((sum, item) => sum + (stokMap.get(item.kode) || 0), 0);
-      if (totalB !== totalA) return totalB - totalA;
-      return a.localeCompare(b);
-    });
+    // Paginasi.
+    const pageSize = this.barangPageSize || 10;
+    const totalPages = Math.max(1, Math.ceil(displayBarang.length / pageSize));
+    if (this.barangPage > totalPages) this.barangPage = totalPages;
+    if (this.barangPage < 1) this.barangPage = 1;
+    const startIdx = (this.barangPage - 1) * pageSize;
+    const pageItems = displayBarang.slice(startIdx, startIdx + pageSize);
 
-    // Saat sedang mencari, otomatis buka semua blok supaya hasil terlihat
-    if (q) {
-      sortedBlok.forEach(blok => this.expandedBarangGroups.add(blok));
-    }
-
-    container.innerHTML = sortedBlok.map(blok => {
-      const items = groups.get(blok);
-      const isOpen = this.expandedBarangGroups.has(blok);
+    tbody.innerHTML = pageItems.map((b, i) => {
       return `
-        <div class="katalog-group" data-blok="${escapeHtml(blok)}">
-          <button type="button" class="katalog-group-header" data-action="toggle-blok" data-blok="${escapeHtml(blok)}" aria-expanded="${isOpen}">
-            <span class="katalog-group-chevron ${isOpen ? 'is-open' : ''}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
-            </span>
-            <span class="katalog-group-title">${escapeHtml(blok)}</span>
-            <span class="katalog-group-count">${items.length} item</span>
-          </button>
-          <div class="katalog-group-body" ${isOpen ? '' : 'hidden'}>
-            ${items.map(b => {
-              const stok = stokMap.get(b.kode) || 0;
-              return `
-              <div class="katalog-item">
-                <div class="katalog-item-info">
-                  <div class="katalog-item-label">${escapeHtml(b.kode || '-')}</div>
-                  <div class="katalog-item-sub">${escapeHtml(b.nama || '-')}</div>
-                  <div class="katalog-item-stok">Stok: ${stok} pcs</div>
-                </div>
-                <div class="katalog-item-actions">
-                  <button type="button" class="btn-katalog-edit" data-action="edit-barang" data-kode="${escapeHtml(b.kode || '')}">Edit</button>
-                  <button type="button" class="btn-katalog-delete" data-action="delete-barang" data-kode="${escapeHtml(b.kode || '')}">Hapus</button>
-                </div>
-              </div>
-            `}).join('')}
-          </div>
-        </div>
+        <tr>
+          <td class="katalog-td-no">${startIdx + i + 1}</td>
+          <td class="katalog-td-kode">${escapeHtml(b.kode || '-')}</td>
+          <td title="${escapeHtml(b.nama || '-')}">${escapeHtml(b.nama || '-')}</td>
+          <td class="katalog-td-edit">
+            <button type="button" class="btn-katalog-edit" data-action="edit-barang" data-kode="${escapeHtml(b.kode || '')}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>
+              Edit
+            </button>
+          </td>
+          <td class="katalog-td-hapus">
+            <button type="button" class="btn-katalog-delete" data-action="delete-barang" data-kode="${escapeHtml(b.kode || '')}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              Hapus
+            </button>
+          </td>
+        </tr>
       `;
     }).join('');
 
-    container.querySelectorAll('[data-action="toggle-blok"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const blok = btn.dataset.blok;
-        if (this.expandedBarangGroups.has(blok)) {
-          this.expandedBarangGroups.delete(blok);
-        } else {
-          this.expandedBarangGroups.add(blok);
-        }
-        this.renderBarangList(document.getElementById('search-barang')?.value || '');
-      });
-    });
-    container.querySelectorAll('[data-action="edit-barang"]').forEach(btn => {
+    tbody.querySelectorAll('[data-action="edit-barang"]').forEach(btn => {
       btn.addEventListener('click', () => this.editBarang(btn.dataset.kode));
     });
-    container.querySelectorAll('[data-action="delete-barang"]').forEach(btn => {
+    tbody.querySelectorAll('[data-action="delete-barang"]').forEach(btn => {
       btn.addEventListener('click', () => this.deleteBarang(btn.dataset.kode));
+    });
+
+    this.renderBarangPagination(totalPages);
+  }
+
+  // Bangun daftar nomor halaman dengan elipsis ("...") untuk total halaman
+  // yang banyak, mis. [1, '...', 5, 6, 7, '...', 68].
+  buildPageList(current, total) {
+    const pages = [];
+    if (total <= 7) {
+      for (let i = 1; i <= total; i++) pages.push(i);
+      return pages;
+    }
+    pages.push(1);
+    if (current > 3) pages.push('...');
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+    for (let i = start; i <= end; i++) pages.push(i);
+    if (current < total - 2) pages.push('...');
+    pages.push(total);
+    return pages;
+  }
+
+  renderBarangPagination(totalPages) {
+    const wrap = document.getElementById('barang-pagination-pages');
+    if (!wrap) return;
+    const page = this.barangPage;
+    const pages = this.buildPageList(page, totalPages);
+
+    wrap.innerHTML = `
+      <button type="button" class="katalog-page-btn katalog-page-nav" data-page="prev" ${page <= 1 ? 'disabled' : ''} aria-label="Halaman sebelumnya">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      ${pages.map(p => p === '...'
+        ? `<span class="katalog-page-ellipsis">…</span>`
+        : `<button type="button" class="katalog-page-btn ${p === page ? 'is-active' : ''}" data-page="${p}">${p}</button>`
+      ).join('')}
+      <button type="button" class="katalog-page-btn katalog-page-nav" data-page="next" ${page >= totalPages ? 'disabled' : ''} aria-label="Halaman berikutnya">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    `;
+
+    wrap.querySelectorAll('[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.dataset.page;
+        if (val === 'prev') this.barangPage = Math.max(1, this.barangPage - 1);
+        else if (val === 'next') this.barangPage = Math.min(totalPages, this.barangPage + 1);
+        else this.barangPage = parseInt(val, 10);
+        this.renderBarangList(document.getElementById('search-barang')?.value || '');
+      });
     });
   }
 
   filterBarang(value) {
+    this.barangPage = 1;
     this.renderBarangList(value);
   }
 
@@ -728,7 +741,8 @@ class KatalogManager {
         // Edit existing
         const idx = (MASTER_DATA.barang || []).findIndex(b => b.kode === this.barangEditing);
         if (idx >= 0) {
-          MASTER_DATA.barang[idx] = { kode, nama };
+          const dibuatPada = MASTER_DATA.barang[idx].dibuatPada || Date.now();
+          MASTER_DATA.barang[idx] = { kode, nama, dibuatPada };
           localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
         }
       } else {
@@ -739,8 +753,9 @@ class KatalogManager {
           errorBox.hidden = false;
           return;
         }
-        MASTER_DATA.barang.push({ kode, nama });
+        MASTER_DATA.barang.push({ kode, nama, dibuatPada: Date.now() });
         localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
+        this.barangPage = 1;
       }
 
       showToast('Barang berhasil disimpan');
@@ -770,46 +785,109 @@ class KatalogManager {
     }
   }
 
-  // ========== SUPPLIER ==========
-  renderSupplierList(filter = '') {
-    const container = document.getElementById('supplier-list');
-    const empty = document.getElementById('supplier-empty');
-    if (!container) return;
+  // ========== SUPPLIER / PEMILIK / LOKASI (tabel sederhana No. + Nama + Aksi) ==========
+  // Ketiga entity ini modelnya sama persis (array string di MASTER_DATA),
+  // jadi dipakaikan satu fungsi generik supaya tidak triplikasi kode.
+  renderSimpleList(entity, filter = '') {
+    const tbody = document.getElementById(`${entity}-list`);
+    const empty = document.getElementById(`${entity}-empty`);
+    const tableWrap = document.getElementById(`${entity}-table-wrap`);
+    const pagination = document.getElementById(`${entity}-pagination`);
+    if (!tbody) return;
 
-    let supplier = [...(MASTER_DATA.supplier || [])];
-    if (filter) {
-      const q = filter.toLowerCase();
-      supplier = supplier.filter(s => (s || '').toLowerCase().includes(q));
+    let items = [...(MASTER_DATA[entity] || [])];
+    const q = filter.trim().toLowerCase();
+    if (q) {
+      items = items.filter(x => (x || '').toLowerCase().includes(q));
     }
 
-    if (supplier.length === 0) {
-      container.innerHTML = '';
-      empty.hidden = false;
+    if (items.length === 0) {
+      tbody.innerHTML = '';
+      if (empty) empty.hidden = false;
+      if (tableWrap) tableWrap.hidden = true;
+      if (pagination) pagination.hidden = true;
       return;
     }
-    empty.hidden = true;
+    if (empty) empty.hidden = true;
+    if (tableWrap) tableWrap.hidden = false;
+    if (pagination) pagination.hidden = false;
 
-    container.innerHTML = supplier.map(s => `
-      <div class="katalog-item">
-        <div class="katalog-item-info">
-          <div class="katalog-item-label">${escapeHtml(s || '-')}</div>
-        </div>
-        <div class="katalog-item-actions">
-          <button type="button" class="btn-katalog-edit" data-action="edit-supplier" data-nama="${escapeHtml(s || '')}">Edit</button>
-          <button type="button" class="btn-katalog-delete" data-action="delete-supplier" data-nama="${escapeHtml(s || '')}">Hapus</button>
-        </div>
-      </div>
+    const pageSize = this.simplePageSize[entity] || 10;
+    const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+    if (this.simplePage[entity] > totalPages) this.simplePage[entity] = totalPages;
+    if (this.simplePage[entity] < 1) this.simplePage[entity] = 1;
+    const page = this.simplePage[entity];
+    const startIdx = (page - 1) * pageSize;
+    const pageItems = items.slice(startIdx, startIdx + pageSize);
+
+    tbody.innerHTML = pageItems.map((val, i) => `
+      <tr>
+        <td class="katalog-td-no">${startIdx + i + 1}</td>
+        <td>${escapeHtml(val || '-')}</td>
+        <td class="katalog-td-edit">
+          <button type="button" class="btn-katalog-edit" data-action="edit-${entity}" data-nama="${escapeHtml(val || '')}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>
+            Edit
+          </button>
+        </td>
+        <td class="katalog-td-hapus">
+          <button type="button" class="btn-katalog-delete" data-action="delete-${entity}" data-nama="${escapeHtml(val || '')}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+            Hapus
+          </button>
+        </td>
+      </tr>
     `).join('');
 
-    container.querySelectorAll('[data-action="edit-supplier"]').forEach(btn => {
-      btn.addEventListener('click', () => this.editSupplier(btn.dataset.nama));
+    const cap = entity.charAt(0).toUpperCase() + entity.slice(1);
+    tbody.querySelectorAll(`[data-action="edit-${entity}"]`).forEach(btn => {
+      btn.addEventListener('click', () => this[`edit${cap}`](btn.dataset.nama));
     });
-    container.querySelectorAll('[data-action="delete-supplier"]').forEach(btn => {
-      btn.addEventListener('click', () => this.deleteSupplier(btn.dataset.nama));
+    tbody.querySelectorAll(`[data-action="delete-${entity}"]`).forEach(btn => {
+      btn.addEventListener('click', () => this[`delete${cap}`](btn.dataset.nama));
+    });
+
+    this.renderSimplePagination(entity, totalPages);
+  }
+
+  renderSimplePagination(entity, totalPages) {
+    const wrap = document.getElementById(`${entity}-pagination-pages`);
+    if (!wrap) return;
+    const page = this.simplePage[entity];
+    const pages = this.buildPageList(page, totalPages);
+
+    wrap.innerHTML = `
+      <button type="button" class="katalog-page-btn katalog-page-nav" data-page="prev" ${page <= 1 ? 'disabled' : ''} aria-label="Halaman sebelumnya">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      ${pages.map(p => p === '...'
+        ? `<span class="katalog-page-ellipsis">…</span>`
+        : `<button type="button" class="katalog-page-btn ${p === page ? 'is-active' : ''}" data-page="${p}">${p}</button>`
+      ).join('')}
+      <button type="button" class="katalog-page-btn katalog-page-nav" data-page="next" ${page >= totalPages ? 'disabled' : ''} aria-label="Halaman berikutnya">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    `;
+
+    wrap.querySelectorAll('[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.dataset.page;
+        if (val === 'prev') this.simplePage[entity] = Math.max(1, this.simplePage[entity] - 1);
+        else if (val === 'next') this.simplePage[entity] = Math.min(totalPages, this.simplePage[entity] + 1);
+        else this.simplePage[entity] = parseInt(val, 10);
+        const searchVal = document.getElementById(`search-${entity}`)?.value || '';
+        this.renderSimpleList(entity, searchVal);
+      });
     });
   }
 
+  // ========== SUPPLIER ==========
+  renderSupplierList(filter = '') {
+    this.renderSimpleList('supplier', filter);
+  }
+
   filterSupplier(value) {
+    this.simplePage.supplier = 1;
     this.renderSupplierList(value);
   }
 
@@ -865,6 +943,7 @@ class KatalogManager {
           return;
         }
         MASTER_DATA.supplier.push(nama);
+        this.simplePage.supplier = 1;
       }
 
       MASTER_DATA.supplier.sort();
@@ -896,44 +975,11 @@ class KatalogManager {
 
   // ========== PEMILIK ==========
   renderPemilikList(filter = '') {
-    const container = document.getElementById('pemilik-list');
-    const empty = document.getElementById('pemilik-empty');
-    if (!container) return;
-
-    let pemilik = [...(MASTER_DATA.pemilik || [])];
-    if (filter) {
-      const q = filter.toLowerCase();
-      pemilik = pemilik.filter(p => (p || '').toLowerCase().includes(q));
-    }
-
-    if (pemilik.length === 0) {
-      container.innerHTML = '';
-      empty.hidden = false;
-      return;
-    }
-    empty.hidden = true;
-
-    container.innerHTML = pemilik.map(p => `
-      <div class="katalog-item">
-        <div class="katalog-item-info">
-          <div class="katalog-item-label">${escapeHtml(p || '-')}</div>
-        </div>
-        <div class="katalog-item-actions">
-          <button type="button" class="btn-katalog-edit" data-action="edit-pemilik" data-nama="${escapeHtml(p || '')}">Edit</button>
-          <button type="button" class="btn-katalog-delete" data-action="delete-pemilik" data-nama="${escapeHtml(p || '')}">Hapus</button>
-        </div>
-      </div>
-    `).join('');
-
-    container.querySelectorAll('[data-action="edit-pemilik"]').forEach(btn => {
-      btn.addEventListener('click', () => this.editPemilik(btn.dataset.nama));
-    });
-    container.querySelectorAll('[data-action="delete-pemilik"]').forEach(btn => {
-      btn.addEventListener('click', () => this.deletePemilik(btn.dataset.nama));
-    });
+    this.renderSimpleList('pemilik', filter);
   }
 
   filterPemilik(value) {
+    this.simplePage.pemilik = 1;
     this.renderPemilikList(value);
   }
 
@@ -988,6 +1034,7 @@ class KatalogManager {
         }
         MASTER_DATA.pemilik.push(nama);
       }
+      this.simplePage.pemilik = 1;
 
       MASTER_DATA.pemilik.sort();
       localStorage.setItem('gudang_master_pemilik', JSON.stringify(MASTER_DATA.pemilik));
@@ -1018,44 +1065,11 @@ class KatalogManager {
 
   // ========== LOKASI ==========
   renderLokasiList(filter = '') {
-    const container = document.getElementById('lokasi-list');
-    const empty = document.getElementById('lokasi-empty');
-    if (!container) return;
-
-    let lokasi = [...(MASTER_DATA.lokasi || [])];
-    if (filter) {
-      const q = filter.toLowerCase();
-      lokasi = lokasi.filter(l => (l || '').toLowerCase().includes(q));
-    }
-
-    if (lokasi.length === 0) {
-      container.innerHTML = '';
-      empty.hidden = false;
-      return;
-    }
-    empty.hidden = true;
-
-    container.innerHTML = lokasi.map(l => `
-      <div class="katalog-item">
-        <div class="katalog-item-info">
-          <div class="katalog-item-label">${escapeHtml(l || '-')}</div>
-        </div>
-        <div class="katalog-item-actions">
-          <button type="button" class="btn-katalog-edit" data-action="edit-lokasi" data-nama="${escapeHtml(l || '')}">Edit</button>
-          <button type="button" class="btn-katalog-delete" data-action="delete-lokasi" data-nama="${escapeHtml(l || '')}">Hapus</button>
-        </div>
-      </div>
-    `).join('');
-
-    container.querySelectorAll('[data-action="edit-lokasi"]').forEach(btn => {
-      btn.addEventListener('click', () => this.editLokasi(btn.dataset.nama));
-    });
-    container.querySelectorAll('[data-action="delete-lokasi"]').forEach(btn => {
-      btn.addEventListener('click', () => this.deleteLokasi(btn.dataset.nama));
-    });
+    this.renderSimpleList('lokasi', filter);
   }
 
   filterLokasi(value) {
+    this.simplePage.lokasi = 1;
     this.renderLokasiList(value);
   }
 
@@ -1111,6 +1125,7 @@ class KatalogManager {
         MASTER_DATA.lokasi.push(nama);
       }
 
+      this.simplePage.lokasi = 1;
       MASTER_DATA.lokasi.sort();
       localStorage.setItem('gudang_master_lokasi', JSON.stringify(MASTER_DATA.lokasi));
       showToast('Lokasi berhasil disimpan');
@@ -1896,6 +1911,86 @@ const MONTH_COL_WIDTHS = [12, 9, 13, 18, 14, 34, 22, 14, 10, 12, 16, 12, 28, 22,
 const STOK_HEADERS = ['Kode Barang', 'Nama Barang', 'Lokasi Terpakai', 'Total Masuk', 'Total Keluar', 'Stok Saat Ini', 'Terakhir Masuk', 'Terakhir Keluar', 'Terakhir Diperbarui'];
 const STOK_COL_WIDTHS = [14, 34, 26, 12, 12, 12, 22, 22, 22];
 
+/* ---- Tema warna untuk file Excel yang diunduh (disamakan dengan palet
+   warna aplikasi: navy utk header, hijau/oranye/emas utk badge Jenis/Tipe) ---- */
+const EXCEL_THEME = {
+  navy: 'FF0F2038',
+  navySoft: 'FF1B3457',
+  navyPale: 'FFE7EBF1',
+  white: 'FFFFFFFF',
+  border: 'FFD3D8E0',
+  hijau: 'FF276B44',
+  hijauSoft: 'FFE4F1E8',
+  oranye: 'FFA85417',
+  oranyeSoft: 'FFFAEADA',
+  emas: 'FFB9791F',
+  emasSoft: 'FFFBF1DD',
+  merah: 'FFD31A20',
+  merahSoft: 'FFFBE7E6',
+  abu: 'FF6B7280',
+};
+
+// Mengubah "YYYY-MM-DD" -> objek Date lokal (jam 00:00) tanpa terpengaruh
+// pergeseran zona waktu, supaya kolom tanggal di Excel bisa diformat rapi
+// sebagai tanggal asli (bukan teks) dan tetap bisa diurutkan/difilter.
+function isoDateToLocalDate(iso) {
+  if (!iso || typeof iso !== 'string') return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+// Styling umum: header tebal berwarna, border tipis di semua sel terisi,
+// baris selang-seling (zebra), freeze baris header, dan autofilter —
+// dipakai di semua sheet yang diunduh supaya tampilannya konsisten & rapi.
+function styleExcelSheet(ws, { headerRowNum = 1, lastCol, firstDataRow, lastDataRow }) {
+  const headerRow = ws.getRow(headerRowNum);
+  headerRow.height = 22;
+  headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    if (colNumber > lastCol) return;
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_THEME.navy } };
+    cell.font = { bold: true, color: { argb: EXCEL_THEME.white }, size: 11 };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: EXCEL_THEME.navySoft } },
+      bottom: { style: 'thin', color: { argb: EXCEL_THEME.navySoft } },
+      left: { style: 'thin', color: { argb: EXCEL_THEME.navySoft } },
+      right: { style: 'thin', color: { argb: EXCEL_THEME.navySoft } },
+    };
+  });
+  for (let r = firstDataRow; r <= lastDataRow; r++) {
+    const row = ws.getRow(r);
+    const isEven = (r - firstDataRow) % 2 === 1;
+    for (let c = 1; c <= lastCol; c++) {
+      const cell = row.getCell(c);
+      cell.border = {
+        top: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        bottom: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        left: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+        right: { style: 'thin', color: { argb: EXCEL_THEME.border } },
+      };
+      if (!cell.fill && isEven) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: EXCEL_THEME.navyPale } };
+    }
+  }
+  ws.views = [{ state: 'frozen', ySplit: headerRowNum, xSplit: 0 }];
+  ws.autoFilter = { from: { row: headerRowNum, column: 1 }, to: { row: headerRowNum, column: lastCol } };
+}
+
+// Memberi warna badge (mirip tampilan di aplikasi) pada sel "Jenis"
+// (MASUK/KELUAR) dan "Tipe" (PENYESUAIAN) di sheet bulanan.
+function colorizeBadgeCell(cell, kind) {
+  const map = {
+    masuk: [EXCEL_THEME.hijauSoft, EXCEL_THEME.hijau],
+    keluar: [EXCEL_THEME.oranyeSoft, EXCEL_THEME.oranye],
+    penyesuaian: [EXCEL_THEME.emasSoft, EXCEL_THEME.emas],
+  };
+  const [bg, fg] = map[kind] || [null, null];
+  if (!bg) return;
+  cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+  cell.font = { bold: true, color: { argb: fg }, size: 10.5 };
+  cell.alignment = { vertical: 'middle', horizontal: 'center' };
+}
+
 function safeSheetName(name) {
   let s = String(name).replace(/[:\\\/\?\*\[\]]/g, '-').trim();
   if (s.length > 31) s = s.slice(0, 31);
@@ -2031,50 +2126,105 @@ function buildLocationStock(entries) {
   return result;
 }
 
-function buildMonthSheet(entries) {
-  const rows = entries.map(t => [
-    t.tanggal,
-    t.jenis === 'masuk' ? 'MASUK' : 'KELUAR',
-    t.tipe === 'penyesuaian' ? 'PENYESUAIAN' : 'TRANSAKSI',
-    t.operator,
-    t.kodeBarang,
-    t.namaBarang,
-    t.supplier,
-    t.pemilik,
-    t.lokasi,
-    t.jumlah,
-    t.qtyPerPallet != null ? t.qtyPerPallet : '',
-    t.jumlahPallet != null ? t.jumlahPallet : '',
-    t.keterangan || '',
-    new Date(t.createdAt).toISOString(),
-    new Date(t.updatedAt).toISOString(),
-    t.id,
-  ]);
-  const aoa = [MONTH_HEADERS, ...rows];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = MONTH_COL_WIDTHS.map(w => ({ wch: w }));
-  ws['!autofilter'] = { ref: `A1:P${aoa.length}` };
+// Menambahkan sheet transaksi 1 bulan ke workbook ExcelJS, sudah dengan
+// styling rapi: header berwarna, kolom angka & tanggal terformat asli,
+// badge Jenis/Tipe berwarna, border, zebra, freeze header, dan autofilter.
+function addMonthSheet(workbook, sheetName, entries) {
+  const ws = workbook.addWorksheet(sheetName, { views: [{ showGridLines: false }] });
+  ws.columns = MONTH_HEADERS.map((h, i) => ({ header: h, width: MONTH_COL_WIDTHS[i] }));
+
+  entries.forEach(t => {
+    ws.addRow([
+      isoDateToLocalDate(t.tanggal) || t.tanggal,
+      t.jenis === 'masuk' ? 'MASUK' : 'KELUAR',
+      t.tipe === 'penyesuaian' ? 'PENYESUAIAN' : 'TRANSAKSI',
+      t.operator,
+      t.kodeBarang,
+      t.namaBarang,
+      t.supplier,
+      t.pemilik,
+      t.lokasi,
+      t.jumlah,
+      t.qtyPerPallet != null ? t.qtyPerPallet : null,
+      t.jumlahPallet != null ? t.jumlahPallet : null,
+      t.keterangan || '',
+      new Date(t.createdAt),
+      new Date(t.updatedAt),
+      t.id,
+    ]);
+  });
+
+  const lastRow = entries.length + 1;
+  for (let r = 2; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    row.getCell(1).numFmt = 'dd/mm/yyyy';
+    row.getCell(10).numFmt = '#,##0';
+    row.getCell(11).numFmt = '#,##0';
+    row.getCell(12).numFmt = '#,##0';
+    row.getCell(14).numFmt = 'dd/mm/yyyy hh:mm';
+    row.getCell(15).numFmt = 'dd/mm/yyyy hh:mm';
+    row.getCell(10).alignment = { horizontal: 'right' };
+    row.getCell(11).alignment = { horizontal: 'right' };
+    row.getCell(12).alignment = { horizontal: 'right' };
+    const t = entries[r - 2];
+    colorizeBadgeCell(row.getCell(2), t.jenis === 'masuk' ? 'masuk' : 'keluar');
+    if (t.tipe === 'penyesuaian') colorizeBadgeCell(row.getCell(3), 'penyesuaian');
+    else { row.getCell(3).alignment = { horizontal: 'center' }; row.getCell(3).font = { color: { argb: EXCEL_THEME.abu }, size: 10.5 }; }
+  }
+
+  styleExcelSheet(ws, { lastCol: MONTH_HEADERS.length, firstDataRow: 2, lastDataRow: lastRow });
   return ws;
 }
 
-function buildStokSheet(entries) {
+// Menambahkan sheet "Ringkasan Stok" ke workbook ExcelJS: stok saat ini
+// diberi warna (hijau jika positif, merah jika minus) supaya selisih stok
+// langsung kelihatan tanpa perlu buka aplikasi.
+function addStokSheet(workbook, sheetName, entries) {
   const items = buildStokList(entries);
-  const rows = items.map(it => [
-    it.kode,
-    it.nama,
-    Array.from(it.lokasi).join(', '),
-    it.masuk,
-    it.keluar,
-    it.masuk - it.keluar,
-    it.lastMasuk ? `${it.lastMasuk.tanggal} (${it.lastMasuk.jumlah} pcs)` : '-',
-    it.lastKeluar ? `${it.lastKeluar.tanggal} (${it.lastKeluar.jumlah} pcs)` : '-',
-    it.updated ? new Date(it.updated).toISOString() : '-',
-  ]);
-  const aoa = [STOK_HEADERS, ...rows];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = STOK_COL_WIDTHS.map(w => ({ wch: w }));
-  ws['!autofilter'] = { ref: `A1:I${aoa.length}` };
+  const ws = workbook.addWorksheet(sheetName, { views: [{ showGridLines: false }] });
+  ws.columns = STOK_HEADERS.map((h, i) => ({ header: h, width: STOK_COL_WIDTHS[i] }));
+
+  items.forEach(it => {
+    ws.addRow([
+      it.kode,
+      it.nama,
+      Array.from(it.lokasi).join(', '),
+      it.masuk,
+      it.keluar,
+      it.masuk - it.keluar,
+      it.lastMasuk ? `${it.lastMasuk.tanggal} (${it.lastMasuk.jumlah} pcs)` : '-',
+      it.lastKeluar ? `${it.lastKeluar.tanggal} (${it.lastKeluar.jumlah} pcs)` : '-',
+      it.updated ? new Date(it.updated) : '-',
+    ]);
+  });
+
+  const lastRow = items.length + 1;
+  for (let r = 2; r <= lastRow; r++) {
+    const row = ws.getRow(r);
+    [4, 5, 6].forEach(c => { row.getCell(c).numFmt = '#,##0'; row.getCell(c).alignment = { horizontal: 'right' }; });
+    if (row.getCell(9).value instanceof Date) row.getCell(9).numFmt = 'dd/mm/yyyy hh:mm';
+    const stokCell = row.getCell(6);
+    const stok = items[r - 2].masuk - items[r - 2].keluar;
+    stokCell.font = { bold: true, color: { argb: stok < 0 ? EXCEL_THEME.merah : stok > 0 ? EXCEL_THEME.hijau : EXCEL_THEME.abu } };
+  }
+
+  styleExcelSheet(ws, { lastCol: STOK_HEADERS.length, firstDataRow: 2, lastDataRow: lastRow });
   return ws;
+}
+
+// Memicu unduhan file .xlsx dari workbook ExcelJS di browser (tanpa
+// perlu library tambahan seperti FileSaver).
+async function downloadExcelWorkbook(workbook, filename) {
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /* ---- UI Connection Status ---- */
@@ -5033,6 +5183,22 @@ const akunOperatorListEl = document.getElementById('akun-operator-list');
 const akunOperatorEmptyEl = document.getElementById('akun-operator-empty');
 const searchAkunOperator = document.getElementById('search-akun-operator');
 
+// Hitung laporan + aktivitas terakhir seorang operator dari currentEntries,
+// dicocokkan lewat nama (case-insensitive) sama seperti logika lama.
+function getOperatorStats(nama) {
+  const key = (nama || '').trim().toLowerCase();
+  const laporan = currentEntries
+    .filter(t => (t.operator || '').trim().toLowerCase() === key)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return {
+    laporan,
+    total: laporan.length,
+    masuk: laporan.filter(t => t.jenis === 'masuk').length,
+    keluar: laporan.filter(t => t.jenis === 'keluar').length,
+    terakhirAktif: laporan.length ? laporan[0].createdAt : null,
+  };
+}
+
 function renderAkunOperator() {
   if (!akunOperatorListEl || currentRole() !== 'admin') return;
 
@@ -5056,51 +5222,212 @@ function renderAkunOperator() {
   akunOperatorEmptyEl.hidden = true;
 
   filtered.forEach(a => {
-    const jumlahLaporan = currentEntries.filter(t => (t.operator || '').trim().toLowerCase() === (a.nama || '').trim().toLowerCase()).length;
+    const stats = getOperatorStats(a.nama);
     const inisial = (a.nama || '-').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-    const row = document.createElement('div');
-    row.className = 'akun-operator-item';
-    row.innerHTML = `
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'akun-operator-item' + (opDetailState.accountId === a.id ? ' is-active' : '');
+    card.dataset.accountId = a.id;
+    card.innerHTML = `
       <div class="akun-operator-avatar">${escapeHtml(inisial || '?')}</div>
-      <div class="akun-operator-main">
-        <span class="akun-operator-nama">${escapeHtml(a.nama || '-')}</span>
-        <span class="akun-operator-meta">ID Karyawan: <span class="mono">${escapeHtml(a.idKaryawan || '-')}</span></span>
-      </div>
-      <div class="akun-operator-stats">
-        <span class="akun-operator-stat-num">${jumlahLaporan.toLocaleString('id-ID')}</span>
-        <span class="akun-operator-stat-label">Laporan</span>
-      </div>
-      <div class="akun-operator-actions">
-        <span class="akun-operator-date">Daftar: ${a.createdAt ? formatWaktu(a.createdAt) : '-'}</span>
-        <button type="button" class="icon-btn danger btn-hapus-akun" title="Hapus akun ini" aria-label="Hapus">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        </button>
+      <span class="akun-operator-nama">${escapeHtml(a.nama || '-')}</span>
+      <span class="akun-operator-meta">ID Karyawan: <span class="mono">${escapeHtml(a.idKaryawan || '-')}</span></span>
+      <span class="akun-operator-badge">${stats.total.toLocaleString('id-ID')} Laporan</span>
+      <div class="akun-operator-footer">
+        <span class="akun-operator-date">Terakhir aktif: ${stats.terakhirAktif ? formatWaktu(stats.terakhirAktif) : 'Belum ada aktivitas'}</span>
+        <svg class="akun-operator-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>
       </div>
     `;
-    row.querySelector('.btn-hapus-akun').addEventListener('click', async () => {
-      if (!confirm(`Hapus akun operator "${a.nama}"? Operator ini tidak akan bisa masuk lagi sampai mendaftar ulang.`)) return;
-      try {
-        const fb = window.gudangFirebase;
-        // TANPA Cloud Functions: ini SOFT-DELETE. Dokumen profil di
-        // operator/{uid} dihapus langsung (diizinkan firestore.rules
-        // untuk isAdmin()), yang membuat operator ini langsung kehilangan
-        // akses ke semua data (exists() check di rules gagal). Akun
-        // Firebase Auth-nya sendiri TIDAK ikut terhapus (client SDK cuma
-        // bisa hapus akun sendiri) — kalau perlu dibersihkan total, hapus
-        // manual lewat Firebase Console > Authentication > Users.
-        // `a.id` di sini adalah UID Firebase Auth (document ID di koleksi
-        // operator), bukan NIK lagi.
-        await fb.deleteDoc(fb.doc(fb.db, 'operator', a.id));
-        showToast('Akun operator dinonaktifkan (profil dihapus). Akun Auth-nya masih ada di sistem — bersihkan manual lewat Firebase Console kalau perlu.');
-      } catch (err) {
-        showToast('Gagal menghapus akun: ' + err.message, 'error');
-      }
-    });
-    akunOperatorListEl.appendChild(row);
+    card.addEventListener('click', () => openOperatorDetail(a.id));
+    akunOperatorListEl.appendChild(card);
   });
 }
 
 if (searchAkunOperator) searchAkunOperator.addEventListener('input', renderAkunOperator);
+
+/* ==========================================================================
+   DRAWER: DETAIL OPERATOR (admin) — dibuka dari kartu di "Akun Operator
+   Terdaftar". Menampilkan ringkasan (total laporan & terakhir aktif) plus
+   2 tab: Riwayat Transaksi (tabel + pagination) dan Informasi Operator
+   (data akun + aksi hapus akun, dipindah ke sini dari kartu supaya kartu
+   tetap ringkas).
+========================================================================== */
+const opDetailOverlay = document.getElementById('op-detail-overlay');
+const opDetailBody = document.getElementById('op-detail-body');
+const opDetailState = { accountId: null, tab: 'riwayat', page: 1, pageSize: 7 };
+
+function closeOperatorDetail() {
+  if (!opDetailOverlay) return;
+  opDetailOverlay.hidden = true;
+  opDetailState.accountId = null;
+  renderAkunOperator();
+}
+
+if (opDetailOverlay) {
+  document.getElementById('op-detail-close').addEventListener('click', closeOperatorDetail);
+  opDetailOverlay.addEventListener('click', (e) => { if (e.target === opDetailOverlay) closeOperatorDetail(); });
+}
+
+function openOperatorDetail(accountId) {
+  if (!opDetailOverlay || !opDetailBody) return;
+  opDetailState.accountId = accountId;
+  opDetailState.tab = 'riwayat';
+  opDetailState.page = 1;
+  opDetailOverlay.hidden = false;
+  renderAkunOperator();
+  renderOperatorDetail();
+}
+
+function renderOperatorDetail() {
+  if (!opDetailBody) return;
+  const a = currentOperatorAccounts.find(x => x.id === opDetailState.accountId);
+  if (!a) { closeOperatorDetail(); return; }
+
+  const stats = getOperatorStats(a.nama);
+  const inisial = (a.nama || '-').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+
+  opDetailBody.innerHTML = `
+    <div class="op-detail-head">
+      <div class="akun-operator-avatar op-detail-avatar">${escapeHtml(inisial || '?')}</div>
+      <div>
+        <div class="op-detail-nama">${escapeHtml(a.nama || '-')}</div>
+        <div class="op-detail-id">ID Karyawan: ${escapeHtml(a.idKaryawan || '-')}</div>
+      </div>
+    </div>
+
+    <div class="op-detail-stats">
+      <div class="op-detail-stat-card">
+        <div class="op-detail-stat-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/></svg></div>
+        <div>
+          <div class="op-detail-stat-label">Total Laporan</div>
+          <div class="op-detail-stat-value">${stats.total.toLocaleString('id-ID')}</div>
+        </div>
+      </div>
+      <div class="op-detail-stat-card">
+        <div class="op-detail-stat-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+        <div>
+          <div class="op-detail-stat-label">Terakhir Aktif</div>
+          <div class="op-detail-stat-value op-detail-stat-value-sm">${stats.terakhirAktif ? formatWaktu(stats.terakhirAktif) : '-'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="op-detail-tabs">
+      <button type="button" class="op-detail-tab${opDetailState.tab === 'riwayat' ? ' is-active' : ''}" data-op-tab="riwayat">Riwayat Transaksi</button>
+      <button type="button" class="op-detail-tab${opDetailState.tab === 'info' ? ' is-active' : ''}" data-op-tab="info">Informasi Operator</button>
+    </div>
+
+    <div id="op-detail-tab-content"></div>
+  `;
+
+  opDetailBody.querySelectorAll('[data-op-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      opDetailState.tab = btn.dataset.opTab;
+      opDetailState.page = 1;
+      renderOperatorDetail();
+    });
+  });
+
+  const contentEl = opDetailBody.querySelector('#op-detail-tab-content');
+  if (opDetailState.tab === 'riwayat') {
+    renderOperatorDetailRiwayat(contentEl, stats);
+  } else {
+    renderOperatorDetailInfo(contentEl, a, stats);
+  }
+}
+
+function renderOperatorDetailRiwayat(el, stats) {
+  const totalItems = stats.laporan.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / opDetailState.pageSize));
+  opDetailState.page = Math.min(opDetailState.page, totalPages);
+  const start = (opDetailState.page - 1) * opDetailState.pageSize;
+  const pageItems = stats.laporan.slice(start, start + opDetailState.pageSize);
+
+  el.innerHTML = `
+    <p class="op-detail-tab-hint">Daftar riwayat transaksi yang dilakukan oleh operator ini.</p>
+    <div class="op-detail-table-wrap">
+      <table class="op-detail-table">
+        <thead>
+          <tr>
+            <th>Tanggal &amp; Waktu</th>
+            <th>Lokasi</th>
+            <th>Pemilik Barang</th>
+            <th>Jumlah Item</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageItems.length ? pageItems.map(t => `
+            <tr>
+              <td>${formatWaktu(t.createdAt)}</td>
+              <td>${escapeHtml(t.lokasi || '-')}</td>
+              <td>${escapeHtml(t.pemilik || '-')}</td>
+              <td>${(t.jumlah || 0).toLocaleString('id-ID')}</td>
+              <td><button type="button" class="btn-secondary op-detail-btn-detail" data-entry-id="${t.id}">Lihat Detail</button></td>
+            </tr>
+          `).join('') : `<tr><td colspan="5" class="empty-state">Operator ini belum memiliki riwayat transaksi.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+    ${totalItems ? `
+      <div class="op-detail-pagination">
+        <button type="button" class="kds-page-btn" id="op-detail-prev" ${opDetailState.page <= 1 ? 'disabled' : ''}>&lsaquo;</button>
+        <button type="button" class="kds-page-btn is-active">${opDetailState.page}</button>
+        <button type="button" class="kds-page-btn" id="op-detail-next" ${opDetailState.page >= totalPages ? 'disabled' : ''}>&rsaquo;</button>
+      </div>
+    ` : ''}
+  `;
+
+  el.querySelectorAll('.op-detail-btn-detail').forEach(btn => {
+    btn.addEventListener('click', () => openKdsDetailModal(btn.dataset.entryId));
+  });
+  const prevBtn = el.querySelector('#op-detail-prev');
+  const nextBtn = el.querySelector('#op-detail-next');
+  if (prevBtn) prevBtn.addEventListener('click', () => { opDetailState.page--; renderOperatorDetailRiwayat(el, stats); });
+  if (nextBtn) nextBtn.addEventListener('click', () => { opDetailState.page++; renderOperatorDetailRiwayat(el, stats); });
+}
+
+function renderOperatorDetailInfo(el, a, stats) {
+  el.innerHTML = `
+    <p class="op-detail-tab-hint">Data akun dan ringkasan aktivitas operator ini.</p>
+    <div class="op-detail-info-grid">
+      <div class="op-detail-info-item"><span>Nama Operator</span><strong>${escapeHtml(a.nama || '-')}</strong></div>
+      <div class="op-detail-info-item"><span>ID Karyawan</span><strong>${escapeHtml(a.idKaryawan || '-')}</strong></div>
+      <div class="op-detail-info-item"><span>Tanggal Daftar</span><strong>${a.createdAt ? formatWaktu(a.createdAt) : '-'}</strong></div>
+      <div class="op-detail-info-item"><span>Terakhir Aktif</span><strong>${stats.terakhirAktif ? formatWaktu(stats.terakhirAktif) : '-'}</strong></div>
+      <div class="op-detail-info-item"><span>Laporan Masuk</span><strong>${stats.masuk.toLocaleString('id-ID')}</strong></div>
+      <div class="op-detail-info-item"><span>Laporan Keluar</span><strong>${stats.keluar.toLocaleString('id-ID')}</strong></div>
+    </div>
+    <div class="op-detail-info-danger">
+      <div>
+        <strong>Hapus Akun Operator</strong>
+        <p>Operator ini tidak akan bisa masuk lagi sampai mendaftar ulang. Riwayat transaksi yang sudah tercatat tidak ikut terhapus.</p>
+      </div>
+      <button type="button" class="btn-danger-outline" id="op-detail-btn-hapus">Hapus Akun</button>
+    </div>
+  `;
+
+  el.querySelector('#op-detail-btn-hapus').addEventListener('click', async () => {
+    if (!confirm(`Hapus akun operator "${a.nama}"? Operator ini tidak akan bisa masuk lagi sampai mendaftar ulang.`)) return;
+    try {
+      const fb = window.gudangFirebase;
+      // TANPA Cloud Functions: ini SOFT-DELETE. Dokumen profil di
+      // operator/{uid} dihapus langsung (diizinkan firestore.rules
+      // untuk isAdmin()), yang membuat operator ini langsung kehilangan
+      // akses ke semua data (exists() check di rules gagal). Akun
+      // Firebase Auth-nya sendiri TIDAK ikut terhapus (client SDK cuma
+      // bisa hapus akun sendiri) — kalau perlu dibersihkan total, hapus
+      // manual lewat Firebase Console > Authentication > Users.
+      // `a.id` di sini adalah UID Firebase Auth (document ID di koleksi
+      // operator), bukan NIK lagi.
+      await fb.deleteDoc(fb.doc(fb.db, 'operator', a.id));
+      showToast('Akun operator dinonaktifkan (profil dihapus). Akun Auth-nya masih ada di sistem — bersihkan manual lewat Firebase Console kalau perlu.');
+      closeOperatorDetail();
+    } catch (err) {
+      showToast('Gagal menghapus akun: ' + err.message, 'error');
+    }
+  });
+}
 
 /* ---- Modal detail lokasi ---- */
 function openLokasiModal(lokasi) {
@@ -5922,26 +6249,44 @@ if (searchRiwayatOp) searchRiwayatOp.addEventListener('input', renderRiwayatOper
 /* ==========================================================================
    EXPORT EXCEL & HAPUS SEMUA (admin)
 ========================================================================== */
-document.getElementById('btn-export').addEventListener('click', () => {
+document.getElementById('btn-export').addEventListener('click', async () => {
   if (currentEntries.length === 0) {
     showToast('Belum ada data untuk diunduh.', 'error');
     return;
   }
-  const wb = XLSX.utils.book_new();
-  const groups = {};
-  currentEntries.forEach(t => {
-    const ym = (t.tanggal && /^\d{4}-\d{2}/.test(t.tanggal)) ? t.tanggal.slice(0, 7) : 'lainnya';
-    (groups[ym] = groups[ym] || []).push(t);
-  });
-  Object.keys(groups).sort().forEach(ym => {
-    const list = groups[ym].slice().sort((a, b) => (a.tanggal !== b.tanggal ? (a.tanggal < b.tanggal ? -1 : 1) : a.createdAt - b.createdAt));
-    const label = ym === 'lainnya' ? 'Lainnya' : `${BULAN_PANJANG[parseInt(ym.split('-')[1], 10) - 1]} ${ym.split('-')[0]}`;
-    XLSX.utils.book_append_sheet(wb, buildMonthSheet(list), safeSheetName(label));
-  });
-  XLSX.utils.book_append_sheet(wb, buildStokSheet(currentEntries), RINGKASAN_SHEET);
-  wb.SheetNames.unshift(wb.SheetNames.pop());
-  XLSX.writeFile(wb, `salinan-laporan-gudang-${todayISO()}.xlsx`);
-  showToast('Salinan cadangan berhasil diunduh.');
+  const btnExportEl = document.getElementById('btn-export');
+  const originalLabel = btnExportEl.innerHTML;
+  btnExportEl.disabled = true;
+  btnExportEl.textContent = 'Menyiapkan file...';
+  try {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Sistem Gudang';
+    workbook.created = new Date();
+
+    // Ringkasan Stok ditaruh sebagai tab pertama supaya langsung kelihatan
+    // saat file dibuka.
+    addStokSheet(workbook, RINGKASAN_SHEET, currentEntries);
+
+    const groups = {};
+    currentEntries.forEach(t => {
+      const ym = (t.tanggal && /^\d{4}-\d{2}/.test(t.tanggal)) ? t.tanggal.slice(0, 7) : 'lainnya';
+      (groups[ym] = groups[ym] || []).push(t);
+    });
+    Object.keys(groups).sort().forEach(ym => {
+      const list = groups[ym].slice().sort((a, b) => (a.tanggal !== b.tanggal ? (a.tanggal < b.tanggal ? -1 : 1) : a.createdAt - b.createdAt));
+      const label = ym === 'lainnya' ? 'Lainnya' : `${BULAN_PANJANG[parseInt(ym.split('-')[1], 10) - 1]} ${ym.split('-')[0]}`;
+      addMonthSheet(workbook, safeSheetName(label), list);
+    });
+
+    await downloadExcelWorkbook(workbook, `salinan-laporan-gudang-${todayISO()}.xlsx`);
+    showToast('Salinan cadangan berhasil diunduh.');
+  } catch (err) {
+    console.error('Gagal membuat file Excel:', err);
+    showToast('Gagal membuat file Excel: ' + err.message, 'error');
+  } finally {
+    btnExportEl.disabled = false;
+    btnExportEl.innerHTML = originalLabel;
+  }
 });
 
 document.getElementById('btn-clear').addEventListener('click', async () => {
