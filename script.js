@@ -765,6 +765,16 @@ class KatalogManager {
         this.barangPage = 1;
       }
 
+      // Optimistic update lokal: begitu tulisan ke Firestore SUKSES, langsung
+      // perbarui barangOverlay + render ulang tabel DI SINI juga — jangan
+      // cuma mengandalkan listener onSnapshot(barangBaruCol) di
+      // startAllOverlayListeners() yang datang belakangan. onSnapshot tetap
+      // jalan seperti biasa dan akan menimpa dengan data server begitu tiba
+      // (idempotent, tidak masalah dobel render), tapi user tidak lagi
+      // menunggu bolak-balik ke server dulu sebelum tabel berubah.
+      barangOverlay.set(docId, { kode, nama, deleted: false });
+      rebuildBarangOptions();
+
       showToast('Barang berhasil disimpan');
       this.closeBarangForm();
     } catch (err) {
@@ -781,15 +791,29 @@ class KatalogManager {
     if (!confirm(`Hapus kode barang "${kode}"? Tindakan ini tidak dapat dibatalkan.`)) return;
     try {
       const fb = await waitForFirebase();
-      
+      const existing = barangOverlay.get(kode) || {};
+
       // Soft-delete: set deleted:true in overlay
       await upsertOverlayDoc('barangBaru', kode, {
         kode,
-        nama: (barangOverlay.get(kode) || {}).nama || kode,
-        ditambahOleh: (barangOverlay.get(kode) || {}).ditambahOleh || '-',
+        nama: existing.nama || kode,
+        ditambahOleh: existing.ditambahOleh || '-',
         deleted: true
       });
-      
+
+      // Optimistic update lokal — sama alasannya seperti di saveBarang():
+      // begitu Firestore konfirmasi tulisan sukses, langsung tandai
+      // deleted:true di Map lokal & render ulang tabel di sini juga,
+      // supaya baris yang baru dihapus langsung hilang dari layar tanpa
+      // menunggu giliran listener onSnapshot(barangBaruCol) menyala lagi.
+      barangOverlay.set(kode, {
+        kode,
+        nama: existing.nama || kode,
+        ditambahOleh: existing.ditambahOleh || '-',
+        deleted: true,
+      });
+      rebuildBarangOptions();
+
       showToast('Kode barang berhasil dihapus');
     } catch (err) {
       showToast('Gagal menghapus barang: ' + err.message, 'error');
@@ -964,6 +988,10 @@ class KatalogManager {
           ditambahOleh: '-',
           deleted: true
         });
+        // Optimistic update lokal untuk nama LAMA (lihat catatan di
+        // deleteSupplier() / saveBarang() soal kenapa ini perlu).
+        supplierOverlay.set(oldId, { nama: this.supplierEditing, deleted: true });
+        customSupplier = customSupplier.filter(s => sanitizeMasterId(s) !== oldId);
       }
 
       // Add/update new supplier
@@ -973,6 +1001,12 @@ class KatalogManager {
         createdAt: Date.now(),
         deleted: false
       });
+
+      // Optimistic update lokal untuk nama BARU — langsung perbarui Map +
+      // render ulang tabel di sini, jangan tunggu onSnapshot(supplierBaruCol).
+      supplierOverlay.set(docId, { nama, deleted: false });
+      if (!customSupplier.some(s => sanitizeMasterId(s) === docId)) customSupplier.push(nama);
+      rebuildSupplierOptions();
 
       showToast('Supplier berhasil disimpan');
       this.closeSupplierForm();
@@ -999,7 +1033,12 @@ class KatalogManager {
         ditambahOleh: '-',
         deleted: true
       });
-      
+
+      // Optimistic update lokal — lihat catatan di deleteBarang().
+      supplierOverlay.set(docId, { nama, deleted: true });
+      customSupplier = customSupplier.filter(s => sanitizeMasterId(s) !== docId);
+      rebuildSupplierOptions();
+
       showToast('Supplier berhasil dihapus');
     } catch (err) {
       showToast('Gagal menghapus supplier: ' + err.message, 'error');
@@ -1075,6 +1114,9 @@ class KatalogManager {
           ditambahOleh: '-',
           deleted: true
         });
+        // Optimistic update lokal untuk nama LAMA.
+        pemilikOverlay.set(oldId, { nama: this.pemilikEditing, deleted: true });
+        customPemilik = customPemilik.filter(p => sanitizeMasterId(p) !== oldId);
       }
 
       // Add/update new pemilik
@@ -1084,6 +1126,11 @@ class KatalogManager {
         createdAt: Date.now(),
         deleted: false
       });
+
+      // Optimistic update lokal untuk nama BARU.
+      pemilikOverlay.set(docId, { nama, deleted: false });
+      if (!customPemilik.some(p => sanitizeMasterId(p) === docId)) customPemilik.push(nama);
+      rebuildPemilikOptions();
 
       showToast('Pemilik berhasil disimpan');
       this.closePemilikForm();
@@ -1110,7 +1157,12 @@ class KatalogManager {
         ditambahOleh: '-',
         deleted: true
       });
-      
+
+      // Optimistic update lokal — lihat catatan di deleteBarang().
+      pemilikOverlay.set(docId, { nama, deleted: true });
+      customPemilik = customPemilik.filter(p => sanitizeMasterId(p) !== docId);
+      rebuildPemilikOptions();
+
       showToast('Pemilik berhasil dihapus');
     } catch (err) {
       showToast('Gagal menghapus pemilik: ' + err.message, 'error');
@@ -1186,6 +1238,9 @@ class KatalogManager {
           ditambahOleh: '-',
           deleted: true
         });
+        // Optimistic update lokal untuk nama LAMA.
+        lokasiOverlay.set(oldId, { nama: this.lokasiEditing, deleted: true });
+        customLokasi = customLokasi.filter(l => sanitizeMasterId(l) !== oldId);
       }
 
       // Add/update new lokasi
@@ -1195,6 +1250,11 @@ class KatalogManager {
         createdAt: Date.now(),
         deleted: false
       });
+
+      // Optimistic update lokal untuk nama BARU.
+      lokasiOverlay.set(docId, { nama, deleted: false });
+      if (!customLokasi.some(l => sanitizeMasterId(l) === docId)) customLokasi.push(nama);
+      rebuildLokasiOptions();
 
       showToast('Lokasi berhasil disimpan');
       this.closeLokasiForm();
@@ -1221,7 +1281,12 @@ class KatalogManager {
         ditambahOleh: '-',
         deleted: true
       });
-      
+
+      // Optimistic update lokal — lihat catatan di deleteBarang().
+      lokasiOverlay.set(docId, { nama, deleted: true });
+      customLokasi = customLokasi.filter(l => sanitizeMasterId(l) !== docId);
+      rebuildLokasiOptions();
+
       showToast('Lokasi berhasil dihapus');
     } catch (err) {
       showToast('Gagal menghapus lokasi: ' + err.message, 'error');
@@ -2713,8 +2778,19 @@ function initFirestoreConnection() {
     // pertama kali dimuat (waktu itu auth.currentUser masih null, jadi
     // langsung kena permission-denied dan listener-nya mati permanen,
     // tidak pernah nyambung lagi walau user berhasil login sesudahnya).
-    startBarangBaruListener();
-    startPemilikBaruListener();
+    // CATATAN: startBarangBaruListener() SUDAH DIHAPUS (duplikat dengan
+    // listener barangBaru di startAllOverlayListeners() / subscribeToUpdates()
+    // di bawah — lihat catatan di bekas lokasi fungsinya).
+    // CATATAN v3.2: startPemilikBaruListener() JUGA DIHAPUS dari sini — ini
+    // listener onSnapshot(fb.pemilikBaruCol) KEDUA yang berjalan bersamaan
+    // dengan listener pemilikBaru di startAllOverlayListeners() (dipanggil
+    // dari katalogManager.subscribeToUpdates() di bawah), sama persis
+    // dengan bug lama startBarangBaruListener(). Listener yang dihapus ini
+    // juga TIDAK memfilter dokumen deleted:true, jadi setiap kali dua
+    // listener ini balapan menerima snapshot, hasil edit/hapus pemilik bisa
+    // "keteper" balik oleh listener lama yang membawa data belum ter-update
+    // — inilah sebab edit/hapus pemilik kelihatan "berhasil" (toast sukses,
+    // tulisan Firestore benar) tapi tidak berubah/hilang di layar.
     // Subscription katalog (panel Pengelolaan Barang/Pemilik) juga baru
     // aman dipasang di sini, SETELAH login — lihat catatan di
     // KatalogManager.subscribeToUpdates().
@@ -2784,31 +2860,6 @@ function showToast(message, type = 'success') {
    firestore.rules) — panel "Pengelolaan Barang" adalah satu-satunya
    pemakai penulisan koleksi ini sekarang.
 ========================================================================== */
-function computeBarangMerged() {
-  const result = [];
-  const seen = new Set();
-  (MASTER_DATA.barang || []).forEach(b => {
-    seen.add(b.kode);
-    const o = barangOverlay.get(b.kode);
-    if (o) {
-      if (!o.deleted) result.push({ kode: b.kode, nama: o.nama });
-    } else {
-      result.push(b);
-    }
-  });
-  barangOverlay.forEach((o, kode) => {
-    if (!seen.has(kode) && !o.deleted) result.push({ kode, nama: o.nama });
-  });
-  return result;
-}
-
-function rebuildBarangOptions() {
-  BARANG_OPTIONS = computeBarangMerged();
-  if (selBarang && selBarang.updateOptions) selBarang.updateOptions(BARANG_OPTIONS);
-  if (typeof katalogManager !== 'undefined') {
-    katalogManager.renderBarangList(document.getElementById('search-barang')?.value || '');
-  }
-}
 
 // firebase-config.js dimuat sebagai <script type="module">, yang butuh waktu
 // fetch 3 file dari gstatic.com sebelum window.gudangFirebase benar-benar
@@ -2845,31 +2896,14 @@ async function tambahBarangBaru(item) {
   });
 }
 
-// CATATAN: fungsi ini SENGAJA tidak lagi dipanggil otomatis di top-level
-// (dulu dipanggil langsung di sini begitu file ini dimuat — itu akar
-// masalah error "Missing or insufficient permissions" yang muncul di
-// console sebelum user login, dan menyebabkan dropdown "kode barang baru"
-// tidak pernah tersinkron seumur sesi). Sekarang dipanggil dari dalam
-// initFirestoreConnection() -> startListening(), yaitu SETELAH user
-// benar-benar login (enterApp sudah dipanggil, auth.currentUser sudah
-// terisi dengan role yang valid).
-function startBarangBaruListener() {
-  const fb = window.gudangFirebase;
-  if (!fb || !fb.barangBaruCol) return;
-  // Unsubscribe listener lama dulu (kalau ada) supaya tidak numpuk listener
-  // ganda kalau fungsi ini terpanggil berkali-kali (retry koneksi, logout
-  // lalu login lagi, dsb).
-  if (unsubscribeBarangBaru) unsubscribeBarangBaru();
-  unsubscribeBarangBaru = fb.onSnapshot(fb.barangBaruCol, (snapshot) => {
-    customBarang = snapshot.docs.map(d => {
-      const data = d.data();
-      return { kode: data.kode, nama: data.nama };
-    });
-    rebuildBarangOptions();
-  }, (err) => {
-    console.error('Gagal memuat daftar barang baru:', err);
-  });
-}
+// CATATAN: startBarangBaruListener() yang dulu ada di sini SUDAH DIHAPUS —
+// itu listener onSnapshot(fb.barangBaruCol) KEDUA yang berjalan bersamaan
+// dengan listener di startAllOverlayListeners() (di bawah), saling
+// balapan pada setiap perubahan data. Listener itu juga TIDAK memfilter
+// dokumen deleted:true, jadi ikut berkontribusi pada total barang yang
+// suka berubah-ubah (kadang beda jumlah) tergantung listener mana yang
+// selesai duluan. Sekarang barangBaru cukup satu listener saja, di
+// startAllOverlayListeners().
 
 /* ==========================================================================
    PEMILIK BARANG (PABRIK) — diambil dari MASTER_DATA.pemilik (data.js),
@@ -2883,6 +2917,9 @@ function startBarangBaruListener() {
 // Daftar awal pemilik barang/pabrik — dari data.js. Boleh dikosongkan
 // sepenuhnya di data.js — isi manual lewat dropdown form akan otomatis
 // tersimpan & tersinkron.
+// Catatan: PEMILIK_OPTIONS di bawah ini sudah tidak dipakai lagi setelah
+// perbaikan v3.2 (rebuildPemilikOptions() sekarang pakai computeSimpleMerged
+// yang baca MASTER_DATA.pemilik langsung) — dibiarkan saja, tidak berbahaya.
 const PEMILIK_OPTIONS = MASTER_DATA.pemilik || [];
 
 let customPemilik = [];
@@ -2894,12 +2931,28 @@ let customPemilik = [];
 // declared` — yang bikin SELURUH script.js gagal dimuat browser (makanya
 // semua tombol, termasuk "show password" di layar login, ikut mati total).
 
+// PENTING v3.2: sebelumnya fungsi ini cuma MENGHITUNG daftar gabungan dan
+// mengembalikannya (dipakai buat ngisi dropdown), TAPI TIDAK PERNAH
+// menyimpan hasilnya ke variabel module-level PEMILIK_OPTIONS_MERGED —
+// padahal itulah variabel yang dibaca tabel "Pengelolaan Pemilik" di panel
+// admin (lihat renderSimpleList()). Akibatnya tabel admin itu selamanya
+// menampilkan daftar statis awal (MASTER_DATA.pemilik), walau tulisan ke
+// Firestore sudah sukses dan listener real-time-nya jalan — persis gejala
+// "berhasil tapi nggak kegantt/kehapus di layar". Sekarang dipakai
+// computeSimpleMerged() yang sama seperti supplier/lokasi, supaya juga
+// otomatis menyembunyikan entri deleted:true dan konsisten datanya.
 function rebuildPemilikOptions() {
-  const known = new Set(PEMILIK_OPTIONS.map(o => String(o).toLowerCase()));
-  const extra = customPemilik.filter(o => !known.has(String(o).toLowerCase()));
-  const merged = [...PEMILIK_OPTIONS, ...extra];
-  if (selPemilik && selPemilik.updateOptions) selPemilik.updateOptions(merged);
-  return merged;
+  PEMILIK_OPTIONS_MERGED = computeSimpleMerged('pemilik');
+  if (selPemilik && selPemilik.updateOptions) selPemilik.updateOptions(PEMILIK_OPTIONS_MERGED);
+  // PENTING: sama seperti rebuildBarangOptions(), tabel "Pengelolaan Barang"
+  // (tab Pemilik Barang) di panel admin HARUS ikut di-refresh di sini.
+  // Sebelumnya baris ini tidak ada, jadi tulisan ke Firestore (tambah/edit/
+  // hapus pemilik) sukses tapi tabelnya di layar tidak pernah berubah
+  // sampai user pindah tab atau ngetik ulang di kolom pencarian.
+  if (typeof katalogManager !== 'undefined' && katalogManager.renderPemilikList) {
+    katalogManager.renderPemilikList(document.getElementById('search-pemilik')?.value || '');
+  }
+  return PEMILIK_OPTIONS_MERGED;
 }
 
 async function tambahPemilikBaru(nama) {
@@ -2913,20 +2966,10 @@ async function tambahPemilikBaru(nama) {
   });
 }
 
-// Sama seperti startBarangBaruListener() di atas — sekarang dipanggil dari
-// initFirestoreConnection() -> startListening(), bukan otomatis di
-// top-level saat file dimuat.
-function startPemilikBaruListener() {
-  const fb = window.gudangFirebase;
-  if (!fb || !fb.pemilikBaruCol) return;
-  if (unsubscribePemilikBaru) unsubscribePemilikBaru();
-  unsubscribePemilikBaru = fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
-    customPemilik = snapshot.docs.map(d => d.data().nama);
-    rebuildPemilikOptions();
-  }, (err) => {
-    console.error('Gagal memuat daftar pemilik baru:', err);
-  });
-}
+// CATATAN v3.2: startPemilikBaruListener() (listener onSnapshot kedua untuk
+// pemilikBaru, duplikat dengan listener di startAllOverlayListeners() di
+// bawah) SUDAH DIHAPUS dari sini — lihat catatan di startListening()
+// (dekat awal file) untuk detail bug yang ditimbulkannya.
 
 /* ==========================================================================
    UNIFIED OVERLAY LISTENERS & HELPERS — barang, supplier, pemilik, lokasi
@@ -2966,28 +3009,82 @@ async function upsertOverlayDoc(collectionName, docId, data) {
   }
 }
 
-// Compute merged barang options (base + overlay)
+// Compute merged barang options (base + overlay).
+// PENTING: overlay HARUS bisa menimpa/menyembunyikan item dari katalog
+// dasar (MASTER_DATA.barang) — bukan cuma menambah item baru. Sebelumnya
+// versi ini asal concat base+overlay tanpa cek override, jadi edit/hapus
+// terhadap barang bawaan katalog dasar TIDAK PERNAH kelihatan efeknya di
+// layar walau tulisannya ke Firestore sudah sukses.
 function computeBarangMerged() {
   const base = MASTER_DATA.barang || [];
-  const overlayItems = Array.from(barangOverlay.values())
-    .filter(o => !base.some(b => b.kode === o.kode) && !o.deleted);
-  return [...base, ...overlayItems];
+  const seen = new Set();
+  const result = [];
+  base.forEach(b => {
+    seen.add(b.kode);
+    const o = barangOverlay.get(b.kode);
+    if (o) {
+      if (!o.deleted) result.push({ kode: b.kode, nama: o.nama });
+      // kalau o.deleted true, item ini sengaja TIDAK dimasukkan (sudah dihapus admin)
+    } else {
+      result.push(b);
+    }
+  });
+  barangOverlay.forEach((o, kode) => {
+    if (!seen.has(kode) && !o.deleted) result.push({ kode, nama: o.nama });
+  });
+  return result;
 }
 
-// Compute merged options for simple entities (supplier, pemilik, lokasi)
+// PENTING v3.3: computeSimpleMerged() SEBELUMNYA cuma menerima daftar nama
+// yang MASIH AKTIF (deleted:false) dari listener (lihat customSupplier/
+// customPemilik/customLokasi) — begitu sebuah item DASAR (dari data.js)
+// dihapus, catatan bahwa item itu pernah "dihapus" langsung hilang total
+// dari memori (listener-nya memang sengaja tidak memasukkan dokumen
+// deleted:true ke array itu). Akibatnya computeSimpleMerged() TIDAK PERNAH
+// bisa tahu kalau item dasar tertentu harus disembunyikan — item itu selalu
+// muncul lagi dari MASTER_DATA[entity], walau tulisan deleted:true ke
+// Firestore-nya sendiri sukses. Sama juga untuk RENAME: nama lama dari
+// katalog dasar tidak pernah ketutup oleh nama barunya.
+// Sekarang dipakai overlay Map (supplierOverlay/pemilikOverlay/
+// lokasiOverlay, id = sanitizeMasterId(nama)) yang menyimpan SEMUA
+// dokumen overlay APAPUN status deleted-nya — persis pola yang sudah benar
+// dipakai barangOverlay + computeBarangMerged() di atas.
 function computeSimpleMerged(entity) {
   const base = MASTER_DATA[entity] || [];
-  const overlay = entity === 'supplier' ? customSupplier :
-                  entity === 'pemilik' ? customPemilik :
-                  entity === 'lokasi' ? customLokasi : [];
-  const overlaySet = new Set(overlay.map(o => String(o).toLowerCase()));
-  const baseFiltered = base.filter(b => !overlaySet.has(String(b).toLowerCase()));
-  return [...baseFiltered, ...overlay].sort();
+  const overlay = entity === 'supplier' ? supplierOverlay :
+                  entity === 'pemilik' ? pemilikOverlay :
+                  entity === 'lokasi' ? lokasiOverlay : new Map();
+  const seenIds = new Set();
+  const result = [];
+  base.forEach(b => {
+    const id = sanitizeMasterId(b);
+    seenIds.add(id);
+    const o = overlay.get(id);
+    if (o) {
+      if (!o.deleted) result.push(o.nama);
+      // kalau o.deleted true, item dasar ini sengaja TIDAK dimasukkan
+      // (sudah dihapus admin) — sebelumnya versi ini tidak pernah sampai
+      // ke titik ini karena overlay yang deleted tidak pernah tersimpan.
+    } else {
+      result.push(b);
+    }
+  });
+  overlay.forEach((o, id) => {
+    if (!seenIds.has(id) && !o.deleted) result.push(o.nama);
+  });
+  return result.sort();
 }
 
 function rebuildSupplierOptions() {
   SUPPLIER_OPTIONS = computeSimpleMerged('supplier');
   if (selSupplier && selSupplier.updateOptions) selSupplier.updateOptions(SUPPLIER_OPTIONS);
+  // PENTING: sama seperti rebuildBarangOptions(), tabel "Pengelolaan Barang"
+  // (tab Supplier) di panel admin HARUS ikut di-refresh di sini — sebelumnya
+  // baris ini tidak ada, jadi tambah/edit/hapus supplier sukses ditulis ke
+  // Firestore tapi tabelnya di layar tidak pernah ikut berubah.
+  if (typeof katalogManager !== 'undefined' && katalogManager.renderSupplierList) {
+    katalogManager.renderSupplierList(document.getElementById('search-supplier')?.value || '');
+  }
 }
 
 function rebuildLokasiOptions() {
@@ -3004,12 +3101,28 @@ function rebuildLokasiOptions() {
     });
     dl.appendChild(frag);
   }
+  // PENTING: sama seperti rebuildBarangOptions(), tabel "Pengelolaan Barang"
+  // (tab Lokasi) di panel admin HARUS ikut di-refresh di sini — sebelumnya
+  // baris ini tidak ada, jadi tambah/edit/hapus lokasi sukses ditulis ke
+  // Firestore tapi tabelnya di layar tidak pernah ikut berubah.
+  if (typeof katalogManager !== 'undefined' && katalogManager.renderLokasiList) {
+    katalogManager.renderLokasiList(document.getElementById('search-lokasi')?.value || '');
+  }
 }
 
+// rebuildBarangOptions() dipanggil setiap kali listener barangBaru
+// menerima update. HARUS ikut me-refresh tabel "Pengelolaan Barang" di
+// panel admin (bukan cuma dropdown input laporan) — sebelumnya versi ini
+// cuma update dropdown, jadi tabel admin nggak pernah auto-refresh setelah
+// edit/hapus/tambah, kelihatannya "nggak jalan" padahal tulisan Firestore
+// sudah sukses.
 function rebuildBarangOptions() {
   BARANG_OPTIONS = computeBarangMerged();
   if (selBarang && selBarang.updateOptions) {
     selBarang.updateOptions(BARANG_OPTIONS);
+  }
+  if (typeof katalogManager !== 'undefined' && katalogManager.renderBarangList) {
+    katalogManager.renderBarangList(document.getElementById('search-barang')?.value || '');
   }
 }
 
@@ -3038,8 +3151,10 @@ function startAllOverlayListeners() {
     if (unsubscribeSupplierBaru) unsubscribeSupplierBaru();
     unsubscribeSupplierBaru = fb.onSnapshot(fb.supplierBaruCol, (snapshot) => {
       customSupplier = [];
+      supplierOverlay.clear();
       snapshot.docs.forEach(d => {
         const data = d.data();
+        supplierOverlay.set(d.id, { nama: data.nama, deleted: data.deleted || false });
         if (!data.deleted) customSupplier.push(data.nama);
       });
       rebuildSupplierOptions();
@@ -3053,8 +3168,10 @@ function startAllOverlayListeners() {
     if (unsubscribePemilikBaru) unsubscribePemilikBaru();
     unsubscribePemilikBaru = fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
       customPemilik = [];
+      pemilikOverlay.clear();
       snapshot.docs.forEach(d => {
         const data = d.data();
+        pemilikOverlay.set(d.id, { nama: data.nama, deleted: data.deleted || false });
         if (!data.deleted) customPemilik.push(data.nama);
       });
       rebuildPemilikOptions();
@@ -3068,8 +3185,10 @@ function startAllOverlayListeners() {
     if (unsubscribeLokasiBaruListener) unsubscribeLokasiBaruListener();
     unsubscribeLokasiBaruListener = fb.onSnapshot(fb.lokasiBaruCol, (snapshot) => {
       customLokasi = [];
+      lokasiOverlay.clear();
       snapshot.docs.forEach(d => {
         const data = d.data();
+        lokasiOverlay.set(d.id, { nama: data.nama, deleted: data.deleted || false });
         if (!data.deleted) customLokasi.push(data.nama);
       });
       rebuildLokasiOptions();

@@ -1,44 +1,17 @@
 rules_version = '2';
 // ==========================================================================
-// PERUBAHAN PENTING (v3 — TANPA CLOUD FUNCTIONS):
+// v3.1 — TANPA CLOUD FUNCTIONS, dengan perbaikan field `ditambahOleh` di
+// rule `update` untuk barangBaru / pemilikBaru / supplierBaru / lokasiBaru.
 //
-// Project ini sengaja TETAP di plan Spark (tidak mau pakai billing/Blaze),
-// jadi Cloud Functions (functions/index.js) TIDAK dipakai lagi. Ini
-// mengubah cara role & kode akses pendaftaran diverifikasi dibanding versi
-// sebelumnya (yang pakai custom claim + Admin SDK):
-//
-// 1. ROLE (operator/admin) sekarang ditentukan dari KOLEKSI tempat dokumen
-//    profil user berada, dicek dengan exists() berdasarkan
-//    request.auth.uid sebagai document ID (BUKAN NIK lagi — NIK cuma
-//    field biasa di dalam dokumen, lihat idKaryawan). Ini menggantikan
-//    custom claim `role` yang dulu diset lewat Cloud Function.
-//
-// 2. KODE AKSES PENDAFTARAN divalidasi DI SINI (dalam rules ini, lihat
-//    konstanta KODE_AKSES_OPERATOR / KODE_AKSES_ADMIN di bawah), bukan di
-//    Cloud Function lagi. Trik "registrationGate" dua-langkah: client
-//    menulis dulu ke registrationGate/{uid} berisi kode yang diketik user
-//    — create HANYA diizinkan kalau kodenya cocok. Baru kalau itu sukses,
-//    client boleh menulis dokumen profil ke operator/{uid} atau
-//    admin/{uid} (syaratnya exists(registrationGate/{uid})).
-//    registrationGate TIDAK BISA dibaca siapa pun (allow read: if false)
-//    supaya kode aksesnya tidak bisa dibaca balik lewat query Firestore.
-//
-//    PENTING — batasan yang harus disadari: karena ini bukan lagi rahasia
-//    server (Cloud Function), siapa pun yang punya akses ke project
-//    Firebase ini di Firebase Console (bukan pengunjung biasa aplikasi)
-//    bisa membaca konstanta KODE_AKSES_* di rules ini. Ini trade-off yang
-//    disengaja demi menghindari plan Blaze — kalau nanti mau upgrade ke
-//    Blaze, sebaiknya balik pakai skema Cloud Function (lihat riwayat versi
-//    file ini / functions/index.js) yang jauh lebih aman.
-//
-// 3. GANTI KODE AKSES: cukup edit dua konstanta di bawah lalu
-//    `firebase deploy --only firestore:rules`. Tidak perlu secret/CLI
-//    tambahan seperti versi Cloud Function.
-//
-// 4. "Hapus akun operator" oleh admin sekarang cuma hapus dokumen profil
-//    (soft-delete, lihat rule delete di match /operator/{uid} di bawah) —
-//    akun Firebase Auth-nya sendiri TIDAK ikut terhapus (client SDK cuma
-//    bisa hapus akun sendiri, tidak bisa hapus akun user lain).
+// Perbaikan dari versi sebelumnya:
+// - `update` sekarang pakai isAppUser() (bukan isSignedIn() polos), supaya
+//   konsisten dengan koleksi lain yang butuh role operator/admin.
+// - `affectedKeys().hasOnly([...])` sekarang menyertakan 'ditambahOleh',
+//   sehingga field itu boleh ikut berubah saat update (mis. saat item
+//   "diklaim ulang" oleh operator lain, atau saat proses edit menuliskan
+//   ulang seluruh dokumen termasuk siapa yang menambahkan).
+// - Logika branching berdasarkan hasSize() yang rumit diganti dengan
+//   pengecekan tipe per-field yang lebih jelas dan tidak gampang salah.
 // ==========================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -60,8 +33,6 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && exists(/databases/$(database)/documents/admin/$(request.auth.uid));
     }
-    // Operator maupun admin sama-sama boleh baca/tulis data operasional
-    // (laporan, katalog barang baru, dsb).
     function isAppUser() {
       return isOperator() || isAdmin();
     }
@@ -96,8 +67,6 @@ service cloud.firestore {
                     && request.resource.data.jumlah > 0
                     && request.resource.data.jumlah < 1000000
                     && request.resource.data.updatedAt is number;
-      // Hapus laporan dibatasi admin saja — operator tidak butuh & tidak
-      // seharusnya bisa menghapus riwayat laporan gudang.
       allow delete: if isAdmin();
     }
 
@@ -113,19 +82,22 @@ service cloud.firestore {
                     && request.resource.data.nama.size() < 200
                     && request.resource.data.ditambahOleh is string
                     && request.resource.data.createdAt is number;
-      allow update: if isSignedIn()
-                    && (request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['kode', 'nama', 'deleted']))
-                    && (
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
-                        || 
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
-                        ||
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['kode', 'nama', 'deleted']))
-                    );
+      allow update: if isAppUser()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['kode', 'nama', 'ditambahOleh', 'deleted'])
+                    && (!('kode' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.kode is string
+                            && request.resource.data.kode.size() > 0
+                            && request.resource.data.kode.size() < 100))
+                    && (!('nama' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.nama is string
+                            && request.resource.data.nama.size() > 0
+                            && request.resource.data.nama.size() < 200))
+                    && (!('ditambahOleh' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.ditambahOleh is string
+                            && request.resource.data.ditambahOleh.size() > 0))
+                    && (!('deleted' in request.resource.data.diff(resource.data).affectedKeys())
+                        || request.resource.data.deleted is bool);
       allow delete: if isAdmin();
     }
 
@@ -138,19 +110,18 @@ service cloud.firestore {
                     && request.resource.data.nama.size() < 200
                     && request.resource.data.ditambahOleh is string
                     && request.resource.data.createdAt is number;
-      allow update: if isSignedIn()
-                    && (request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['nama', 'deleted']))
-                    && (
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
-                        || 
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
-                        ||
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['nama', 'deleted']))
-                    );
+      allow update: if isAppUser()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['nama', 'ditambahOleh', 'deleted'])
+                    && (!('nama' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.nama is string
+                            && request.resource.data.nama.size() > 0
+                            && request.resource.data.nama.size() < 200))
+                    && (!('ditambahOleh' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.ditambahOleh is string
+                            && request.resource.data.ditambahOleh.size() > 0))
+                    && (!('deleted' in request.resource.data.diff(resource.data).affectedKeys())
+                        || request.resource.data.deleted is bool);
       allow delete: if isAdmin();
     }
 
@@ -163,19 +134,18 @@ service cloud.firestore {
                     && request.resource.data.nama.size() < 200
                     && request.resource.data.ditambahOleh is string
                     && request.resource.data.createdAt is number;
-      allow update: if isSignedIn()
-                    && (request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['nama', 'deleted']))
-                    && (
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
-                        || 
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
-                        ||
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['nama', 'deleted']))
-                    );
+      allow update: if isAppUser()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['nama', 'ditambahOleh', 'deleted'])
+                    && (!('nama' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.nama is string
+                            && request.resource.data.nama.size() > 0
+                            && request.resource.data.nama.size() < 200))
+                    && (!('ditambahOleh' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.ditambahOleh is string
+                            && request.resource.data.ditambahOleh.size() > 0))
+                    && (!('deleted' in request.resource.data.diff(resource.data).affectedKeys())
+                        || request.resource.data.deleted is bool);
       allow delete: if isAdmin();
     }
 
@@ -188,27 +158,22 @@ service cloud.firestore {
                     && request.resource.data.nama.size() < 200
                     && request.resource.data.ditambahOleh is string
                     && request.resource.data.createdAt is number;
-      allow update: if isSignedIn()
-                    && (request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['nama', 'deleted']))
-                    && (
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
-                        || 
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
-                        ||
-                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
-                         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['nama', 'deleted']))
-                    );
+      allow update: if isAppUser()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['nama', 'ditambahOleh', 'deleted'])
+                    && (!('nama' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.nama is string
+                            && request.resource.data.nama.size() > 0
+                            && request.resource.data.nama.size() < 200))
+                    && (!('ditambahOleh' in request.resource.data.diff(resource.data).affectedKeys())
+                        || (request.resource.data.ditambahOleh is string
+                            && request.resource.data.ditambahOleh.size() > 0))
+                    && (!('deleted' in request.resource.data.diff(resource.data).affectedKeys())
+                        || request.resource.data.deleted is bool);
       allow delete: if isAdmin();
     }
 
     // ---- Koleksi "gerbang" pendaftaran ----
-    // Cuma dipakai sesaat saat pendaftaran untuk membuktikan client tahu
-    // kode akses yang benar (lihat registerViaClientSDK() di script.js).
-    // TIDAK PERNAH bisa dibaca oleh siapa pun, termasuk admin — supaya
-    // kode akses yang tersimpan di sini tidak bisa dibaca balik.
     match /registrationGate/{uid} {
       allow read: if false;
       allow create: if isSignedIn()
@@ -222,15 +187,8 @@ service cloud.firestore {
     }
 
     // ---- Koleksi operator & admin ----
-    // Document ID = UID Firebase Auth (BUKAN NIK lagi). Berisi profil
-    // publik (nama, idKaryawan, createdAt, uid, role) — TIDAK ADA
-    // password/hash sama sekali (password diverifikasi Firebase Auth
-    // sendiri).
     match /operator/{uid} {
       allow read: if isAppUser();
-      // Cuma boleh membuat profil untuk diri sendiri (uid harus sama
-      // dengan yang lagi login), dan HARUS sudah lolos registrationGate
-      // (bukti tahu kode akses operator) di request yang sama sesi.
       allow create: if isSignedIn()
                     && uid == request.auth.uid
                     && exists(/databases/$(database)/documents/registrationGate/$(uid))
@@ -242,10 +200,6 @@ service cloud.firestore {
                     && request.resource.data.idKaryawan is string
                     && request.resource.data.idKaryawan.size() > 0
                     && request.resource.data.createdAt is number;
-      // Admin bisa menghapus profil operator (soft-delete: langsung cabut
-      // akses, walau akun Auth-nya sendiri tetap ada sampai dibersihkan
-      // manual). Operator TIDAK bisa menghapus profilnya sendiri lewat
-      // sini (kalau perlu, harus lewat fitur khusus / minta admin).
       allow delete: if isAdmin();
       allow update: if false;
     }
@@ -262,9 +216,6 @@ service cloud.firestore {
                     && request.resource.data.idKaryawan is string
                     && request.resource.data.idKaryawan.size() > 0
                     && request.resource.data.createdAt is number;
-      // Admin lain boleh menghapus profil admin lain, TAPI tidak boleh
-      // menghapus profilnya sendiri lewat sini (mencegah admin
-      // ter-lockout total secara tidak sengaja kalau dia satu-satunya).
       allow delete: if isAdmin() && uid != request.auth.uid;
       allow update: if false;
     }
