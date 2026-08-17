@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0, user-scalable=yes">
 <title>GDPM — Central Warehouse Recording System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -515,26 +515,6 @@
       <!-- /PANEL: BUAT LAPORAN -->
 
       <!-- ======================================================================
-           PENCARIAN CEPAT — cari barang atau lokasi di seluruh database,
-           hasilnya langsung buka modal detail (barang/lokasi) tanpa perlu
-           pindah tab dulu.
-      ======================================================================= -->
-      <div class="scan-search admin-only" id="admin-scan-search">
-        <div class="scan-search-eyebrow">CARI CEPAT DI SELURUH DATABASE</div>
-        <div class="scan-search-wrap">
-          <div class="scan-search-bar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>
-            <input type="text" id="admin-scan-input" class="scan-search-input" placeholder="Cari nama barang, kode, atau lokasi rak...">
-            <span class="scan-search-kbd">/</span>
-          </div>
-          <div class="scan-search-suggest" id="admin-scan-suggest"></div>
-        </div>
-        <div class="scan-search-chips">
-          <button type="button" class="scan-search-chip" data-preset="stok-kosong">📦 Stok kosong</button>
-        </div>
-      </div>
-
-      <!-- ======================================================================
            TATA LETAK ADMIN — menu tab di atas + konten di bawah, biar
            kelihatan seperti dashboard admin sungguhan dan gampang pindah
            antar bagian tanpa scroll panjang.
@@ -596,94 +576,13 @@
           <button type="button" class="period-tab is-active" data-mode="harian">Harian</button>
           <button type="button" class="period-tab" data-mode="mingguan">Mingguan</button>
           <button type="button" class="period-tab" data-mode="bulanan">Bulanan</button>
-          <button type="button" class="period-tab" data-mode="semua">Semua</button>
+          <button type="button" class="period-tab" data-mode="tahunan">Tahunan</button>
         </div>
         <input type="date" id="period-date-picker" class="period-date">
       </div>
 
       <!-- RINGKASAN -->
       <section id="ringkasan" class="ringkasan">
-        <div class="ringkasan-head">
-          <h3>Ringkasan Laporan</h3>
-          <span class="ringkasan-date" id="ringkasan-date">-</span>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-card stat-masuk">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/></svg>
-            </div>
-            <span class="stat-label">Barang Masuk</span>
-            <span class="stat-value" id="stat-masuk-qty">0</span>
-            <span class="stat-sub">
-              <span id="stat-masuk-count">0 laporan</span>
-              <span class="stat-trend" id="stat-masuk-trend" hidden></span>
-            </span>
-          </div>
-          <div class="stat-card stat-keluar">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/></svg>
-            </div>
-            <span class="stat-label">Barang Keluar</span>
-            <span class="stat-value" id="stat-keluar-qty">0</span>
-            <span class="stat-sub">
-              <span id="stat-keluar-count">0 laporan</span>
-              <span class="stat-trend" id="stat-keluar-trend" hidden></span>
-            </span>
-          </div>
-          <div class="stat-card stat-total">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg>
-            </div>
-            <span class="stat-label">Total Laporan Tercatat</span>
-            <span class="stat-value" id="stat-total-count">0</span>
-            <span class="stat-sub" id="stat-total-range">sepanjang waktu</span>
-          </div>
-          <div class="stat-card stat-operator">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/></svg>
-            </div>
-            <span class="stat-label">Operator Teraktif (7 hari)</span>
-            <span class="stat-value stat-value-text" id="stat-top-operator">-</span>
-            <span class="stat-sub" id="stat-top-operator-sub">belum ada data</span>
-          </div>
-        </div>
-
-        <!-- RINGKASAN PALLET — Pallet Masuk / Pallet Keluar (sesuai periode
-             yang dipilih di atas) dan Total Pallet Saat Ini (stok pallet
-             riil sepanjang waktu, tidak mengikuti filter periode karena ini
-             adalah "posisi stok sekarang", bukan aktivitas dalam rentang
-             waktu tertentu). Dihitung dari field jumlahPallet tiap laporan
-             (hanya laporan yang mencantumkan Qty per Pallet yang punya nilai
-             ini — laporan tanpa info pallet tidak ikut dihitung). -->
-        <div class="ringkasan-head" style="margin-top:18px;">
-          <h3>Ringkasan Pallet</h3>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-card stat-masuk">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
-            </div>
-            <span class="stat-label">Pallet Masuk</span>
-            <span class="stat-value" id="stat-pallet-masuk">0</span>
-            <span class="stat-sub" id="stat-pallet-masuk-sub">periode ini</span>
-          </div>
-          <div class="stat-card stat-keluar">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
-            </div>
-            <span class="stat-label">Pallet Keluar</span>
-            <span class="stat-value" id="stat-pallet-keluar">0</span>
-            <span class="stat-sub" id="stat-pallet-keluar-sub">periode ini</span>
-          </div>
-          <div class="stat-card stat-total">
-            <div class="stat-icon-wrap">
-              <svg class="stat-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
-            </div>
-            <span class="stat-label">Total Pallet Saat Ini</span>
-            <span class="stat-value" id="stat-pallet-saat-ini">0</span>
-            <span class="stat-sub">stok pallet sekarang (semua lokasi)</span>
-          </div>
-        </div>
 
         <!-- PERINGATAN STOK — muncul kalau ada barang kosong atau menipis,
              supaya admin tahu duluan sebelum operator lapor "stok habis". -->
@@ -695,66 +594,173 @@
           <div class="stok-warning-list" id="stok-warning-list"></div>
         </div>
 
-        <!-- Dashboard visual: Arus Barang + Lokasi Terpadat berdampingan,
-             Barang Paling Sering Dicatat full-width di bawahnya. -->
-        <div class="vis-row-top">
+        <!-- PERGERAKAN BARANG — 6 metrik aktivitas pada periode terpilih,
+             masing-masing dengan tren dibanding periode sebelumnya. -->
+        <div class="dash-card dash-move-card">
+          <div class="dash-card-title">Pergerakan Barang <span class="dash-card-title-date" id="dash-move-date">-</span></div>
+          <div class="dash-move-grid">
 
-          <div class="vis-card">
-            <div class="vis-card-title"><span class="vis-card-icon">📈</span>Arus Barang <span class="vis-card-sub" id="arus-trend-wrap"><span class="vis-trend" id="arus-trend" hidden></span></span></div>
-            <div id="arus-empty" class="vis-empty">Belum ada transaksi pada periode ini.</div>
-            <div id="arus-split" class="arus-split" hidden>
-              <div class="arus-bar">
-                <div class="arus-seg arus-seg-masuk" id="arus-seg-masuk" style="width:0%"></div>
-                <div class="arus-seg arus-seg-keluar" id="arus-seg-keluar" style="width:0%"></div>
+            <div class="dash-move-item">
+              <div class="dash-move-icon dash-c-hijau">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/></svg>
               </div>
-              <div class="arus-legend">
-                <span class="arus-legend-item"><i class="dot dot-masuk"></i>Masuk <b id="arus-pct-masuk">0%</b></span>
-                <span class="arus-legend-item"><i class="dot dot-keluar"></i>Keluar <b id="arus-pct-keluar">0%</b></span>
+              <div class="dash-move-body">
+                <span class="dash-move-label">Laporan Masuk</span>
+                <div><span class="dash-move-value" id="dash-masuk-count">0</span><span class="dash-move-unit">laporan</span></div>
+              </div>
+              <span class="dash-move-trend" id="dash-masuk-count-trend" hidden></span>
+            </div>
+
+            <div class="dash-move-item">
+              <div class="dash-move-icon dash-c-merah">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/></svg>
+              </div>
+              <div class="dash-move-body">
+                <span class="dash-move-label">Laporan Keluar</span>
+                <div><span class="dash-move-value" id="dash-keluar-count">0</span><span class="dash-move-unit">laporan</span></div>
+              </div>
+              <span class="dash-move-trend" id="dash-keluar-count-trend" hidden></span>
+            </div>
+
+            <div class="dash-move-item">
+              <div class="dash-move-icon dash-c-hijau dash-pcs-badge">PCS</div>
+              <div class="dash-move-body">
+                <span class="dash-move-label">Total PCS Masuk</span>
+                <div><span class="dash-move-value" id="dash-masuk-qty">0</span><span class="dash-move-unit">pcs</span></div>
+              </div>
+              <span class="dash-move-trend" id="dash-masuk-qty-trend" hidden></span>
+            </div>
+
+            <div class="dash-move-item">
+              <div class="dash-move-icon dash-c-merah dash-pcs-badge">PCS</div>
+              <div class="dash-move-body">
+                <span class="dash-move-label">Total PCS Keluar</span>
+                <div><span class="dash-move-value" id="dash-keluar-qty">0</span><span class="dash-move-unit">pcs</span></div>
+              </div>
+              <span class="dash-move-trend" id="dash-keluar-qty-trend" hidden></span>
+            </div>
+
+            <div class="dash-move-item">
+              <div class="dash-move-icon dash-c-hijau">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
+              </div>
+              <div class="dash-move-body">
+                <span class="dash-move-label">Pallet Masuk</span>
+                <div><span class="dash-move-value" id="dash-pallet-masuk">0</span><span class="dash-move-unit">pallet</span></div>
+              </div>
+              <span class="dash-move-trend" id="dash-pallet-masuk-trend" hidden></span>
+            </div>
+
+            <div class="dash-move-item">
+              <div class="dash-move-icon dash-c-merah">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg>
+              </div>
+              <div class="dash-move-body">
+                <span class="dash-move-label">Pallet Keluar</span>
+                <div><span class="dash-move-value" id="dash-pallet-keluar">0</span><span class="dash-move-unit">pallet</span></div>
+              </div>
+              <span class="dash-move-trend" id="dash-pallet-keluar-trend" hidden></span>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- BARIS 2: Kondisi Stok · Barang Terbanyak · Blok/Rak Terpadat -->
+        <div class="dash-row-3">
+
+          <div class="dash-card">
+            <div class="dash-card-title">Kondisi Stok Saat Ini</div>
+            <div class="dash-card-subtitle">Data stok aktual di gudang</div>
+            <div class="dash-mini-grid">
+              <div class="dash-mini-stat">
+                <div class="dash-mini-icon dash-c-hijau"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div>
+                <span class="dash-mini-label">Total PCS</span>
+                <div><span class="dash-mini-value" id="dash-total-pcs">0</span><span class="dash-mini-unit"> pcs</span></div>
+              </div>
+              <div class="dash-mini-stat">
+                <div class="dash-mini-icon dash-c-navy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 12h18"/><path d="M8 7V4h8v3"/></svg></div>
+                <span class="dash-mini-label">Total Pallet</span>
+                <div><span class="dash-mini-value" id="dash-total-pallet">0</span><span class="dash-mini-unit"> pallet</span></div>
+              </div>
+              <div class="dash-mini-stat">
+                <div class="dash-mini-icon dash-c-navy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2h6a1 1 0 0 1 1 1v2H8V3a1 1 0 0 1 1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="m9 13 2 2 4-4"/></svg></div>
+                <span class="dash-mini-label">Total Jenis Barang</span>
+                <div><span class="dash-mini-value" id="dash-total-jenis">0</span><span class="dash-mini-unit"> jenis</span></div>
+              </div>
+              <div class="dash-mini-stat">
+                <div class="dash-mini-icon dash-c-navy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="7" width="13" height="10" rx="1"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.6"/><circle cx="17.5" cy="19" r="1.6"/></svg></div>
+                <span class="dash-mini-label">Total Supplier</span>
+                <div><span class="dash-mini-value" id="dash-total-supplier">0</span><span class="dash-mini-unit"> supplier</span></div>
+              </div>
+              <div class="dash-mini-stat">
+                <div class="dash-mini-icon dash-c-emas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></div>
+                <span class="dash-mini-label">Total Pemilik Barang</span>
+                <div><span class="dash-mini-value" id="dash-total-pemilik">0</span><span class="dash-mini-unit"> pemilik</span></div>
+              </div>
+            </div>
+            <button type="button" class="dash-link-btn" id="dash-btn-stok">Lihat detail stok →</button>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-title">Barang dengan Stok Terbanyak <span class="dash-card-title-note">(Top 5)</span></div>
+            <div id="dash-top-barang-empty" class="vis-empty" hidden>Belum ada data stok.</div>
+            <div class="dash-rank-list" id="dash-top-barang-list"></div>
+            <button type="button" class="dash-link-btn" id="dash-btn-barang">Lihat semua barang →</button>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-title">Blok / Rak Terpadat <span class="dash-card-title-note">(Top 5)</span></div>
+            <div id="dash-top-blok-empty" class="vis-empty" hidden>Belum ada data lokasi.</div>
+            <div class="dash-blok-list" id="dash-top-blok-list"></div>
+            <button type="button" class="dash-link-btn" id="dash-btn-blok">Lihat semua lokasi →</button>
+          </div>
+
+        </div>
+
+        <!-- BARIS 3: Jenis Barang Masuk & Keluar · Aktivitas Operator · Aktivitas Terbaru -->
+        <div class="dash-row-3">
+
+          <div class="dash-card">
+            <div class="dash-card-title">Jenis Barang Masuk &amp; Keluar</div>
+            <div class="dash-jenis-grid">
+              <div class="dash-jenis-item">
+                <div class="dash-mini-icon dash-c-hijau"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div>
+                <span class="dash-jenis-label">Jenis Barang Masuk</span>
+                <div><span class="dash-jenis-value" id="dash-jenis-masuk">0</span></div>
+                <span class="dash-jenis-unit">jenis barang</span>
+                <div class="dash-jenis-sub">Top 5 Barang Masuk</div>
+                <button type="button" class="dash-mini-link" id="dash-btn-jenis-masuk">Lihat detail →</button>
+              </div>
+              <div class="dash-jenis-item">
+                <div class="dash-mini-icon dash-c-merah"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg></div>
+                <span class="dash-jenis-label">Jenis Barang Keluar</span>
+                <div><span class="dash-jenis-value" id="dash-jenis-keluar">0</span></div>
+                <span class="dash-jenis-unit">jenis barang</span>
+                <div class="dash-jenis-sub">Top 5 Barang Keluar</div>
+                <button type="button" class="dash-mini-link" id="dash-btn-jenis-keluar">Lihat detail →</button>
               </div>
             </div>
           </div>
 
-          <div class="vis-card">
-            <div class="vis-card-title"><span class="vis-card-icon">📍</span>Lokasi Terpadat (stok saat ini)</div>
-            <div id="top-lokasi-empty" class="vis-empty">Belum ada stok di lokasi manapun.</div>
-            <div class="bar-list" id="top-lokasi-list"></div>
+          <div class="dash-card">
+            <div class="dash-card-title">Aktivitas Operator Hari Ini</div>
+            <table class="dash-op-table">
+              <thead><tr><th>Operator</th><th>Laporan Masuk</th><th>Laporan Keluar</th></tr></thead>
+              <tbody id="dash-operator-tbody"></tbody>
+            </table>
+            <div id="dash-operator-empty" class="vis-empty" hidden>Belum ada aktivitas operator pada periode ini.</div>
+            <button type="button" class="dash-link-btn" id="dash-btn-operator">Lihat semua operator →</button>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-title">Aktivitas Terbaru</div>
+            <div id="dash-activity-empty" class="vis-empty" hidden>Belum ada aktivitas tercatat.</div>
+            <div class="dash-activity-list" id="dash-activity-list"></div>
+            <button type="button" class="dash-link-btn" id="dash-btn-aktivitas">Lihat semua aktivitas →</button>
           </div>
 
         </div>
 
-        <div class="vis-card vis-card-full">
-          <div class="vis-card-title"><span class="vis-card-icon">🏆</span>Barang Paling Sering Dicatat (30 hari)</div>
-          <div id="top-barang-empty" class="vis-empty">Belum ada data barang.</div>
-          <div class="bar-list" id="top-barang-list"></div>
-        </div>
-
-        <!-- STOK PALLET PER BLOK — rekap stok pallet & pcs saat ini per blok
-             gudang (blok = huruf pertama kode lokasi, contoh lokasi
-             "A-01-01" masuk blok A). Ini "posisi stok sekarang" jadi selalu
-             dihitung dari SELURUH data (tidak mengikuti filter periode di
-             atas), sama seperti kartu "Total Pallet Saat Ini". -->
-        <div class="vis-card vis-card-full">
-          <div class="vis-card-title"><span class="vis-card-icon">🧱</span>Status Lokasi per Blok — Terisi &amp; Kosong (saat ini) <span class="vis-card-sub" id="blok-total-wrap"><span class="vis-blok-total" id="blok-total" hidden></span></span></div>
-          <p class="vis-hint muted">Klik satu blok untuk lihat peta rak — hijau = terisi, putus-putus = kosong.</p>
-          <div id="blok-empty" class="vis-empty">Belum ada data lokasi tercatat.</div>
-          <div class="bar-list" id="blok-list"></div>
-        </div>
-        <!-- STATUS LOKASI PER BARANG — cari satu barang (dari seluruh master
-             data, bukan cuma yang sudah pernah tercatat), lalu klik untuk
-             lihat peta blok/rak mana saja yang terisi & kosong khusus untuk
-             barang itu. Ditaruh di dashboard (bukan di Pengelolaan Barang)
-             supaya jadi satu tempat untuk "cek stok & lokasi", terpisah dari
-             tempat kelola data master (tambah/edit/hapus SKU). -->
-        <div class="vis-card vis-card-full">
-          <div class="vis-card-title"><span class="vis-card-icon">🔎</span>Status Lokasi per Barang — Terisi &amp; Kosong (saat ini)</div>
-          <p class="vis-hint muted">Cari nama atau kode barang, lalu klik hasilnya untuk lihat peta rak — hijau = terisi, putus-putus = kosong.</p>
-          <div class="search-inline" style="margin-bottom:12px;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" id="search-lokasi-barang" placeholder="Ketik nama atau kode barang...">
-          </div>
-          <div id="lokasi-barang-empty" class="vis-empty">Ketik nama atau kode barang di atas untuk mulai mencari.</div>
-          <div class="bar-list" id="lokasi-barang-list"></div>
-        </div>
       </section>
 
       </div>
@@ -764,7 +770,7 @@
            dipakai admin juga, jadi wrapper ini TIDAK diberi class
            operator-only; visibilitasnya untuk operator diatur lewat JS
            saat pindah tab menu di atas). -->
-      <div class="op-panel" id="op-panel-katalog" data-op-panel="katalog">
+      <div class="op-panel operator-only" id="op-panel-katalog" data-op-panel="katalog">
 
       <!-- KATALOG & STOK — admin & operator (read-only untuk operator).
            Satu tempat jelajah: bisa dicari/di-browse dari sisi Barang,
@@ -793,6 +799,211 @@
 
       </div>
       <!-- /PANEL: KATALOG BARANG -->
+
+      <!-- ======================================================================
+           PANEL: KATALOG & STOK — ADMIN. Berbeda dari #op-panel-katalog di
+           atas (yang browse-only, dipakai bersama operator): panel ini
+           khusus admin, berbasis FILTER + TABEL HASIL PENCARIAN per
+           kedatangan barang (bukan folder). Alurnya: admin isi filter →
+           klik "Terapkan Filter" → hasil muncul per baris kedatangan →
+           klik "Detail" untuk lihat detail kedatangan → dari situ bisa
+           lanjut ke "Riwayat Kedatangan" untuk lihat semua riwayat barang
+           yang sama.
+      ======================================================================= -->
+      <div class="op-panel admin-panel admin-only" id="admin-panel-katalog-stok" data-admin-panel="katalog" hidden>
+
+        <div class="card kds-filter-card">
+          <div class="kds-filter-head">
+            <h3>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3Z"/></svg>
+              Filter Katalog &amp; Stok
+            </h3>
+            <button type="button" class="btn-link-small" id="kds-btn-reset">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+              Reset Filter
+            </button>
+          </div>
+
+          <div class="kds-filter-grid">
+            <div class="field">
+              <label>Nama Barang</label>
+              <div class="searchable" id="kds-sel-barang">
+                <button type="button" class="select-btn" id="kds-sel-barang-btn">
+                  <span class="select-value" id="kds-sel-barang-value" data-placeholder="Semua barang...">Semua barang...</span>
+                  <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="dropdown-panel" id="kds-sel-barang-panel" hidden>
+                  <div class="search-box"><input type="text" id="kds-sel-barang-search" placeholder="Ketik untuk mencari..."></div>
+                  <div class="options-list" id="kds-sel-barang-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Supplier</label>
+              <div class="searchable" id="kds-sel-supplier">
+                <button type="button" class="select-btn" id="kds-sel-supplier-btn">
+                  <span class="select-value" id="kds-sel-supplier-value" data-placeholder="Semua supplier...">Semua supplier...</span>
+                  <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="dropdown-panel" id="kds-sel-supplier-panel" hidden>
+                  <div class="search-box"><input type="text" id="kds-sel-supplier-search" placeholder="Ketik untuk mencari..."></div>
+                  <div class="options-list" id="kds-sel-supplier-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Pemilik Barang</label>
+              <div class="searchable" id="kds-sel-pemilik">
+                <button type="button" class="select-btn" id="kds-sel-pemilik-btn">
+                  <span class="select-value" id="kds-sel-pemilik-value" data-placeholder="Semua pemilik...">Semua pemilik...</span>
+                  <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="dropdown-panel" id="kds-sel-pemilik-panel" hidden>
+                  <div class="search-box"><input type="text" id="kds-sel-pemilik-search" placeholder="Ketik untuk mencari..."></div>
+                  <div class="options-list" id="kds-sel-pemilik-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Lokasi Rak</label>
+              <div class="searchable" id="kds-sel-lokasi">
+                <button type="button" class="select-btn" id="kds-sel-lokasi-btn">
+                  <span class="select-value" id="kds-sel-lokasi-value" data-placeholder="Pilih lokasi rak...">Pilih lokasi rak...</span>
+                  <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="dropdown-panel" id="kds-sel-lokasi-panel" hidden>
+                  <div class="search-box"><input type="text" id="kds-sel-lokasi-search" placeholder="Ketik untuk mencari..."></div>
+                  <div class="options-list" id="kds-sel-lokasi-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Operator Input</label>
+              <div class="searchable" id="kds-sel-operator">
+                <button type="button" class="select-btn" id="kds-sel-operator-btn">
+                  <span class="select-value" id="kds-sel-operator-value" data-placeholder="Pilih operator...">Pilih operator...</span>
+                  <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="dropdown-panel" id="kds-sel-operator-panel" hidden>
+                  <div class="search-box"><input type="text" id="kds-sel-operator-search" placeholder="Ketik untuk mencari..."></div>
+                  <div class="options-list" id="kds-sel-operator-list"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Tanggal Kedatangan</label>
+              <div class="kds-date-range">
+                <input type="date" id="kds-tanggal-dari" aria-label="Dari tanggal">
+                <span class="kds-date-arrow">→</span>
+                <input type="date" id="kds-tanggal-sampai" aria-label="Sampai tanggal">
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Status Stok</label>
+              <select id="kds-status-stok" class="kds-native-select">
+                <option value="semua">Semua status</option>
+                <option value="tersedia">Tersedia</option>
+                <option value="menipis">Menipis</option>
+                <option value="habis">Habis</option>
+              </select>
+            </div>
+
+            <div class="field kds-filter-actions">
+              <button type="button" class="btn-secondary kds-btn-terapkan" id="kds-btn-terapkan">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3Z"/></svg>
+                Terapkan Filter
+              </button>
+              <button type="button" class="btn-outline" id="kds-btn-simpan">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+                Simpan Filter
+              </button>
+            </div>
+          </div>
+
+          <div class="kds-info-banner" id="kds-info-banner">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            <span>Menampilkan data berdasarkan filter yang dipilih. Anda dapat mengubah filter untuk hasil yang berbeda.</span>
+          </div>
+        </div>
+
+        <div class="card kds-results-card">
+          <div class="kds-results-head">
+            <h3>Hasil Pencarian <span class="kds-count-badge" id="kds-result-count">0 hasil</span></h3>
+            <div class="kds-results-actions">
+              <label class="kds-sort-label">Urutkan:
+                <select id="kds-sort" class="kds-native-select">
+                  <option value="tanggal-desc">Tanggal Kedatangan (Terbaru)</option>
+                  <option value="tanggal-asc">Tanggal Kedatangan (Terlama)</option>
+                  <option value="nama-asc">Nama Barang (A-Z)</option>
+                  <option value="pcs-desc">Total PCS (Terbesar)</option>
+                </select>
+              </label>
+              <button type="button" class="btn-secondary" id="kds-btn-export">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                Export
+              </button>
+            </div>
+          </div>
+
+          <div class="empty-state" id="kds-empty" hidden>Tidak ada kedatangan barang yang cocok dengan filter ini.</div>
+
+          <div class="kds-table-wrap" id="kds-table-wrap">
+            <table class="kds-table">
+              <thead>
+                <tr>
+                  <th class="kds-th-nama">Nama Barang</th>
+                  <th>Supplier</th>
+                  <th>Pemilik Barang</th>
+                  <th>Total PCS</th>
+                  <th>Total Pallet</th>
+                  <th>Lokasi</th>
+                  <th>Terakhir Masuk</th>
+                  <th>Operator Input</th>
+                  <th class="kds-th-aksi">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="kds-table-body"></tbody>
+            </table>
+          </div>
+
+          <div class="kds-summary-row">
+            <div class="kds-summary-panel">
+              <div class="kds-summary-title">Ringkasan Hasil Filter</div>
+              <div class="kds-summary-grid">
+                <div class="kds-summary-item"><span>Total PCS</span><strong id="kds-sum-pcs">0 pcs</strong></div>
+                <div class="kds-summary-item"><span>Total Pallet</span><strong id="kds-sum-pallet">0 pallet</strong></div>
+                <div class="kds-summary-item"><span>Jumlah Kedatangan</span><strong id="kds-sum-kedatangan">0 kali</strong></div>
+                <div class="kds-summary-item"><span>Lokasi Tersebar</span><strong id="kds-sum-lokasi">0 lokasi</strong></div>
+              </div>
+            </div>
+            <div class="kds-filter-active-panel">
+              <div class="kds-summary-title">Filter Aktif</div>
+              <div class="kds-active-filters" id="kds-active-filters"><span class="kds-no-filter">Belum ada filter yang diterapkan.</span></div>
+              <button type="button" class="btn-link-small kds-danger-link" id="kds-btn-clear-all" hidden>Bersihkan semua filter</button>
+            </div>
+          </div>
+
+          <div class="kds-pagination">
+            <span class="kds-page-info" id="kds-page-info">Menampilkan 0 dari 0 hasil</span>
+            <div class="kds-page-controls" id="kds-page-controls"></div>
+            <label class="kds-page-size">Tampilan per halaman:
+              <select id="kds-page-size">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+      </div>
+      <!-- /PANEL: KATALOG & STOK — ADMIN -->
 
       <!-- PANEL: RIWAYAT LAPORAN SAYA — operator only. Menampilkan hanya
            laporan yang dimasukkan oleh operator yang sedang login
@@ -1180,6 +1391,24 @@
     <div class="modal-panel">
       <button type="button" id="modal-close" class="modal-close" aria-label="Tutup">&times;</button>
       <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: DETAIL KEDATANGAN BARANG (Katalog & Stok — admin) -->
+  <div id="kds-detail-modal" class="modal-overlay" hidden>
+    <div class="modal-panel">
+      <button type="button" class="modal-close" id="kds-detail-close" aria-label="Tutup">&times;</button>
+      <h2 class="modal-title">Detail Kedatangan Barang</h2>
+      <div id="kds-detail-body"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: RIWAYAT KEDATANGAN BARANG (Katalog & Stok — admin) -->
+  <div id="kds-riwayat-modal" class="modal-overlay" hidden>
+    <div class="modal-panel modal-panel-wide">
+      <button type="button" class="modal-close" id="kds-riwayat-close" aria-label="Tutup">&times;</button>
+      <h2 class="modal-title">Riwayat Kedatangan Barang</h2>
+      <div id="kds-riwayat-body"></div>
     </div>
   </div>
 

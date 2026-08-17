@@ -178,6 +178,13 @@ function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// Helper kecil: set textContent elemen by id, aman kalau elemennya belum
+// ada di DOM (mis. saat dipanggil dari panel yang sedang tidak aktif).
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -2113,14 +2120,16 @@ if (opNav) {
 /* ==========================================================================
    MENU NAVIGASI ADMIN — pindah antar panel (Dashboard / Katalog & Stok /
    Operator / Riwayat) supaya halaman admin tidak jadi satu scroll panjang
-   berisi semua section sekaligus. Panel "Katalog & Stok" memakai ulang
-   elemen #op-panel-katalog yang sama dengan punya operator (kontennya
-   memang dipakai bersama oleh kedua peran).
+   berisi semua section sekaligus. Panel "Katalog & Stok" khusus admin
+   memakai #admin-panel-katalog-stok sendiri (lihat KATALOG & STOK — ADMIN
+   di bawah) — TIDAK lagi memakai ulang #op-panel-katalog punya operator,
+   supaya tampilan filter+tabel admin bisa berbeda dari folder-browse
+   operator tanpa saling mempengaruhi.
 ========================================================================== */
 const adminNav = document.getElementById('admin-nav');
 const adminPanels = {
   dashboard: document.getElementById('admin-panel-dashboard'),
-  katalog: document.getElementById('op-panel-katalog'),
+  katalog: document.getElementById('admin-panel-katalog-stok'),
   operator: document.getElementById('admin-panel-operator'),
   riwayat: document.getElementById('admin-panel-riwayat'),
   kelola: document.getElementById('admin-panel-katalog'),
@@ -2136,6 +2145,7 @@ function switchAdminPanel(panel) {
   });
   if (panel === 'operator') renderAkunOperator();
   if (panel === 'riwayat') renderRiwayat();
+  if (panel === 'katalog') renderKdsPanel();
 }
 
 document.querySelectorAll('.admin-nav-btn').forEach(btn => {
@@ -2410,6 +2420,7 @@ function renderAll() {
   renderRiwayat();
   renderRiwayatOperator();
   renderAkunOperator();
+  renderKdsPanel();
 }
 
 let currentOperatorAccounts = [];
@@ -2780,6 +2791,558 @@ selPemilik = setupSearchableSelect({
   // bisa (lewat menu Katalog).
   onSelect: () => {},
 });
+
+/* ==========================================================================
+   KATALOG & STOK — ADMIN
+   Panel filter + tabel hasil pencarian, satu baris = satu kedatangan
+   (transaksi jenis "masuk"). Klik "Detail" membuka modal detail kedatangan,
+   dari situ admin bisa lanjut ke modal Riwayat Kedatangan (semua kedatangan
+   untuk kombinasi barang+supplier+pemilik yang sama).
+========================================================================== */
+const kdsBarangValueEl = document.getElementById('kds-sel-barang-value');
+let kdsSelBarang, kdsSelSupplier, kdsSelPemilik, kdsSelLokasi, kdsSelOperator;
+
+if (kdsBarangValueEl) {
+  kdsSelBarang = setupSearchableSelect({
+    id: 'kds-sel-barang', options: BARANG_OPTIONS,
+    getLabel: o => o.nama, getSub: o => o.kode,
+    placeholder: 'Semua barang...', onSelect: () => {},
+  });
+  kdsSelSupplier = setupSearchableSelect({
+    id: 'kds-sel-supplier', options: MASTER_DATA.supplier || [],
+    getLabel: o => o, placeholder: 'Semua supplier...', onSelect: () => {},
+  });
+  kdsSelPemilik = setupSearchableSelect({
+    id: 'kds-sel-pemilik', options: rebuildPemilikOptions(),
+    getLabel: o => o, placeholder: 'Semua pemilik...', onSelect: () => {},
+  });
+  kdsSelLokasi = setupSearchableSelect({
+    id: 'kds-sel-lokasi', options: LOKASI_OPTIONS,
+    getLabel: o => o, placeholder: 'Pilih lokasi rak...', onSelect: () => {},
+  });
+  kdsSelOperator = setupSearchableSelect({
+    id: 'kds-sel-operator', options: [],
+    getLabel: o => o, placeholder: 'Pilih operator...', onSelect: () => {},
+  });
+}
+
+// Filter yang SEDANG DITERAPKAN (hanya berubah saat klik "Terapkan Filter"
+// atau "Reset Filter" / "Bersihkan semua filter") — dipisah dari nilai
+// mentah di masing-masing dropdown supaya admin bisa ganti-ganti pilihan
+// dropdown dulu tanpa hasil tabel langsung berubah-ubah.
+let kdsAppliedFilters = {};
+let kdsSortMode = 'tanggal-desc';
+let kdsPage = 1;
+let kdsPageSize = 10;
+
+const AMBANG_STOK_HABIS = 0;
+
+function kdsStatusLevel(t) {
+  const stok = getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi);
+  if (stok <= AMBANG_STOK_HABIS) return 'habis';
+  if (stok < AMBANG_STOK_MENIPIS) return 'menipis';
+  return 'tersedia';
+}
+
+function kdsGetArrivalRows() {
+  return currentEntries.filter(t => t.jenis === 'masuk');
+}
+
+function kdsApplyFilters(rows, f) {
+  return rows.filter(t => {
+    if (f.barang && t.kodeBarang !== f.barang.kode) return false;
+    if (f.supplier && t.supplier !== f.supplier) return false;
+    if (f.pemilik && t.pemilik !== f.pemilik) return false;
+    if (f.lokasi && t.lokasi !== f.lokasi) return false;
+    if (f.operator && t.operator !== f.operator) return false;
+    if (f.dari && t.tanggal && t.tanggal < f.dari) return false;
+    if (f.sampai && t.tanggal && t.tanggal > f.sampai) return false;
+    if (f.status && f.status !== 'semua' && kdsStatusLevel(t) !== f.status) return false;
+    return true;
+  });
+}
+
+function kdsSortRows(rows, mode) {
+  const sorted = [...rows];
+  switch (mode) {
+    case 'tanggal-asc':
+      sorted.sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || a.createdAt - b.createdAt);
+      break;
+    case 'nama-asc':
+      sorted.sort((a, b) => (a.namaBarang || '').localeCompare(b.namaBarang || ''));
+      break;
+    case 'pcs-desc':
+      sorted.sort((a, b) => (b.jumlah || 0) - (a.jumlah || 0));
+      break;
+    case 'tanggal-desc':
+    default:
+      sorted.sort((a, b) => (b.tanggal || '').localeCompare(a.tanggal || '') || b.createdAt - a.createdAt);
+  }
+  return sorted;
+}
+
+function kdsFilterLabel(key, f) {
+  switch (key) {
+    case 'barang': return `Nama Barang: ${f.barang.nama}`;
+    case 'supplier': return `Supplier: ${f.supplier}`;
+    case 'pemilik': return `Pemilik Barang: ${f.pemilik}`;
+    case 'lokasi': return `Lokasi Rak: ${f.lokasi}`;
+    case 'operator': return `Operator Input: ${f.operator}`;
+    case 'dari': return `Dari: ${formatTanggal(f.dari)}`;
+    case 'sampai': return `Sampai: ${formatTanggal(f.sampai)}`;
+    case 'status': return `Status Stok: ${f.status.charAt(0).toUpperCase() + f.status.slice(1)}`;
+    default: return '';
+  }
+}
+
+function kdsRemoveFilter(key) {
+  const clearMap = {
+    barang: () => { delete kdsAppliedFilters.barang; kdsSelBarang && kdsSelBarang.reset(); },
+    supplier: () => { delete kdsAppliedFilters.supplier; kdsSelSupplier && kdsSelSupplier.reset(); },
+    pemilik: () => { delete kdsAppliedFilters.pemilik; kdsSelPemilik && kdsSelPemilik.reset(); },
+    lokasi: () => { delete kdsAppliedFilters.lokasi; kdsSelLokasi && kdsSelLokasi.reset(); },
+    operator: () => { delete kdsAppliedFilters.operator; kdsSelOperator && kdsSelOperator.reset(); },
+    dari: () => { delete kdsAppliedFilters.dari; const el = document.getElementById('kds-tanggal-dari'); if (el) el.value = ''; },
+    sampai: () => { delete kdsAppliedFilters.sampai; const el = document.getElementById('kds-tanggal-sampai'); if (el) el.value = ''; },
+    status: () => { delete kdsAppliedFilters.status; const el = document.getElementById('kds-status-stok'); if (el) el.value = 'semua'; },
+  };
+  if (clearMap[key]) clearMap[key]();
+  kdsPage = 1;
+  renderKdsResults();
+}
+
+function kdsRenderActiveFilters() {
+  const wrap = document.getElementById('kds-active-filters');
+  const clearAllBtn = document.getElementById('kds-btn-clear-all');
+  if (!wrap) return;
+  const keys = Object.keys(kdsAppliedFilters).filter(k => kdsAppliedFilters[k]);
+  if (keys.length === 0) {
+    wrap.innerHTML = '<span class="kds-no-filter">Belum ada filter yang diterapkan.</span>';
+    if (clearAllBtn) clearAllBtn.hidden = true;
+    return;
+  }
+  if (clearAllBtn) clearAllBtn.hidden = false;
+  wrap.innerHTML = keys.map(k => `
+    <span class="kds-chip" data-key="${k}">
+      ${escapeHtml(kdsFilterLabel(k, kdsAppliedFilters))}
+      <button type="button" data-remove-key="${k}" aria-label="Hapus filter">&times;</button>
+    </span>
+  `).join('');
+  wrap.querySelectorAll('[data-remove-key]').forEach(btn => {
+    btn.addEventListener('click', () => kdsRemoveFilter(btn.dataset.removeKey));
+  });
+}
+
+function kdsRenderPagination(totalPages, totalItems) {
+  const controls = document.getElementById('kds-page-controls');
+  const info = document.getElementById('kds-page-info');
+  if (!controls || !info) return;
+
+  const startItem = totalItems === 0 ? 0 : (kdsPage - 1) * kdsPageSize + 1;
+  const endItem = Math.min(kdsPage * kdsPageSize, totalItems);
+  info.textContent = `Menampilkan ${startItem.toLocaleString('id-ID')} - ${endItem.toLocaleString('id-ID')} dari ${totalItems.toLocaleString('id-ID')} hasil`;
+
+  controls.innerHTML = '';
+  const mkBtn = (label, page, opts = {}) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'kds-page-btn' + (opts.active ? ' is-active' : '');
+    b.textContent = label;
+    b.disabled = !!opts.disabled;
+    if (!opts.disabled) b.addEventListener('click', () => { kdsPage = page; renderKdsResults(); });
+    return b;
+  };
+
+  controls.appendChild(mkBtn('«', kdsPage - 1, { disabled: kdsPage <= 1 }));
+  const maxButtons = 5;
+  let start = Math.max(1, kdsPage - Math.floor(maxButtons / 2));
+  let end = Math.min(totalPages, start + maxButtons - 1);
+  start = Math.max(1, end - maxButtons + 1);
+  for (let p = start; p <= end; p++) {
+    controls.appendChild(mkBtn(String(p), p, { active: p === kdsPage }));
+  }
+  controls.appendChild(mkBtn('»', kdsPage + 1, { disabled: kdsPage >= totalPages }));
+}
+
+function kdsBuildRow(t) {
+  const initials = getInitials(t.operator);
+  return `
+    <tr>
+      <td class="kds-th-nama">
+        <div class="kds-item-box">
+          <span class="kds-item-icon">📦</span>
+          <div>
+            <div class="kds-item-nama">${escapeHtml(t.namaBarang || '-')}</div>
+            <div class="kds-item-kode">Kode Barang: ${escapeHtml(t.kodeBarang || '-')}</div>
+          </div>
+        </div>
+      </td>
+      <td>${escapeHtml(t.supplier || '-')}</td>
+      <td>${escapeHtml(t.pemilik || '-')}</td>
+      <td class="kds-td-num">${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
+      <td class="kds-td-num">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0} pallet</td>
+      <td class="mono">${escapeHtml(t.lokasi || '-')}</td>
+      <td>${formatTanggal(t.tanggal)}</td>
+      <td>
+        <span class="kds-operator">
+          <span class="akun-operator-avatar kds-avatar-sm">${escapeHtml(initials)}</span>
+          ${escapeHtml(t.operator || '-')}
+        </span>
+      </td>
+      <td class="kds-th-aksi">
+        <button type="button" class="kds-btn-detail" data-entry-id="${escapeHtml(t.id || '')}">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+          Detail
+        </button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderKdsResults() {
+  const tbody = document.getElementById('kds-table-body');
+  const empty = document.getElementById('kds-empty');
+  const tableWrap = document.getElementById('kds-table-wrap');
+  const countBadge = document.getElementById('kds-result-count');
+  if (!tbody) return;
+
+  const allRows = kdsGetArrivalRows();
+  const filtered = kdsSortRows(kdsApplyFilters(allRows, kdsAppliedFilters), kdsSortMode);
+
+  countBadge.textContent = `${filtered.length.toLocaleString('id-ID')} hasil`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    tableWrap.hidden = true;
+    empty.hidden = false;
+  } else {
+    tableWrap.hidden = false;
+    empty.hidden = true;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / kdsPageSize));
+    if (kdsPage > totalPages) kdsPage = totalPages;
+    const startIdx = (kdsPage - 1) * kdsPageSize;
+    const pageRows = filtered.slice(startIdx, startIdx + kdsPageSize);
+    tbody.innerHTML = pageRows.map(kdsBuildRow).join('');
+    tbody.querySelectorAll('[data-entry-id]').forEach(btn => {
+      btn.addEventListener('click', () => openKdsDetailModal(btn.dataset.entryId));
+    });
+    kdsRenderPagination(totalPages, filtered.length);
+  }
+
+  // Ringkasan hasil filter (dihitung dari SEMUA hasil filter, bukan cuma
+  // yang tampil di halaman saat ini).
+  const totalPcs = filtered.reduce((s, t) => s + (t.jumlah || 0), 0);
+  const totalPallet = filtered.reduce((s, t) => s + (t.jumlahPallet || 0), 0);
+  const lokasiSet = new Set(filtered.map(t => t.lokasi).filter(Boolean));
+  setText('kds-sum-pcs', `${totalPcs.toLocaleString('id-ID')} pcs`);
+  setText('kds-sum-pallet', `${roundPalletDisplay(totalPallet)} pallet`);
+  setText('kds-sum-kedatangan', `${filtered.length.toLocaleString('id-ID')} kali`);
+  setText('kds-sum-lokasi', `${lokasiSet.size.toLocaleString('id-ID')} lokasi`);
+
+  kdsRenderActiveFilters();
+}
+
+function kdsReadFiltersFromInputs() {
+  const f = {};
+  const barang = kdsSelBarang && kdsSelBarang.getValue();
+  const supplier = kdsSelSupplier && kdsSelSupplier.getValue();
+  const pemilik = kdsSelPemilik && kdsSelPemilik.getValue();
+  const lokasi = kdsSelLokasi && kdsSelLokasi.getValue();
+  const operator = kdsSelOperator && kdsSelOperator.getValue();
+  const dari = document.getElementById('kds-tanggal-dari')?.value || '';
+  const sampai = document.getElementById('kds-tanggal-sampai')?.value || '';
+  const status = document.getElementById('kds-status-stok')?.value || 'semua';
+  if (barang) f.barang = barang;
+  if (supplier) f.supplier = supplier;
+  if (pemilik) f.pemilik = pemilik;
+  if (lokasi) f.lokasi = lokasi;
+  if (operator) f.operator = operator;
+  if (dari) f.dari = dari;
+  if (sampai) f.sampai = sampai;
+  if (status && status !== 'semua') f.status = status;
+  return f;
+}
+
+function kdsResetFilterInputs() {
+  kdsSelBarang && kdsSelBarang.reset();
+  kdsSelSupplier && kdsSelSupplier.reset();
+  kdsSelPemilik && kdsSelPemilik.reset();
+  kdsSelLokasi && kdsSelLokasi.reset();
+  kdsSelOperator && kdsSelOperator.reset();
+  const dari = document.getElementById('kds-tanggal-dari');
+  const sampai = document.getElementById('kds-tanggal-sampai');
+  const status = document.getElementById('kds-status-stok');
+  if (dari) dari.value = '';
+  if (sampai) sampai.value = '';
+  if (status) status.value = 'semua';
+}
+
+// Refresh opsi dropdown filter dari data terbaru (barang/supplier/pemilik/
+// lokasi bisa berubah lewat menu Pengelolaan Barang, operator bisa
+// bertambah lewat laporan baru) — dipanggil tiap kali panel dibuka.
+function kdsRefreshFilterOptions() {
+  if (!kdsSelBarang) return;
+  kdsSelBarang.updateOptions(BARANG_OPTIONS);
+  kdsSelSupplier.updateOptions(MASTER_DATA.supplier || []);
+  kdsSelPemilik.updateOptions(rebuildPemilikOptions());
+  kdsSelLokasi.updateOptions(LOKASI_OPTIONS);
+  const operatorNames = Array.from(new Set(currentEntries.filter(t => t.jenis === 'masuk' && t.operator).map(t => t.operator))).sort((a, b) => a.localeCompare(b));
+  kdsSelOperator.updateOptions(operatorNames);
+}
+
+function renderKdsPanel() {
+  if (currentRole() !== 'admin') return;
+  kdsRefreshFilterOptions();
+  renderKdsResults();
+}
+
+const kdsBtnTerapkan = document.getElementById('kds-btn-terapkan');
+if (kdsBtnTerapkan) {
+  kdsBtnTerapkan.addEventListener('click', () => {
+    kdsAppliedFilters = kdsReadFiltersFromInputs();
+    kdsPage = 1;
+    renderKdsResults();
+  });
+}
+
+const kdsBtnReset = document.getElementById('kds-btn-reset');
+if (kdsBtnReset) {
+  kdsBtnReset.addEventListener('click', () => {
+    kdsResetFilterInputs();
+    kdsAppliedFilters = {};
+    kdsPage = 1;
+    renderKdsResults();
+  });
+}
+
+const kdsBtnClearAll = document.getElementById('kds-btn-clear-all');
+if (kdsBtnClearAll) {
+  kdsBtnClearAll.addEventListener('click', () => {
+    kdsResetFilterInputs();
+    kdsAppliedFilters = {};
+    kdsPage = 1;
+    renderKdsResults();
+  });
+}
+
+const kdsBtnSimpan = document.getElementById('kds-btn-simpan');
+if (kdsBtnSimpan) {
+  kdsBtnSimpan.addEventListener('click', () => {
+    const current = kdsReadFiltersFromInputs();
+    if (Object.keys(current).length === 0) {
+      showToast('Pilih setidaknya satu filter dulu sebelum disimpan.', 'error');
+      return;
+    }
+    showToast('Filter ini tersimpan untuk sesi Anda saat ini.');
+  });
+}
+
+const kdsSortSelect = document.getElementById('kds-sort');
+if (kdsSortSelect) {
+  kdsSortSelect.addEventListener('change', () => {
+    kdsSortMode = kdsSortSelect.value;
+    kdsPage = 1;
+    renderKdsResults();
+  });
+}
+
+const kdsPageSizeSelect = document.getElementById('kds-page-size');
+if (kdsPageSizeSelect) {
+  kdsPageSizeSelect.addEventListener('change', () => {
+    kdsPageSize = parseInt(kdsPageSizeSelect.value, 10) || 10;
+    kdsPage = 1;
+    renderKdsResults();
+  });
+}
+
+const kdsBtnExport = document.getElementById('kds-btn-export');
+if (kdsBtnExport) {
+  kdsBtnExport.addEventListener('click', () => {
+    const rows = kdsSortRows(kdsApplyFilters(kdsGetArrivalRows(), kdsAppliedFilters), kdsSortMode);
+    if (rows.length === 0) {
+      showToast('Tidak ada data untuk diunduh.', 'error');
+      return;
+    }
+    const aoa = [
+      ['Nama Barang', 'Kode Barang', 'Supplier', 'Pemilik Barang', 'Total PCS', 'Total Pallet', 'Lokasi', 'Tanggal Kedatangan', 'Operator Input'],
+      ...rows.map(t => [
+        t.namaBarang || '-', t.kodeBarang || '-', t.supplier || '-', t.pemilik || '-',
+        t.jumlah || 0, t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0,
+        t.lokasi || '-', formatTanggal(t.tanggal), t.operator || '-',
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Katalog & Stok');
+    XLSX.writeFile(wb, `katalog-stok-${todayISO()}.xlsx`);
+  });
+}
+
+/* ---- MODAL: DETAIL KEDATANGAN BARANG ---- */
+const kdsDetailModal = document.getElementById('kds-detail-modal');
+const kdsDetailBody = document.getElementById('kds-detail-body');
+const kdsRiwayatModal = document.getElementById('kds-riwayat-modal');
+const kdsRiwayatBody = document.getElementById('kds-riwayat-body');
+
+function closeKdsDetailModal() { if (kdsDetailModal) kdsDetailModal.hidden = true; }
+function closeKdsRiwayatModal() { if (kdsRiwayatModal) kdsRiwayatModal.hidden = true; }
+
+if (kdsDetailModal) {
+  document.getElementById('kds-detail-close').addEventListener('click', closeKdsDetailModal);
+  kdsDetailModal.addEventListener('click', (e) => { if (e.target === kdsDetailModal) closeKdsDetailModal(); });
+}
+if (kdsRiwayatModal) {
+  document.getElementById('kds-riwayat-close').addEventListener('click', closeKdsRiwayatModal);
+  kdsRiwayatModal.addEventListener('click', (e) => { if (e.target === kdsRiwayatModal) closeKdsRiwayatModal(); });
+}
+
+function openKdsDetailModal(entryId) {
+  const t = currentEntries.find(e => e.id === entryId);
+  if (!t || !kdsDetailBody) return;
+
+  kdsDetailBody.innerHTML = `
+    <div class="kds-modal-head">
+      <div class="kds-modal-head-icon">📦</div>
+      <div class="kds-modal-head-info">
+        <div class="kds-mh-nama">${escapeHtml(t.namaBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Kode Barang</strong><br>${escapeHtml(t.kodeBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Supplier</strong><br>${escapeHtml(t.supplier || '-')}</div>
+        <div class="kds-mh-row"><strong>Pemilik Barang</strong><br>📍 ${escapeHtml(t.pemilik || '-')}</div>
+      </div>
+    </div>
+
+    <div class="kds-detail-section">
+      <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Detail Kedatangan</div>
+      <div class="kds-detail-grid">
+        <div class="kds-detail-item">
+          <span>Tanggal Kedatangan</span>
+          <strong>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            ${formatTanggal(t.tanggal)}
+          </strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Lokasi Rak</span>
+          <strong>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            ${escapeHtml(t.lokasi || '-')}
+          </strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Jumlah PCS</span>
+          <strong>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>PCS per Pallet</span>
+          <strong>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'} pcs/pallet</strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Total Pallet</span>
+          <strong>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0} pallet</strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Operator Input</span>
+          <strong>
+            <span class="akun-operator-avatar kds-avatar-sm">${escapeHtml(getInitials(t.operator))}</span>
+            ${escapeHtml(t.operator || '-')}
+          </strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="kds-detail-section">
+      <div class="kds-detail-section-title">Catatan</div>
+      <p class="kds-detail-note">${t.keterangan ? escapeHtml(t.keterangan) : '-'}</p>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" id="kds-btn-lihat-riwayat">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        Riwayat Kedatangan
+      </button>
+      <button type="button" class="btn-secondary modal-cancel" id="kds-btn-tutup-detail">Tutup</button>
+    </div>
+  `;
+  kdsDetailBody.querySelector('#kds-btn-tutup-detail').addEventListener('click', closeKdsDetailModal);
+  kdsDetailBody.querySelector('#kds-btn-lihat-riwayat').addEventListener('click', () => {
+    openKdsRiwayatModal(t.kodeBarang, t.supplier, t.pemilik);
+  });
+
+  kdsDetailModal.hidden = false;
+}
+
+/* ---- MODAL: RIWAYAT KEDATANGAN BARANG ---- */
+function openKdsRiwayatModal(kodeBarang, supplier, pemilik) {
+  if (!kdsRiwayatBody) return;
+  const history = currentEntries
+    .filter(t => t.jenis === 'masuk' && t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik)
+    .sort((a, b) => (b.tanggal || '').localeCompare(a.tanggal || '') || b.createdAt - a.createdAt);
+
+  const first = history[0] || currentEntries.find(t => t.kodeBarang === kodeBarang);
+  const namaBarang = first ? first.namaBarang : kodeBarang;
+
+  const totalPcs = history.reduce((s, t) => s + (t.jumlah || 0), 0);
+  const totalPallet = history.reduce((s, t) => s + (t.jumlahPallet || 0), 0);
+  const lokasiSet = new Set(history.map(t => t.lokasi).filter(Boolean));
+
+  kdsRiwayatBody.innerHTML = `
+    <div class="kds-modal-head">
+      <div class="kds-modal-head-icon">📦</div>
+      <div class="kds-modal-head-info">
+        <div class="kds-mh-nama">${escapeHtml(namaBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Kode Barang</strong><br>${escapeHtml(kodeBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Supplier</strong><br>${escapeHtml(supplier || '-')}</div>
+        <div class="kds-mh-row"><strong>Pemilik Barang</strong><br>${escapeHtml(pemilik || '-')}</div>
+      </div>
+    </div>
+
+    <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Riwayat Kedatangan (${history.length.toLocaleString('id-ID')})</div>
+    <div class="kds-riwayat-table-wrap">
+      <table class="kds-riwayat-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Tanggal Kedatangan</th>
+            <th>Lokasi Rak</th>
+            <th>Jumlah PCS</th>
+            <th>PCS/Pallet</th>
+            <th>Total Pallet</th>
+            <th>Operator Input</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${history.length ? history.map((t, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>${formatTanggal(t.tanggal)}</td>
+              <td class="mono">${escapeHtml(t.lokasi || '-')}</td>
+              <td>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
+              <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
+              <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
+              <td>${escapeHtml(t.operator || '-')}</td>
+            </tr>
+          `).join('') : `<tr><td colspan="7" class="empty-state">Belum ada riwayat kedatangan.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="kds-summary-panel">
+      <div class="kds-summary-grid">
+        <div class="kds-summary-item"><span>Total Kedatangan</span><strong>${history.length.toLocaleString('id-ID')} kali</strong></div>
+        <div class="kds-summary-item"><span>Total PCS</span><strong>${totalPcs.toLocaleString('id-ID')} pcs</strong></div>
+        <div class="kds-summary-item"><span>Total Pallet</span><strong>${roundPalletDisplay(totalPallet)} pallet</strong></div>
+        <div class="kds-summary-item"><span>Lokasi Tersebar</span><strong>${lokasiSet.size.toLocaleString('id-ID')} lokasi</strong></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary modal-cancel" id="kds-btn-tutup-riwayat">Tutup</button>
+    </div>
+  `;
+  kdsRiwayatBody.querySelector('#kds-btn-tutup-riwayat').addEventListener('click', closeKdsRiwayatModal);
+
+  kdsRiwayatModal.hidden = false;
+}
 
 // Kunci/buka tombol dropdown Supplier & Pemilik. Dikunci saat mode KELUAR
 // dan barang sudah dipilih — supaya operator TIDAK bisa mengetik bebas
@@ -3286,6 +3849,12 @@ function getPeriodRange(mode, dateISO) {
     const last = new Date(y, m + 1, 0);
     return { startISO: isoOfDate(first), endISO: isoOfDate(last), label: `${BULAN_PANJANG[m]} ${y}` };
   }
+  if (mode === 'tahunan') {
+    const y = d.getFullYear();
+    const first = new Date(y, 0, 1);
+    const last = new Date(y, 11, 31);
+    return { startISO: isoOfDate(first), endISO: isoOfDate(last), label: `Tahun ${y}` };
+  }
   return { startISO: null, endISO: null, label: 'Semua Waktu' };
 }
 
@@ -3302,6 +3871,10 @@ function getPreviousPeriodRange(mode, dateISO) {
   if (mode === 'bulanan') {
     const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
     return getPeriodRange('bulanan', isoOfDate(prev));
+  }
+  if (mode === 'tahunan') {
+    const prev = new Date(d.getFullYear() - 1, 0, 1);
+    return getPeriodRange('tahunan', isoOfDate(prev));
   }
   return null;
 }
@@ -3320,7 +3893,6 @@ periodTabsWrap.querySelectorAll('.period-tab').forEach(btn => {
     periodTabsWrap.querySelectorAll('.period-tab').forEach(b => b.classList.remove('is-active'));
     btn.classList.add('is-active');
     periodMode = btn.dataset.mode;
-    periodDatePicker.disabled = periodMode === 'semua';
     renderRingkasan();
     renderRiwayat();
   });
@@ -3350,6 +3922,16 @@ function getBatasLokasiPallet(lokasi) {
   if (['G', 'H', 'I', 'J', 'K', 'L'].includes(lorong)) return 47;
   return null;  // Lorong lain tidak punya batasan
 }
+
+// CATATAN PERBAIKAN: dulu ada peta batas kapasitas per-BLOK terpisah
+// (BATAS_PALLET_BLOK) yang dipakai di openBlokModal() & mode "Blok" Katalog,
+// tapi sudah tidak pernah didefinisikan di file ini (sisa dari desain lama
+// sebelum pindah ke batas PER LOKASI lewat getBatasLokasiPallet() di atas) —
+// akibatnya kode itu crash (ReferenceError) tiap kali blok dibuka. Didefinisikan
+// sebagai objek kosong di sini supaya lookup-nya aman (selalu undefined, jadi
+// dianggap "tidak ada batas di level blok", sesuai desain kapasitas per-lokasi
+// yang sekarang dipakai).
+const BATAS_PALLET_BLOK = {};
 
 // ---- Helper terpusat: cek sisa kapasitas pallet suatu LOKASI ----
 // Dipakai di SEMUA jalur yang bisa menambah pallet ke suatu lokasi (form
@@ -3646,34 +4228,141 @@ if (searchLokasiBarang) {
 }
 
 /* ==========================================================================
-   RINGKASAN LAPORAN (admin)
+   DASHBOARD ADMIN — "Pergerakan Barang", "Kondisi Stok Saat Ini", "Barang
+   dengan Stok Terbanyak", "Blok/Rak Terpadat", "Jenis Barang Masuk &
+   Keluar", "Aktivitas Operator Hari Ini", dan "Aktivitas Terbaru". Semua
+   dihitung langsung dari currentEntries/MASTER_DATA (tidak ada data
+   contoh/hardcode) — renderRingkasan() dipanggil tiap kali data berubah
+   (renderAll) atau tiap kali periode/tanggal diganti lewat #period-tabs.
 ========================================================================== */
-const ringkasanDate = document.getElementById('ringkasan-date');
-const statMasukQty = document.getElementById('stat-masuk-qty');
-const statMasukCount = document.getElementById('stat-masuk-count');
-const statKeluarQty = document.getElementById('stat-keluar-qty');
-const statKeluarCount = document.getElementById('stat-keluar-count');
-const statTotalCount = document.getElementById('stat-total-count');
-const statTopOperator = document.getElementById('stat-top-operator');
-const statTopOperatorSub = document.getElementById('stat-top-operator-sub');
-const statPalletMasuk = document.getElementById('stat-pallet-masuk');
-const statPalletMasukSub = document.getElementById('stat-pallet-masuk-sub');
-const statPalletKeluar = document.getElementById('stat-pallet-keluar');
-const statPalletKeluarSub = document.getElementById('stat-pallet-keluar-sub');
-const statPalletSaatIni = document.getElementById('stat-pallet-saat-ini');
+const dashMoveDate = document.getElementById('dash-move-date');
+
+// Warna badge avatar operator — dipilih siklis dari nama supaya konsisten
+// tiap kali dirender ulang (bukan acak).
+const DASH_AVATAR_COLORS = ['#276B44', '#A85417', '#0F2038', '#9E1015', '#5A6B8C'];
+function dashAvatarColor(nama) {
+  const str = String(nama || '?');
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+  return DASH_AVATAR_COLORS[hash % DASH_AVATAR_COLORS.length];
+}
+function dashInisial(nama) {
+  const parts = String(nama || '?').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+// Tren naik/turun/sama dibanding periode sebelumnya — dipakai berulang di
+// kartu "Pergerakan Barang" (jumlah laporan, qty pcs, dan jumlah pallet).
+function setDashTrend(el, current, previous, hasPrev) {
+  if (!el) return;
+  if (!hasPrev || (current === 0 && previous === 0)) { el.hidden = true; return; }
+  el.hidden = false;
+  const pct = previous === 0 ? 100 : Math.round(((current - previous) / previous) * 100);
+  if (pct > 0) { el.className = 'dash-move-trend up'; el.textContent = `▲ ${pct}% dari kemarin`; }
+  else if (pct < 0) { el.className = 'dash-move-trend down'; el.textContent = `▼ ${Math.abs(pct)}% dari kemarin`; }
+  else { el.className = 'dash-move-trend flat'; el.textContent = 'Sama dari kemarin'; }
+}
+
+// Berpindah ke tab Katalog & Stok dengan mode tertentu (dipakai tombol
+// "Lihat semua barang / lokasi / detail stok" di kartu dashboard).
+function goToKatalog(mode) {
+  if (katalogModeTabs) {
+    katalogModeTabs.querySelectorAll('.period-tab').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.mode === mode);
+    });
+  }
+  katalogMode = mode;
+  if (searchKatalog) searchKatalog.value = '';
+  switchAdminPanel('katalog');
+  renderKatalog();
+}
+
+// Modal ringkas "Top 5 Barang Masuk/Keluar" pada periode terpilih — dipakai
+// tombol "Lihat detail" di kartu Jenis Barang Masuk & Keluar.
+function openTopBarangJenisModal(jenis, range) {
+  const count = {};
+  const kodeMap = {};
+  currentEntries.forEach(t => {
+    if (t.jenis === jenis && inPeriod(t, range)) {
+      count[t.namaBarang] = (count[t.namaBarang] || 0) + t.jumlah;
+      kodeMap[t.namaBarang] = t.kodeBarang;
+    }
+  });
+  const top5 = Object.entries(count).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const judul = jenis === 'masuk' ? 'Top 5 Barang Masuk' : 'Top 5 Barang Keluar';
+  modalBody.innerHTML = `
+    <div class="modal-item-head">
+      <div class="modal-item-kode">${escapeHtml(range.label.toUpperCase())}</div>
+      <h2 class="modal-item-nama">${judul}</h2>
+    </div>
+    <div class="modal-section">
+      ${top5.length === 0 ? '<p class="vis-empty">Belum ada data pada periode ini.</p>' : `
+        <div class="bar-list">
+          ${top5.map(([nama, jml], i) => `
+            <div class="bar-row" data-kode="${escapeHtml(kodeMap[nama] || '')}">
+              <div class="bar-row-top">
+                <span class="bar-row-name">${i + 1}. ${escapeHtml(nama)}</span>
+                <span class="bar-row-val">${jml.toLocaleString('id-ID')} pcs</span>
+              </div>
+              <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(6, Math.round((jml / top5[0][1]) * 100))}%"></div></div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+  `;
+  modalBody.querySelectorAll('.bar-row[data-kode]').forEach(row => {
+    if (row.dataset.kode) row.addEventListener('click', () => openItemModal(row.dataset.kode));
+  });
+  itemModal.hidden = false;
+}
+
+function renderDashActivity() {
+  const listEl = document.getElementById('dash-activity-list');
+  const emptyEl = document.getElementById('dash-activity-empty');
+  if (!listEl || !emptyEl) return;
+  const terbaru = currentEntries.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, 5);
+  listEl.innerHTML = '';
+  if (terbaru.length === 0) {
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+  terbaru.forEach(t => {
+    const isMasuk = t.jenis === 'masuk';
+    const row = document.createElement('div');
+    row.className = 'dash-activity-item';
+    row.innerHTML = `
+      <div class="dash-activity-icon ${isMasuk ? 'dash-c-hijau' : 'dash-c-merah'}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          ${isMasuk ? '<path d="M12 3v14"/><path d="M6 13l6 6 6-6"/><path d="M5 21h14"/>' : '<path d="M12 21V7"/><path d="M18 11l-6-6-6 6"/><path d="M5 3h14"/>'}
+        </svg>
+      </div>
+      <div class="dash-activity-body">
+        <div class="dash-activity-title">${isMasuk ? 'Barang Masuk' : 'Barang Keluar'}</div>
+        <div class="dash-activity-sub" title="${escapeHtml(t.namaBarang)}">${escapeHtml(t.namaBarang)}</div>
+      </div>
+      <div class="dash-activity-date">${escapeHtml(formatTanggal(t.tanggal))}<br>${escapeHtml(formatJam(t.createdAt))}</div>
+    `;
+    row.addEventListener('click', () => openItemModal(t.kodeBarang, t.namaBarang));
+    listEl.appendChild(row);
+  });
+}
 
 function renderRingkasan() {
   if (currentRole() !== 'admin') return;
   const range = getPeriodRange(periodMode, periodDate);
-  ringkasanDate.textContent = range.label;
+  const prevRange = getPreviousPeriodRange(periodMode, periodDate);
+  if (dashMoveDate) dashMoveDate.textContent = `(${range.label})`;
 
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-
-  let masukQty = 0, masukCount = 0, keluarQty = 0, keluarCount = 0;
-  let palletMasuk = 0, palletKeluar = 0;
-  currentEntries.forEach(t => {
-    if (inPeriod(t, range)) {
+  /* ---- 1) PERGERAKAN BARANG — hitung periode ini & periode sebelumnya ---- */
+  function hitungPeriode(r) {
+    let masukQty = 0, masukCount = 0, keluarQty = 0, keluarCount = 0, palletMasuk = 0, palletKeluar = 0;
+    if (!r) return { masukQty, masukCount, keluarQty, keluarCount, palletMasuk, palletKeluar };
+    currentEntries.forEach(t => {
+      if (!inPeriod(t, r)) return;
       if (t.jenis === 'masuk') {
         masukQty += t.jumlah; masukCount++;
         if (t.jumlahPallet != null) palletMasuk += t.jumlahPallet;
@@ -3681,168 +4370,156 @@ function renderRingkasan() {
         keluarQty += t.jumlah; keluarCount++;
         if (t.jumlahPallet != null) palletKeluar += t.jumlahPallet;
       }
-    }
-  });
-  statMasukQty.textContent = masukQty.toLocaleString('id-ID');
-  statMasukCount.textContent = `${masukCount} laporan`;
-  statKeluarQty.textContent = keluarQty.toLocaleString('id-ID');
-  statKeluarCount.textContent = `${keluarCount} laporan`;
-  statTotalCount.textContent = currentEntries.length.toLocaleString('id-ID');
-
-  // Pallet masuk/keluar mengikuti periode yang sama seperti kartu di atas.
-  // Hanya laporan yang punya info Qty per Pallet (sehingga jumlahPallet
-  // terisi) yang dihitung — laporan lama sebelum fitur ini ada tidak ikut.
-  if (statPalletMasuk) statPalletMasuk.textContent = roundPalletDisplay(palletMasuk);
-  if (statPalletKeluar) statPalletKeluar.textContent = roundPalletDisplay(palletKeluar);
-  if (statPalletMasukSub) statPalletMasukSub.textContent = `periode ini · ${range.label}`;
-  if (statPalletKeluarSub) statPalletKeluarSub.textContent = `periode ini · ${range.label}`;
-
-  // Total Pallet Saat Ini = posisi stok pallet sekarang, dihitung dari
-  // SELURUH riwayat (masuk dikurangi keluar), sama seperti cara stok pcs
-  // dihitung di buildLocationStock — tidak mengikuti filter periode karena
-  // ini "saldo sekarang", bukan aktivitas dalam rentang waktu.
-  if (statPalletSaatIni) {
-    let palletSaldo = 0;
-    currentEntries.forEach(t => {
-      if (t.jumlahPallet == null) return;
-      palletSaldo += (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet);
     });
-    statPalletSaatIni.textContent = roundPalletDisplay(palletSaldo);
+    return { masukQty, masukCount, keluarQty, keluarCount, palletMasuk, palletKeluar };
   }
 
-  const opCount = {};
-  currentEntries.forEach(t => {
-    if (t.createdAt >= sevenDaysAgo) {
-      opCount[t.operator] = (opCount[t.operator] || 0) + 1;
-    }
-  });
-  const opEntries = Object.entries(opCount).sort((a, b) => b[1] - a[1]);
-  if (opEntries.length > 0) {
-    statTopOperator.textContent = opEntries[0][0];
-    statTopOperatorSub.textContent = `${opEntries[0][1]} laporan`;
-  } else {
-    statTopOperator.textContent = '-';
-    statTopOperatorSub.textContent = 'belum ada data';
-  }
+  const now = hitungPeriode(range);
+  const prev = hitungPeriode(prevRange);
+  const hasPrev = !!prevRange;
 
-  const arusEmpty = document.getElementById('arus-empty');
-  const arusSplit = document.getElementById('arus-split');
-  const totalArus = masukQty + keluarQty;
-  if (totalArus === 0) {
-    arusEmpty.hidden = false;
-    arusSplit.hidden = true;
-  } else {
-    arusEmpty.hidden = true;
-    arusSplit.hidden = false;
-    const pctMasuk = Math.round((masukQty / totalArus) * 100);
-    const pctKeluar = 100 - pctMasuk;
-    document.getElementById('arus-seg-masuk').style.width = pctMasuk + '%';
-    document.getElementById('arus-seg-keluar').style.width = pctKeluar + '%';
-    document.getElementById('arus-pct-masuk').textContent = pctMasuk + '%';
-    document.getElementById('arus-pct-keluar').textContent = pctKeluar + '%';
-  }
+  setText('dash-masuk-count', now.masukCount.toLocaleString('id-ID'));
+  setText('dash-keluar-count', now.keluarCount.toLocaleString('id-ID'));
+  setText('dash-masuk-qty', now.masukQty.toLocaleString('id-ID'));
+  setText('dash-keluar-qty', now.keluarQty.toLocaleString('id-ID'));
+  setText('dash-pallet-masuk', roundPalletDisplay(now.palletMasuk));
+  setText('dash-pallet-keluar', roundPalletDisplay(now.palletKeluar));
 
-  const trendEl = document.getElementById('arus-trend');
-  const prevRange = getPreviousPeriodRange(periodMode, periodDate);
-  const trendMasukEl = document.getElementById('stat-masuk-trend');
-  const trendKeluarEl = document.getElementById('stat-keluar-trend');
+  setDashTrend(document.getElementById('dash-masuk-count-trend'), now.masukCount, prev.masukCount, hasPrev);
+  setDashTrend(document.getElementById('dash-keluar-count-trend'), now.keluarCount, prev.keluarCount, hasPrev);
+  setDashTrend(document.getElementById('dash-masuk-qty-trend'), now.masukQty, prev.masukQty, hasPrev);
+  setDashTrend(document.getElementById('dash-keluar-qty-trend'), now.keluarQty, prev.keluarQty, hasPrev);
+  setDashTrend(document.getElementById('dash-pallet-masuk-trend'), now.palletMasuk, prev.palletMasuk, hasPrev);
+  setDashTrend(document.getElementById('dash-pallet-keluar-trend'), now.palletKeluar, prev.palletKeluar, hasPrev);
 
-  function setTrend(el, current, previous) {
-    if (!el) return;
-    if (!prevRange || (current === 0 && previous === 0)) { el.hidden = true; return; }
-    el.hidden = false;
-    const pct = previous === 0 ? 100 : Math.round(((current - previous) / previous) * 100);
-    if (pct > 0) { el.className = 'stat-trend up'; el.textContent = `▲ ${pct}%`; }
-    else if (pct < 0) { el.className = 'stat-trend down'; el.textContent = `▼ ${Math.abs(pct)}%`; }
-    else { el.className = 'stat-trend flat'; el.textContent = 'sama'; }
-  }
+  /* ---- 2) KONDISI STOK SAAT INI — posisi stok sekarang, semua waktu ---- */
+  const stokItems = buildStokList(currentEntries).map(it => ({
+    ...it, stok: it.masuk - it.keluar, stokPallet: it.masukPallet - it.keluarPallet,
+  }));
+  const totalPcs = stokItems.reduce((s, it) => s + Math.max(it.stok, 0), 0);
+  const totalPalletSaatIni = stokItems.reduce((s, it) => s + Math.max(it.stokPallet, 0), 0);
+  const totalJenis = stokItems.filter(it => it.stok > 0).length;
+  setText('dash-total-pcs', totalPcs.toLocaleString('id-ID'));
+  setText('dash-total-pallet', roundPalletDisplay(totalPalletSaatIni));
+  setText('dash-total-jenis', totalJenis.toLocaleString('id-ID'));
+  setText('dash-total-supplier', (MASTER_DATA.supplier || []).length.toLocaleString('id-ID'));
+  setText('dash-total-pemilik', (MASTER_DATA.pemilik || []).length.toLocaleString('id-ID'));
 
-  if (!prevRange) {
-    trendEl.hidden = true;
-    if (trendMasukEl) trendMasukEl.hidden = true;
-    if (trendKeluarEl) trendKeluarEl.hidden = true;
-  } else {
-    let prevTotal = 0, prevMasukQty = 0, prevKeluarQty = 0;
-    currentEntries.forEach(t => {
-      if (inPeriod(t, prevRange)) {
-        prevTotal += t.jumlah;
-        if (t.jenis === 'masuk') prevMasukQty += t.jumlah; else prevKeluarQty += t.jumlah;
-      }
-    });
-    if (prevTotal === 0 && totalArus === 0) {
-      trendEl.hidden = true;
+  const btnStok = document.getElementById('dash-btn-stok');
+  if (btnStok) btnStok.onclick = () => goToKatalog('barang');
+
+  /* ---- 3) BARANG DENGAN STOK TERBANYAK (Top 5) ---- */
+  const topStok = stokItems.filter(it => it.stok > 0).sort((a, b) => b.stok - a.stok).slice(0, 5);
+  const topBarangList = document.getElementById('dash-top-barang-list');
+  const topBarangEmpty = document.getElementById('dash-top-barang-empty');
+  if (topBarangList && topBarangEmpty) {
+    topBarangList.innerHTML = '';
+    if (topStok.length === 0) {
+      topBarangEmpty.hidden = false;
     } else {
-      trendEl.hidden = false;
-      let pct = prevTotal === 0 ? 100 : Math.round(((totalArus - prevTotal) / prevTotal) * 100);
-      if (pct > 0) { trendEl.className = 'vis-trend up'; trendEl.textContent = `▲ ${pct}%`; }
-      else if (pct < 0) { trendEl.className = 'vis-trend down'; trendEl.textContent = `▼ ${Math.abs(pct)}%`; }
-      else { trendEl.className = 'vis-trend flat'; trendEl.textContent = `= sama`; }
+      topBarangEmpty.hidden = true;
+      topStok.forEach((it, i) => {
+        const row = document.createElement('div');
+        row.className = 'dash-rank-row';
+        row.innerHTML = `
+          <span class="dash-rank-num">${i + 1}</span>
+          <span class="dash-rank-name" title="${escapeHtml(it.nama)}">${escapeHtml(it.nama)}</span>
+          <span class="dash-rank-val">${it.stok.toLocaleString('id-ID')} pcs</span>
+        `;
+        row.addEventListener('click', () => openItemModal(it.kode, it.nama));
+        topBarangList.appendChild(row);
+      });
     }
-    setTrend(trendMasukEl, masukQty, prevMasukQty);
-    setTrend(trendKeluarEl, keluarQty, prevKeluarQty);
   }
+  const btnBarang = document.getElementById('dash-btn-barang');
+  if (btnBarang) btnBarang.onclick = () => goToKatalog('barang');
 
-  const barangCount = {};
-  const barangKode = {};
+  /* ---- 4) BLOK / RAK TERPADAT (Top 5) — berdasar persentase lokasi terisi ---- */
+  const blokData = buildLokasiOccupancy(currentEntries);
+  const blokRanked = blokData
+    .map(b => ({ ...b, total: b.terisi + b.kosong, pct: (b.terisi + b.kosong) > 0 ? Math.round((b.terisi / (b.terisi + b.kosong)) * 100) : 0 }))
+    .filter(b => b.total > 0)
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, 5);
+  const topBlokList = document.getElementById('dash-top-blok-list');
+  const topBlokEmpty = document.getElementById('dash-top-blok-empty');
+  if (topBlokList && topBlokEmpty) {
+    topBlokList.innerHTML = '';
+    if (blokRanked.length === 0) {
+      topBlokEmpty.hidden = false;
+    } else {
+      topBlokEmpty.hidden = true;
+      blokRanked.forEach(b => {
+        const lvl = b.pct >= 90 ? 'dash-lvl-tinggi' : (b.pct >= 40 ? 'dash-lvl-sedang' : 'dash-lvl-rendah');
+        const row = document.createElement('div');
+        row.className = 'dash-blok-row';
+        row.innerHTML = `
+          <div class="dash-blok-top">
+            <span class="dash-blok-name">Blok ${escapeHtml(b.blok)}</span>
+            <span class="dash-blok-pct">${b.pct}%</span>
+          </div>
+          <div class="dash-blok-track"><div class="dash-blok-fill ${lvl}" style="width:${Math.max(b.pct, b.terisi > 0 ? 4 : 0)}%"></div></div>
+        `;
+        row.addEventListener('click', () => openBlokModal(b.blok));
+        topBlokList.appendChild(row);
+      });
+    }
+  }
+  const btnBlok = document.getElementById('dash-btn-blok');
+  if (btnBlok) btnBlok.onclick = () => goToKatalog('blok');
+
+  /* ---- 5) JENIS BARANG MASUK & KELUAR — jenis unik pada periode terpilih ---- */
+  const kodeMasukSet = new Set(), kodeKeluarSet = new Set();
   currentEntries.forEach(t => {
-    if (t.createdAt >= thirtyDaysAgo) {
-      barangCount[t.namaBarang] = (barangCount[t.namaBarang] || 0) + 1;
-      barangKode[t.namaBarang] = t.kodeBarang;
-    }
+    if (!inPeriod(t, range)) return;
+    const key = t.kodeBarang || t.namaBarang;
+    if (t.jenis === 'masuk') kodeMasukSet.add(key); else kodeKeluarSet.add(key);
   });
-  const topBarang = Object.entries(barangCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const topBarangList = document.getElementById('top-barang-list');
-  const topBarangEmpty = document.getElementById('top-barang-empty');
-  topBarangList.innerHTML = '';
-  if (topBarang.length > 0) {
-    topBarangEmpty.hidden = true;
-    const max = topBarang[0][1];
-    topBarang.forEach(([nama, jml]) => {
-      const row = document.createElement('div');
-      row.className = 'bar-row';
-      const pct = Math.max(6, Math.round((jml / max) * 100));
-      row.innerHTML = `
-        <div class="bar-row-top">
-          <span class="bar-row-name" title="${escapeHtml(nama)}">${escapeHtml(nama)}</span>
-          <span class="bar-row-val">${jml}x</span>
-        </div>
-        <div class="bar-row-track"><div class="bar-row-fill" style="width:${pct}%"></div></div>
-      `;
-      row.addEventListener('click', () => openItemModal(barangKode[nama]));
-      topBarangList.appendChild(row);
-    });
-  } else {
-    topBarangEmpty.hidden = false;
-  }
+  setText('dash-jenis-masuk', kodeMasukSet.size.toLocaleString('id-ID'));
+  setText('dash-jenis-keluar', kodeKeluarSet.size.toLocaleString('id-ID'));
+  const btnJenisMasuk = document.getElementById('dash-btn-jenis-masuk');
+  const btnJenisKeluar = document.getElementById('dash-btn-jenis-keluar');
+  if (btnJenisMasuk) btnJenisMasuk.onclick = () => openTopBarangJenisModal('masuk', range);
+  if (btnJenisKeluar) btnJenisKeluar.onclick = () => openTopBarangJenisModal('keluar', range);
 
-  const locStock = buildLocationStock(currentEntries);
-  const topLokasi = locStock.slice().sort((a, b) => b.totalQty - a.totalQty).slice(0, 5);
-  const topLokasiList = document.getElementById('top-lokasi-list');
-  const topLokasiEmpty = document.getElementById('top-lokasi-empty');
-  topLokasiList.innerHTML = '';
-  if (topLokasi.length > 0) {
-    topLokasiEmpty.hidden = true;
-    const max = Math.max(...topLokasi.map(l => l.totalQty), 1);
-    topLokasi.forEach(l => {
-      const row = document.createElement('div');
-      row.className = 'bar-row bar-row-lokasi';
-      const pct = Math.max(6, Math.round((l.totalQty / max) * 100));
-      row.innerHTML = `
-        <div class="bar-row-top">
-          <span class="bar-row-name mono">${escapeHtml(l.lokasi)}</span>
-          <span class="bar-row-val">${l.totalQty.toLocaleString('id-ID')} pcs</span>
-        </div>
-        <div class="bar-row-track"><div class="bar-row-fill" style="width:${pct}%"></div></div>
-      `;
-      row.addEventListener('click', () => openLokasiModal(l.lokasi));
-      topLokasiList.appendChild(row);
-    });
-  } else {
-    topLokasiEmpty.hidden = false;
+  /* ---- 6) AKTIVITAS OPERATOR — jumlah laporan masuk/keluar per operator, periode terpilih ---- */
+  const opMap = {};
+  currentEntries.forEach(t => {
+    if (!inPeriod(t, range)) return;
+    const nama = t.operator || 'Tanpa Nama';
+    if (!opMap[nama]) opMap[nama] = { masuk: 0, keluar: 0 };
+    if (t.jenis === 'masuk') opMap[nama].masuk++; else opMap[nama].keluar++;
+  });
+  const opRanked = Object.entries(opMap)
+    .map(([nama, v]) => ({ nama, ...v, total: v.masuk + v.keluar }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 6);
+  const opTbody = document.getElementById('dash-operator-tbody');
+  const opEmpty = document.getElementById('dash-operator-empty');
+  if (opTbody && opEmpty) {
+    opTbody.innerHTML = '';
+    if (opRanked.length === 0) {
+      opEmpty.hidden = false;
+    } else {
+      opEmpty.hidden = true;
+      opRanked.forEach(o => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><span class="dash-op-name"><span class="dash-op-avatar" style="background:${dashAvatarColor(o.nama)}">${escapeHtml(dashInisial(o.nama))}</span>${escapeHtml(o.nama)}</span></td>
+          <td class="dash-op-masuk">${o.masuk.toLocaleString('id-ID')}</td>
+          <td class="dash-op-keluar">${o.keluar.toLocaleString('id-ID')}</td>
+        `;
+        opTbody.appendChild(tr);
+      });
+    }
   }
+  const btnOperator = document.getElementById('dash-btn-operator');
+  if (btnOperator) btnOperator.onclick = () => switchAdminPanel('operator');
 
-  renderBlokPallet();
-  if (searchLokasiBarang && searchLokasiBarang.value.trim()) renderLokasiBarangSearch();
+  /* ---- 7) AKTIVITAS TERBARU — 5 laporan paling baru, semua waktu ---- */
+  renderDashActivity();
+  const btnAktivitas = document.getElementById('dash-btn-aktivitas');
+  if (btnAktivitas) btnAktivitas.onclick = () => switchAdminPanel('riwayat');
 }
 
 /* ==========================================================================
