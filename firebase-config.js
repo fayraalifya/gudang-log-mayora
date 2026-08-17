@@ -106,6 +106,8 @@ const OPERATOR_COLLECTION = "operator";
 const ADMIN_COLLECTION = "admin";
 const BARANG_BARU_COLLECTION = "barangBaru";
 const PEMILIK_BARU_COLLECTION = "pemilikBaru";
+const SUPPLIER_BARU_COLLECTION = "supplierBaru";
+const LOKASI_BARU_COLLECTION = "lokasiBaru";
 
 // ---- Promise "SDK siap" ----
 // Beda dari versi lama: ini TIDAK LAGI menunggu proses sign-in (karena
@@ -144,6 +146,8 @@ window.gudangFirebase = {
   adminCol: collection(db, ADMIN_COLLECTION),
   barangBaruCol: collection(db, BARANG_BARU_COLLECTION),
   pemilikBaruCol: collection(db, PEMILIK_BARU_COLLECTION),
+  supplierBaruCol: collection(db, SUPPLIER_BARU_COLLECTION),
+  lokasiBaruCol: collection(db, LOKASI_BARU_COLLECTION),
   collection,
   addDoc,
   setDoc,

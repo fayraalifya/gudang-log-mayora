@@ -103,7 +103,7 @@ service cloud.firestore {
 
     match /barangBaru/{docId} {
       allow read: if isAppUser();
-      allow create: if isAppUser()
+      allow create: if isSignedIn()
                     && request.resource.data.keys().hasAll(['kode', 'nama', 'ditambahOleh', 'createdAt'])
                     && request.resource.data.kode is string
                     && request.resource.data.kode.size() > 0
@@ -113,19 +113,95 @@ service cloud.firestore {
                     && request.resource.data.nama.size() < 200
                     && request.resource.data.ditambahOleh is string
                     && request.resource.data.createdAt is number;
-      allow update, delete: if false;
+      allow update: if isSignedIn()
+                    && (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['kode', 'nama', 'deleted']))
+                    && (
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
+                        || 
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
+                        ||
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['kode', 'nama', 'deleted']))
+                    );
+      allow delete: if isAdmin();
     }
 
     match /pemilikBaru/{docId} {
       allow read: if isAppUser();
-      allow create: if isAppUser()
+      allow create: if isSignedIn()
                     && request.resource.data.keys().hasAll(['nama', 'ditambahOleh', 'createdAt'])
                     && request.resource.data.nama is string
                     && request.resource.data.nama.size() > 0
                     && request.resource.data.nama.size() < 200
                     && request.resource.data.ditambahOleh is string
                     && request.resource.data.createdAt is number;
-      allow update, delete: if false;
+      allow update: if isSignedIn()
+                    && (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['nama', 'deleted']))
+                    && (
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
+                        || 
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
+                        ||
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['nama', 'deleted']))
+                    );
+      allow delete: if isAdmin();
+    }
+
+    match /supplierBaru/{docId} {
+      allow read: if isAppUser();
+      allow create: if isSignedIn()
+                    && request.resource.data.keys().hasAll(['nama', 'ditambahOleh', 'createdAt'])
+                    && request.resource.data.nama is string
+                    && request.resource.data.nama.size() > 0
+                    && request.resource.data.nama.size() < 200
+                    && request.resource.data.ditambahOleh is string
+                    && request.resource.data.createdAt is number;
+      allow update: if isSignedIn()
+                    && (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['nama', 'deleted']))
+                    && (
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
+                        || 
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
+                        ||
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['nama', 'deleted']))
+                    );
+      allow delete: if isAdmin();
+    }
+
+    match /lokasiBaru/{docId} {
+      allow read: if isAppUser();
+      allow create: if isSignedIn()
+                    && request.resource.data.keys().hasAll(['nama', 'ditambahOleh', 'createdAt'])
+                    && request.resource.data.nama is string
+                    && request.resource.data.nama.size() > 0
+                    && request.resource.data.nama.size() < 200
+                    && request.resource.data.ditambahOleh is string
+                    && request.resource.data.createdAt is number;
+      allow update: if isSignedIn()
+                    && (request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['nama', 'deleted']))
+                    && (
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1) 
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted']))
+                        || 
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(1)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAny(['nama']))
+                        ||
+                        (request.resource.data.diff(resource.data).affectedKeys().hasSize(2)
+                         && request.resource.data.diff(resource.data).affectedKeys().hasAll(['nama', 'deleted']))
+                    );
+      allow delete: if isAdmin();
     }
 
     // ---- Koleksi "gerbang" pendaftaran ----

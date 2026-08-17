@@ -503,25 +503,17 @@ class KatalogManager {
   // ada dokumen profil operator/admin), jadi listener yang terpasang
   // sebelum login langsung kena "Missing or insufficient permissions" dan
   // gagal permanen (sama seperti bug yang sudah diperbaiki di
-  // startBarangBaruListener()/startPemilikBaruListener() — lihat catatan
-  // di sana). Sekarang subscribeToUpdates() ini HANYA dipanggil dari
+  // startAllOverlayListeners() — lihat catatan di sana). Sekarang 
+  // subscribeToUpdates() ini HANYA dipanggil dari
   // initFirestoreConnection() -> startListening(), yaitu SETELAH user
   // benar-benar login.
   subscribeToUpdates() {
-    const fb = window.gudangFirebase;
-    if (!fb) return;
-    if (this._unsubBarangBaru) this._unsubBarangBaru();
-    if (this._unsubPemilikBaru) this._unsubPemilikBaru();
-    if (fb.barangBaruCol) {
-      this._unsubBarangBaru = fb.onSnapshot(fb.barangBaruCol, () => {
-        this.renderBarangList();
-      }, (err) => console.error('Gagal memuat pembaruan katalog barang:', err));
-    }
-    if (fb.pemilikBaruCol) {
-      this._unsubPemilikBaru = fb.onSnapshot(fb.pemilikBaruCol, () => {
-        this.renderPemilikList();
-      }, (err) => console.error('Gagal memuat pembaruan katalog pemilik:', err));
-    }
+    startAllOverlayListeners();
+    // After listeners are set up, render updated lists
+    this.renderBarangList();
+    this.renderSupplierList();
+    this.renderPemilikList();
+    this.renderLokasiList();
   }
 
   switchTab(tab) {
@@ -565,7 +557,7 @@ class KatalogManager {
     const pagination = document.getElementById('barang-pagination');
     if (!tbody) return;
 
-    const allBarang = [...(MASTER_DATA.barang || [])];
+    const allBarang = [...BARANG_OPTIONS];
     const q = filter.trim().toLowerCase();
 
     // Urutkan alfabetis berdasarkan nama barang.
@@ -737,31 +729,44 @@ class KatalogManager {
     }
 
     try {
-      if (this.barangEditing) {
-        // Edit existing
-        const idx = (MASTER_DATA.barang || []).findIndex(b => b.kode === this.barangEditing);
-        if (idx >= 0) {
-          const dibuatPada = MASTER_DATA.barang[idx].dibuatPada || Date.now();
-          MASTER_DATA.barang[idx] = { kode, nama, dibuatPada };
-          localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
-        }
-      } else {
-        // Add new
-        const exists = (MASTER_DATA.barang || []).some(b => b.kode === kode);
-        if (exists) {
+      const fb = await waitForFirebase();
+      const session = getSession();
+      const docId = kode;
+      
+      // Check if kode already exists in base data (can't add duplicate)
+      const baseExists = (MASTER_DATA.barang || []).some(b => b.kode === kode);
+      if (!baseExists && !this.barangEditing) {
+        // Adding new — check if already in overlay
+        const overlayExists = barangOverlay.has(kode);
+        if (overlayExists) {
           errorBox.textContent = 'Kode barang sudah ada!';
           errorBox.hidden = false;
           return;
         }
-        MASTER_DATA.barang.push({ kode, nama, dibuatPada: Date.now() });
-        localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
+      }
+
+      if (this.barangEditing) {
+        // Edit — update overlay doc
+        await upsertOverlayDoc('barangBaru', docId, {
+          kode,
+          nama,
+          ditambahOleh: session ? session.nama : '-',
+          deleted: false
+        });
+      } else {
+        // Add new — create overlay doc
+        await upsertOverlayDoc('barangBaru', docId, {
+          kode,
+          nama,
+          ditambahOleh: session ? session.nama : '-',
+          createdAt: Date.now(),
+          deleted: false
+        });
         this.barangPage = 1;
       }
 
       showToast('Barang berhasil disimpan');
       this.closeBarangForm();
-      this.renderBarangList();
-      BARANG_OPTIONS = MASTER_DATA.barang;
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.hidden = false;
@@ -772,21 +777,27 @@ class KatalogManager {
     this.openBarangForm(kode);
   }
 
-  deleteBarang(kode) {
+  async deleteBarang(kode) {
     if (!confirm(`Hapus kode barang "${kode}"? Tindakan ini tidak dapat dibatalkan.`)) return;
     try {
-      MASTER_DATA.barang = (MASTER_DATA.barang || []).filter(b => b.kode !== kode);
-      localStorage.setItem('gudang_master_barang', JSON.stringify(MASTER_DATA.barang));
+      const fb = await waitForFirebase();
+      
+      // Soft-delete: set deleted:true in overlay
+      await upsertOverlayDoc('barangBaru', kode, {
+        kode,
+        nama: (barangOverlay.get(kode) || {}).nama || kode,
+        ditambahOleh: (barangOverlay.get(kode) || {}).ditambahOleh || '-',
+        deleted: true
+      });
+      
       showToast('Kode barang berhasil dihapus');
-      this.renderBarangList();
-      BARANG_OPTIONS = MASTER_DATA.barang;
     } catch (err) {
       showToast('Gagal menghapus barang: ' + err.message, 'error');
     }
   }
 
   // ========== SUPPLIER / PEMILIK / LOKASI (tabel sederhana No. + Nama + Aksi) ==========
-  // Ketiga entity ini modelnya sama persis (array string di MASTER_DATA),
+  // Keempat entity ini modelnya sama (kombinasi base + overlay Firestore),
   // jadi dipakaikan satu fungsi generik supaya tidak triplikasi kode.
   renderSimpleList(entity, filter = '') {
     const tbody = document.getElementById(`${entity}-list`);
@@ -795,7 +806,10 @@ class KatalogManager {
     const pagination = document.getElementById(`${entity}-pagination`);
     if (!tbody) return;
 
-    let items = [...(MASTER_DATA[entity] || [])];
+    let items = entity === 'supplier' ? SUPPLIER_OPTIONS :
+                entity === 'pemilik' ? PEMILIK_OPTIONS_MERGED :
+                entity === 'lokasi' ? LOKASI_OPTIONS : [];
+    items = [...items];
     const q = filter.trim().toLowerCase();
     if (q) {
       items = items.filter(x => (x || '').toLowerCase().includes(q));
@@ -928,29 +942,41 @@ class KatalogManager {
     }
 
     try {
-      if (this.supplierEditing) {
-        // Edit: hapus yang lama, tambah yang baru
-        MASTER_DATA.supplier = (MASTER_DATA.supplier || []).filter(s => s !== this.supplierEditing);
-        if (!MASTER_DATA.supplier.includes(nama)) {
-          MASTER_DATA.supplier.push(nama);
-        }
-      } else {
-        // Add new
-        const exists = (MASTER_DATA.supplier || []).some(s => s === nama);
-        if (exists) {
-          errorBox.textContent = 'Supplier sudah ada!';
-          errorBox.hidden = false;
-          return;
-        }
-        MASTER_DATA.supplier.push(nama);
-        this.simplePage.supplier = 1;
+      const fb = await waitForFirebase();
+      const session = getSession();
+      const docId = sanitizeMasterId(nama);
+      
+      // Check if already exists in base or overlay (active)
+      const baseExists = (MASTER_DATA.supplier || []).some(s => String(s).toLowerCase() === nama.toLowerCase());
+      const overlayActive = customSupplier.some(s => String(s).toLowerCase() === nama.toLowerCase());
+      
+      if (!this.supplierEditing && (baseExists || overlayActive)) {
+        errorBox.textContent = 'Supplier sudah ada!';
+        errorBox.hidden = false;
+        return;
       }
 
-      MASTER_DATA.supplier.sort();
-      localStorage.setItem('gudang_master_supplier', JSON.stringify(MASTER_DATA.supplier));
+      if (this.supplierEditing) {
+        // Edit: soft-delete old, create/update new
+        const oldId = sanitizeMasterId(this.supplierEditing);
+        await upsertOverlayDoc('supplierBaru', oldId, {
+          nama: this.supplierEditing,
+          ditambahOleh: '-',
+          deleted: true
+        });
+      }
+
+      // Add/update new supplier
+      await upsertOverlayDoc('supplierBaru', docId, {
+        nama,
+        ditambahOleh: session ? session.nama : '-',
+        createdAt: Date.now(),
+        deleted: false
+      });
+
       showToast('Supplier berhasil disimpan');
       this.closeSupplierForm();
-      this.renderSupplierList();
+      if (!this.supplierEditing) this.simplePage.supplier = 1;
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.hidden = false;
@@ -961,13 +987,20 @@ class KatalogManager {
     this.openSupplierForm(nama);
   }
 
-  deleteSupplier(nama) {
+  async deleteSupplier(nama) {
     if (!confirm(`Hapus supplier "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
     try {
-      MASTER_DATA.supplier = (MASTER_DATA.supplier || []).filter(s => s !== nama);
-      localStorage.setItem('gudang_master_supplier', JSON.stringify(MASTER_DATA.supplier));
+      const fb = await waitForFirebase();
+      const docId = sanitizeMasterId(nama);
+      
+      // Soft-delete: set deleted:true in overlay
+      await upsertOverlayDoc('supplierBaru', docId, {
+        nama,
+        ditambahOleh: '-',
+        deleted: true
+      });
+      
       showToast('Supplier berhasil dihapus');
-      this.renderSupplierList();
     } catch (err) {
       showToast('Gagal menghapus supplier: ' + err.message, 'error');
     }
@@ -1020,27 +1053,41 @@ class KatalogManager {
     }
 
     try {
-      if (this.pemilikEditing) {
-        MASTER_DATA.pemilik = (MASTER_DATA.pemilik || []).filter(p => p !== this.pemilikEditing);
-        if (!MASTER_DATA.pemilik.includes(nama)) {
-          MASTER_DATA.pemilik.push(nama);
-        }
-      } else {
-        const exists = (MASTER_DATA.pemilik || []).some(p => p === nama);
-        if (exists) {
-          errorBox.textContent = 'Pemilik sudah ada!';
-          errorBox.hidden = false;
-          return;
-        }
-        MASTER_DATA.pemilik.push(nama);
+      const fb = await waitForFirebase();
+      const session = getSession();
+      const docId = sanitizeMasterId(nama);
+      
+      // Check if already exists in base or overlay (active)
+      const baseExists = (MASTER_DATA.pemilik || []).some(p => String(p).toLowerCase() === nama.toLowerCase());
+      const overlayActive = customPemilik.some(p => String(p).toLowerCase() === nama.toLowerCase());
+      
+      if (!this.pemilikEditing && (baseExists || overlayActive)) {
+        errorBox.textContent = 'Pemilik sudah ada!';
+        errorBox.hidden = false;
+        return;
       }
-      this.simplePage.pemilik = 1;
 
-      MASTER_DATA.pemilik.sort();
-      localStorage.setItem('gudang_master_pemilik', JSON.stringify(MASTER_DATA.pemilik));
+      if (this.pemilikEditing) {
+        // Edit: soft-delete old, create/update new
+        const oldId = sanitizeMasterId(this.pemilikEditing);
+        await upsertOverlayDoc('pemilikBaru', oldId, {
+          nama: this.pemilikEditing,
+          ditambahOleh: '-',
+          deleted: true
+        });
+      }
+
+      // Add/update new pemilik
+      await upsertOverlayDoc('pemilikBaru', docId, {
+        nama,
+        ditambahOleh: session ? session.nama : '-',
+        createdAt: Date.now(),
+        deleted: false
+      });
+
       showToast('Pemilik berhasil disimpan');
       this.closePemilikForm();
-      this.renderPemilikList();
+      if (!this.pemilikEditing) this.simplePage.pemilik = 1;
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.hidden = false;
@@ -1051,13 +1098,20 @@ class KatalogManager {
     this.openPemilikForm(nama);
   }
 
-  deletePemilik(nama) {
+  async deletePemilik(nama) {
     if (!confirm(`Hapus pemilik "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
     try {
-      MASTER_DATA.pemilik = (MASTER_DATA.pemilik || []).filter(p => p !== nama);
-      localStorage.setItem('gudang_master_pemilik', JSON.stringify(MASTER_DATA.pemilik));
+      const fb = await waitForFirebase();
+      const docId = sanitizeMasterId(nama);
+      
+      // Soft-delete: set deleted:true in overlay
+      await upsertOverlayDoc('pemilikBaru', docId, {
+        nama,
+        ditambahOleh: '-',
+        deleted: true
+      });
+      
       showToast('Pemilik berhasil dihapus');
-      this.renderPemilikList();
     } catch (err) {
       showToast('Gagal menghapus pemilik: ' + err.message, 'error');
     }
@@ -1110,29 +1164,41 @@ class KatalogManager {
     }
 
     try {
-      if (this.lokasiEditing) {
-        MASTER_DATA.lokasi = (MASTER_DATA.lokasi || []).filter(l => l !== this.lokasiEditing);
-        if (!MASTER_DATA.lokasi.includes(nama)) {
-          MASTER_DATA.lokasi.push(nama);
-        }
-      } else {
-        const exists = (MASTER_DATA.lokasi || []).some(l => l === nama);
-        if (exists) {
-          errorBox.textContent = 'Lokasi sudah ada!';
-          errorBox.hidden = false;
-          return;
-        }
-        MASTER_DATA.lokasi.push(nama);
+      const fb = await waitForFirebase();
+      const session = getSession();
+      const docId = sanitizeMasterId(nama);
+      
+      // Check if already exists in base or overlay (active)
+      const baseExists = (MASTER_DATA.lokasi || []).some(l => String(l).toLowerCase() === nama.toLowerCase());
+      const overlayActive = customLokasi.some(l => String(l).toLowerCase() === nama.toLowerCase());
+      
+      if (!this.lokasiEditing && (baseExists || overlayActive)) {
+        errorBox.textContent = 'Lokasi sudah ada!';
+        errorBox.hidden = false;
+        return;
       }
 
-      this.simplePage.lokasi = 1;
-      MASTER_DATA.lokasi.sort();
-      localStorage.setItem('gudang_master_lokasi', JSON.stringify(MASTER_DATA.lokasi));
+      if (this.lokasiEditing) {
+        // Edit: soft-delete old, create/update new
+        const oldId = sanitizeMasterId(this.lokasiEditing);
+        await upsertOverlayDoc('lokasiBaru', oldId, {
+          nama: this.lokasiEditing,
+          ditambahOleh: '-',
+          deleted: true
+        });
+      }
+
+      // Add/update new lokasi
+      await upsertOverlayDoc('lokasiBaru', docId, {
+        nama,
+        ditambahOleh: session ? session.nama : '-',
+        createdAt: Date.now(),
+        deleted: false
+      });
+
       showToast('Lokasi berhasil disimpan');
       this.closeLokasiForm();
-      this.renderLokasiList();
-      LOKASI_SET.clear();
-      MASTER_DATA.lokasi.forEach(l => LOKASI_SET.add(l));
+      if (!this.lokasiEditing) this.simplePage.lokasi = 1;
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.hidden = false;
@@ -1143,15 +1209,20 @@ class KatalogManager {
     this.openLokasiForm(nama);
   }
 
-  deleteLokasi(nama) {
+  async deleteLokasi(nama) {
     if (!confirm(`Hapus lokasi "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
     try {
-      MASTER_DATA.lokasi = (MASTER_DATA.lokasi || []).filter(l => l !== nama);
-      localStorage.setItem('gudang_master_lokasi', JSON.stringify(MASTER_DATA.lokasi));
+      const fb = await waitForFirebase();
+      const docId = sanitizeMasterId(nama);
+      
+      // Soft-delete: set deleted:true in overlay
+      await upsertOverlayDoc('lokasiBaru', docId, {
+        nama,
+        ditambahOleh: '-',
+        deleted: true
+      });
+      
       showToast('Lokasi berhasil dihapus');
-      this.renderLokasiList();
-      LOKASI_SET.clear();
-      MASTER_DATA.lokasi.forEach(l => LOKASI_SET.add(l));
     } catch (err) {
       showToast('Gagal menghapus lokasi: ' + err.message, 'error');
     }
@@ -2855,6 +2926,148 @@ function startPemilikBaruListener() {
   }, (err) => {
     console.error('Gagal memuat daftar pemilik baru:', err);
   });
+}
+
+/* ==========================================================================
+   UNIFIED OVERLAY LISTENERS & HELPERS — barang, supplier, pemilik, lokasi
+========================================================================== */
+
+// Listener subscription handles
+let unsubscribeSupplierBaru = null;
+let unsubscribeLokasiBaruListener = null;
+let customSupplier = [];
+let customLokasi = [];
+
+// Helper: upsert dokumen overlay, dengan hati-hati tidak resend createdAt saat update
+async function upsertOverlayDoc(collectionName, docId, data) {
+  const fb = await waitForFirebase();
+  if (!collectionName || !docId) throw new Error('Collection dan doc ID harus diisi.');
+  
+  const docRef = fb.doc(fb.db, collectionName, docId);
+  const existingDoc = await fb.getDoc(docRef);
+  
+  if (existingDoc.exists()) {
+    // Update: jangan include createdAt supaya rules tidak menolak
+    const updateData = { ...data };
+    delete updateData.createdAt;
+    await fb.updateDoc(docRef, updateData);
+  } else {
+    // Create: include createdAt
+    await fb.setDoc(docRef, data);
+  }
+}
+
+// Compute merged barang options (base + overlay)
+function computeBarangMerged() {
+  const base = MASTER_DATA.barang || [];
+  const overlayItems = Array.from(barangOverlay.values())
+    .filter(o => !base.some(b => b.kode === o.kode) && !o.deleted);
+  return [...base, ...overlayItems];
+}
+
+// Compute merged options for simple entities (supplier, pemilik, lokasi)
+function computeSimpleMerged(entity) {
+  const base = MASTER_DATA[entity] || [];
+  const overlay = entity === 'supplier' ? customSupplier :
+                  entity === 'pemilik' ? customPemilik :
+                  entity === 'lokasi' ? customLokasi : [];
+  const overlaySet = new Set(overlay.map(o => String(o).toLowerCase()));
+  const baseFiltered = base.filter(b => !overlaySet.has(String(b).toLowerCase()));
+  return [...baseFiltered, ...overlay].sort();
+}
+
+function rebuildSupplierOptions() {
+  SUPPLIER_OPTIONS = computeSimpleMerged('supplier');
+  if (selSupplier && selSupplier.updateOptions) selSupplier.updateOptions(SUPPLIER_OPTIONS);
+}
+
+function rebuildLokasiOptions() {
+  LOKASI_OPTIONS = computeSimpleMerged('lokasi');
+  LOKASI_SET = new Set(LOKASI_OPTIONS);
+  const dl = document.getElementById('dl-lokasi');
+  if (dl) {
+    dl.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    LOKASI_OPTIONS.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l;
+      frag.appendChild(opt);
+    });
+    dl.appendChild(frag);
+  }
+}
+
+function rebuildBarangOptions() {
+  BARANG_OPTIONS = computeBarangMerged();
+  if (selBarang && selBarang.updateOptions) {
+    selBarang.updateOptions(BARANG_OPTIONS);
+  }
+}
+
+// Start listening to all 4 overlay collections
+function startAllOverlayListeners() {
+  const fb = window.gudangFirebase;
+  if (!fb) return;
+
+  // Barang
+  if (fb.barangBaruCol) {
+    if (unsubscribeBarangBaru) unsubscribeBarangBaru();
+    unsubscribeBarangBaru = fb.onSnapshot(fb.barangBaruCol, (snapshot) => {
+      barangOverlay.clear();
+      snapshot.docs.forEach(d => {
+        const data = d.data();
+        barangOverlay.set(data.kode, { kode: data.kode, nama: data.nama, deleted: data.deleted || false });
+      });
+      rebuildBarangOptions();
+    }, (err) => {
+      console.error('Gagal memuat daftar barang baru:', err);
+    });
+  }
+
+  // Supplier
+  if (fb.supplierBaruCol) {
+    if (unsubscribeSupplierBaru) unsubscribeSupplierBaru();
+    unsubscribeSupplierBaru = fb.onSnapshot(fb.supplierBaruCol, (snapshot) => {
+      customSupplier = [];
+      snapshot.docs.forEach(d => {
+        const data = d.data();
+        if (!data.deleted) customSupplier.push(data.nama);
+      });
+      rebuildSupplierOptions();
+    }, (err) => {
+      console.error('Gagal memuat daftar supplier baru:', err);
+    });
+  }
+
+  // Pemilik
+  if (fb.pemilikBaruCol) {
+    if (unsubscribePemilikBaru) unsubscribePemilikBaru();
+    unsubscribePemilikBaru = fb.onSnapshot(fb.pemilikBaruCol, (snapshot) => {
+      customPemilik = [];
+      snapshot.docs.forEach(d => {
+        const data = d.data();
+        if (!data.deleted) customPemilik.push(data.nama);
+      });
+      rebuildPemilikOptions();
+    }, (err) => {
+      console.error('Gagal memuat daftar pemilik baru:', err);
+    });
+  }
+
+  // Lokasi
+  if (fb.lokasiBaruCol) {
+    if (unsubscribeLokasiBaruListener) unsubscribeLokasiBaruListener();
+    unsubscribeLokasiBaruListener = fb.onSnapshot(fb.lokasiBaruCol, (snapshot) => {
+      customLokasi = [];
+      snapshot.docs.forEach(d => {
+        const data = d.data();
+        if (!data.deleted) customLokasi.push(data.nama);
+      });
+      rebuildLokasiOptions();
+    }, (err) => {
+      console.error('Gagal memuat daftar lokasi baru:', err);
+    });
+  }
 }
 
 /* ==========================================================================
