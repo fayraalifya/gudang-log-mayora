@@ -2952,8 +2952,17 @@ async function upsertOverlayDoc(collectionName, docId, data) {
     delete updateData.createdAt;
     await fb.updateDoc(docRef, updateData);
   } else {
-    // Create: include createdAt
-    await fb.setDoc(docRef, data);
+    // Create: WAJIB include createdAt (syarat rules create), tapi
+    // pemanggil edit/hapus TIDAK selalu menyertakannya karena mengira
+    // dokumennya pasti sudah ada (padahal item dari katalog dasar/data.js
+    // yang belum pernah di-overlay belum punya dokumen sama sekali).
+    // Isi otomatis di sini supaya edit/hapus item dari katalog dasar
+    // tidak gagal dengan "Missing or insufficient permissions".
+    const createData = { ...data };
+    if (createData.createdAt === undefined) {
+      createData.createdAt = Date.now();
+    }
+    await fb.setDoc(docRef, createData);
   }
 }
 
