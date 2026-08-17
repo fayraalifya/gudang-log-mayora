@@ -5890,6 +5890,14 @@ function openComboModal(kode, supplier, pemilik) {
     .filter(t => t.jenis === 'masuk')
     .sort((a, b) => b.createdAt - a.createdAt);
 
+  // Baris tabel kedua = tiap BATCH pengeluaran (transaksi KELUAR) untuk
+  // kombinasi ini — ditampilkan berdampingan dengan batch kedatangan di
+  // atas, supaya pemasukan & pengeluaran sama-sama kelihatan sekaligus
+  // dan tidak bikin bingung.
+  const batchRowsKeluar = [...combo.history]
+    .filter(t => t.jenis === 'keluar')
+    .sort((a, b) => b.createdAt - a.createdAt);
+
   modalBody.innerHTML = `
     <div class="modal-item-head">
       <div class="modal-item-kode mono">Kode Barang: ${escapeHtml(combo.kode || '-')}</div>
@@ -5938,17 +5946,60 @@ function openComboModal(kode, supplier, pemilik) {
         </div>
       </div>
     </div>
+
+    <div class="modal-section">
+      <h4>Lokasi &amp; Batch Pengeluaran (${batchRowsKeluar.length})</h4>
+      <p class="modal-history-hint muted">Setiap baris adalah satu batch pengeluaran untuk kombinasi barang + supplier + pemilik ini. Klik salah satu baris untuk lihat riwayat transaksinya.</p>
+      <div class="batch-table batch-table-keluar">
+        <div class="batch-table-row batch-table-head">
+          <div class="btc btc-lokasi">Lokasi</div>
+          <div class="btc btc-tanggal">Tanggal Keluar</div>
+          <div class="btc btc-jumlah">Jumlah PCS</div>
+          <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-pallet">Total Pallet</div>
+          <div class="btc btc-operator">Operator Input</div>
+          <div class="btc btc-aksi-head">Aksi</div>
+        </div>
+        <div class="batch-table-body">
+          ${batchRowsKeluar.length ? batchRowsKeluar.map(t => `
+            <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}">
+              <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
+              <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
+              <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
+              <button type="button" class="btc-aksi" data-batch-lokasi-keluar="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          `).join('') : `<div class="empty-state">Belum ada batch keluar yang tercatat.</div>`}
+        </div>
+      </div>
+    </div>
   `;
-  modalBody.querySelectorAll('.batch-table-row[data-lokasi]').forEach(row => {
+  modalBody.querySelectorAll('.batch-table:not(.batch-table-keluar) .batch-table-row[data-lokasi]').forEach(row => {
     row.addEventListener('click', (e) => {
       if (e.target.closest('.btc-aksi')) return;
       openComboRiwayatView(combo.kode, combo.supplier, combo.pemilik, row.dataset.lokasi);
     });
   });
-  modalBody.querySelectorAll('.btc-aksi').forEach(btn => {
+  modalBody.querySelectorAll('.batch-table:not(.batch-table-keluar) .btc-aksi').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openComboRiwayatView(combo.kode, combo.supplier, combo.pemilik, btn.dataset.batchLokasi);
+    });
+  });
+  modalBody.querySelectorAll('.batch-table-keluar .batch-table-row[data-lokasi]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.btc-aksi')) return;
+      openComboRiwayatView(combo.kode, combo.supplier, combo.pemilik, row.dataset.lokasi);
+    });
+  });
+  modalBody.querySelectorAll('.batch-table-keluar .btc-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openComboRiwayatView(combo.kode, combo.supplier, combo.pemilik, btn.dataset.batchLokasiKeluar);
     });
   });
   itemModal.hidden = false;
@@ -5986,7 +6037,7 @@ function openComboRiwayatView(kode, supplier, pemilik, lokasi) {
         <div class="riwayat-tx-card">
           <div class="riwayat-tx-top">
             <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · Penyesuaian' : ''}</span>
-            <span class="riwayat-tx-time">${formatTanggal(t.tanggal)} · ${formatJam(t.createdAt)}</span>
+            <span class="riwayat-tx-time" title="Tanggal &amp; jam form diisi">Diinput ${formatWaktu(t.createdAt)}</span>
           </div>
           <div class="riwayat-tx-grid">
             <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
@@ -5994,6 +6045,7 @@ function openComboRiwayatView(kode, supplier, pemilik, lokasi) {
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
+            <div><span class="lbl">Tanggal Kedatangan</span><span>${formatTanggal(t.tanggal)}</span></div>
             <div><span class="lbl">Operator Input</span><span>${escapeHtml(t.operator || '-')}</span></div>
           </div>
           ${t.keterangan ? `<div class="riwayat-tx-note">${escapeHtml(t.keterangan)}</div>` : ''}
@@ -6123,6 +6175,13 @@ function openItemModal(kode, namaFallback) {
     .filter(t => t.jenis === 'masuk')
     .sort((a, b) => b.createdAt - a.createdAt);
 
+  // Baris tabel kedua = tiap BATCH pengeluaran (transaksi KELUAR) barang
+  // ini, ditampilkan berdampingan dengan batch kedatangan di atas supaya
+  // pemasukan & pengeluaran sama-sama terlihat sekaligus.
+  const batchRowsKeluar = [...item.history]
+    .filter(t => t.jenis === 'keluar')
+    .sort((a, b) => b.createdAt - a.createdAt);
+
   modalBody.innerHTML = `
     <div class="modal-item-head">
       <div class="modal-item-kode mono">Kode Barang: ${escapeHtml(item.kode || '-')}</div>
@@ -6171,17 +6230,60 @@ function openItemModal(kode, namaFallback) {
         </div>
       </div>
     </div>
+
+    <div class="modal-section">
+      <h4>Lokasi &amp; Batch Pengeluaran Barang Ini (${batchRowsKeluar.length})</h4>
+      <p class="modal-history-hint muted">Setiap baris adalah satu batch pengeluaran. Klik salah satu baris untuk lihat riwayat transaksinya.</p>
+      <div class="batch-table batch-table-keluar">
+        <div class="batch-table-row batch-table-head">
+          <div class="btc btc-lokasi">Lokasi</div>
+          <div class="btc btc-tanggal">Tanggal Keluar</div>
+          <div class="btc btc-jumlah">Jumlah PCS</div>
+          <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-pallet">Total Pallet</div>
+          <div class="btc btc-operator">Operator Input</div>
+          <div class="btc btc-aksi-head">Aksi</div>
+        </div>
+        <div class="batch-table-body">
+          ${batchRowsKeluar.length ? batchRowsKeluar.map(t => `
+            <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}">
+              <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
+              <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
+              <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
+              <button type="button" class="btc-aksi" data-batch-lokasi-keluar="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          `).join('') : `<div class="empty-state">Belum ada batch keluar yang tercatat.</div>`}
+        </div>
+      </div>
+    </div>
   `;
-  modalBody.querySelectorAll('.batch-table-row[data-lokasi]').forEach(row => {
+  modalBody.querySelectorAll('.batch-table:not(.batch-table-keluar) .batch-table-row[data-lokasi]').forEach(row => {
     row.addEventListener('click', (e) => {
       if (e.target.closest('.btc-aksi')) return;
       openRiwayatTransaksiView(item.kode, row.dataset.lokasi);
     });
   });
-  modalBody.querySelectorAll('.btc-aksi').forEach(btn => {
+  modalBody.querySelectorAll('.batch-table:not(.batch-table-keluar) .btc-aksi').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       openRiwayatTransaksiView(item.kode, btn.dataset.batchLokasi);
+    });
+  });
+  modalBody.querySelectorAll('.batch-table-keluar .batch-table-row[data-lokasi]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.btc-aksi')) return;
+      openRiwayatTransaksiView(item.kode, row.dataset.lokasi);
+    });
+  });
+  modalBody.querySelectorAll('.batch-table-keluar .btc-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openRiwayatTransaksiView(item.kode, btn.dataset.batchLokasiKeluar);
     });
   });
   itemModal.hidden = false;
@@ -6219,7 +6321,7 @@ function openRiwayatTransaksiView(kode, lokasi) {
         <div class="riwayat-tx-card">
           <div class="riwayat-tx-top">
             <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}${t.tipe === 'penyesuaian' ? ' · Penyesuaian' : ''}</span>
-            <span class="riwayat-tx-time">${formatTanggal(t.tanggal)} · ${formatJam(t.createdAt)}</span>
+            <span class="riwayat-tx-time" title="Tanggal &amp; jam form diisi">Diinput ${formatWaktu(t.createdAt)}</span>
           </div>
           <div class="riwayat-tx-grid">
             <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
@@ -6227,6 +6329,7 @@ function openRiwayatTransaksiView(kode, lokasi) {
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
+            <div><span class="lbl">Tanggal Kedatangan</span><span>${formatTanggal(t.tanggal)}</span></div>
             <div><span class="lbl">Operator Input</span><span>${escapeHtml(t.operator || '-')}</span></div>
           </div>
           ${t.keterangan ? `<div class="riwayat-tx-note">${escapeHtml(t.keterangan)}</div>` : ''}

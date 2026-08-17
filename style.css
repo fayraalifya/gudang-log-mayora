@@ -881,6 +881,12 @@ body.role-operator .katalog-mode-tabs { display: none; }
 .batch-table-body { display: flex; flex-direction: column; gap: 4px; }
 .batch-table-body .batch-table-row { background: var(--kraft); cursor: pointer; transition: background-color .12s; }
 .batch-table-body .batch-table-row:hover { background: var(--navy-pale); }
+.batch-table-keluar .batch-table-body .batch-table-row {
+  background: var(--oranye-soft);
+  border-left: 3px solid var(--oranye);
+}
+.batch-table-keluar .batch-table-body .batch-table-row:hover { background: var(--navy-pale); }
+.batch-table-keluar .btc-lokasi { color: var(--oranye); }
 .btc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
 .btc-lokasi, .btc-nama { font-weight: 700; color: var(--ink); }
 .btc-aksi, .btc-aksi-head { text-align: center; }
