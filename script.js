@@ -484,6 +484,35 @@ class KatalogManager {
     this.loadKatalog();
   }
 
+  // ---- PENTING: subscription Firestore dipisah dari loadKatalog() ----
+  // Sebelumnya, onSnapshot() ke barangBaruCol/pemilikBaruCol dipasang
+  // LANGSUNG di dalam loadKatalog() (dipanggil dari init(), yang jalan di
+  // TOP-LEVEL script.js lewat `katalogManager.init()` — SEBELUM user
+  // login). firestore.rules mensyaratkan isAppUser() (auth != null DAN
+  // ada dokumen profil operator/admin), jadi listener yang terpasang
+  // sebelum login langsung kena "Missing or insufficient permissions" dan
+  // gagal permanen (sama seperti bug yang sudah diperbaiki di
+  // startBarangBaruListener()/startPemilikBaruListener() — lihat catatan
+  // di sana). Sekarang subscribeToUpdates() ini HANYA dipanggil dari
+  // initFirestoreConnection() -> startListening(), yaitu SETELAH user
+  // benar-benar login.
+  subscribeToUpdates() {
+    const fb = window.gudangFirebase;
+    if (!fb) return;
+    if (this._unsubBarangBaru) this._unsubBarangBaru();
+    if (this._unsubPemilikBaru) this._unsubPemilikBaru();
+    if (fb.barangBaruCol) {
+      this._unsubBarangBaru = fb.onSnapshot(fb.barangBaruCol, () => {
+        this.renderBarangList();
+      }, (err) => console.error('Gagal memuat pembaruan katalog barang:', err));
+    }
+    if (fb.pemilikBaruCol) {
+      this._unsubPemilikBaru = fb.onSnapshot(fb.pemilikBaruCol, () => {
+        this.renderPemilikList();
+      }, (err) => console.error('Gagal memuat pembaruan katalog pemilik:', err));
+    }
+  }
+
   switchTab(tab) {
     document.querySelectorAll('.katalog-tab-btn').forEach(btn => {
       btn.classList.toggle('is-active', btn.dataset.tab === tab);
@@ -499,18 +528,8 @@ class KatalogManager {
     this.renderSupplierList();
     this.renderPemilikList();
     this.renderLokasiList();
-
-    // Subscribe to updates
-    if (window.gudangFirebase?.barangBaruCol) {
-      window.gudangFirebase.onSnapshot(window.gudangFirebase.barangBaruCol, () => {
-        this.renderBarangList();
-      });
-    }
-    if (window.gudangFirebase?.pemilikBaruCol) {
-      window.gudangFirebase.onSnapshot(window.gudangFirebase.pemilikBaruCol, () => {
-        this.renderPemilikList();
-      });
-    }
+    // Subscription ke barangBaru/pemilikBaru DIPINDAH ke subscribeToUpdates()
+    // di atas, dipanggil setelah login. Lihat catatan di subscribeToUpdates().
   }
 
   // Hitung stok semua barang dalam SATU PASS — efisien untuk 671+ item.
@@ -2464,6 +2483,10 @@ function initFirestoreConnection() {
     // tidak pernah nyambung lagi walau user berhasil login sesudahnya).
     startBarangBaruListener();
     startPemilikBaruListener();
+    // Subscription katalog (panel Pengelolaan Barang/Pemilik) juga baru
+    // aman dipasang di sini, SETELAH login — lihat catatan di
+    // KatalogManager.subscribeToUpdates().
+    katalogManager.subscribeToUpdates();
   }
 
   if (window.gudangFirebase) {
@@ -2632,14 +2655,12 @@ const PEMILIK_OPTIONS = MASTER_DATA.pemilik || [];
 
 let customPemilik = [];
 
-// Dideklarasikan dulu (belum diberi nilai) supaya rebuildPemilikOptions() bisa
-// dipanggil dengan aman sebelum selPemilik selesai dibuat di bawah (fungsi ini
-// dipanggil di dalam options: pada setupSearchableSelect({ id: 'sel-pemilik' }),
-// yaitu SAAT selPemilik sendiri sedang diinisialisasi). `typeof selPemilik !==
-// 'undefined'` tidak cukup untuk kasus ini: variabel let/const yang belum
-// dieksekusi baris deklarasinya berada di "temporal dead zone" dan tetap
-// melempar ReferenceError walau dicek pakai typeof.
-let selPemilik;
+// CATATAN: `selPemilik` TIDAK dideklarasikan ulang di sini — sudah ada di
+// baris ~48-50 (bareng selBarang/selSupplier) untuk alasan TDZ yang sama.
+// Deklarasi kedua yang dulu ada di sini adalah sisa refactor lama dan
+// menyebabkan `SyntaxError: Identifier 'selPemilik' has already been
+// declared` — yang bikin SELURUH script.js gagal dimuat browser (makanya
+// semua tombol, termasuk "show password" di layar login, ikut mati total).
 
 function rebuildPemilikOptions() {
   const known = new Set(PEMILIK_OPTIONS.map(o => String(o).toLowerCase()));
@@ -2741,7 +2762,7 @@ selBarang = setupSearchableSelect({
   },
 });
 
-const selSupplier = setupSearchableSelect({
+selSupplier = setupSearchableSelect({
   id: 'sel-supplier',
   options: MASTER_DATA.supplier,
   getLabel: o => o,
@@ -2969,7 +2990,9 @@ const scanModalClose = document.getElementById('scan-modal-close');
 const scanStatus = document.getElementById('scan-status');
 const scanErrorBox = document.getElementById('scan-error');
 
-const LOKASI_SET = new Set(MASTER_DATA.lokasi);
+// CATATAN: LOKASI_SET TIDAK dideklarasikan ulang di sini — sudah ada di
+// baris ~40 (dari MASTER_DATA.lokasi yang sama). Deklarasi kedua yang
+// dulu ada di sini menyebabkan SyntaxError yang mematikan seluruh script.
 let html5QrScanner = null;
 let scanBusy = false;
 
