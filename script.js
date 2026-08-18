@@ -4379,21 +4379,50 @@ const periodTabsWrap = document.getElementById('period-tabs');
 const periodDatePicker = document.getElementById('period-date-picker');
 periodDatePicker.value = periodDate;
 
-periodTabsWrap.querySelectorAll('.period-tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    periodTabsWrap.querySelectorAll('.period-tab').forEach(b => b.classList.remove('is-active'));
-    btn.classList.add('is-active');
-    periodMode = btn.dataset.mode;
-    renderRingkasan();
-    renderRiwayat();
+// Tab periode di panel Riwayat (duplikat visual dari yang di Dashboard,
+// tapi keduanya menulis/membaca variabel global periodMode & periodDate
+// yang SAMA — jadi mengganti periode dari satu tempat otomatis
+// menyesuaikan tampilan yang satu lagi juga, tanpa perlu 2 sumber kebenaran).
+const periodTabsWrapRiwayat = document.getElementById('period-tabs-riwayat');
+const periodDatePickerRiwayat = document.getElementById('period-date-picker-riwayat');
+if (periodDatePickerRiwayat) periodDatePickerRiwayat.value = periodDate;
+
+// Terapkan periodMode/periodDate yang baru ke KEDUA set tab (Dashboard &
+// Riwayat) sekaligus, lalu render ulang panel yang terpengaruh.
+function syncPeriodTabsUI() {
+  [periodTabsWrap, periodTabsWrapRiwayat].forEach(wrap => {
+    if (!wrap) return;
+    wrap.querySelectorAll('.period-tab').forEach(b => b.classList.toggle('is-active', b.dataset.mode === periodMode));
+  });
+  if (periodDatePicker) periodDatePicker.value = periodDate;
+  if (periodDatePickerRiwayat) periodDatePickerRiwayat.value = periodDate;
+}
+
+function applyPeriodMode(mode) {
+  periodMode = mode;
+  syncPeriodTabsUI();
+  renderRingkasan();
+  renderRiwayat();
+}
+
+function applyPeriodDate(dateISO) {
+  periodDate = dateISO || todayISO();
+  syncPeriodTabsUI();
+  renderRingkasan();
+  renderRiwayat();
+}
+
+[periodTabsWrap, periodTabsWrapRiwayat].forEach(wrap => {
+  if (!wrap) return;
+  wrap.querySelectorAll('.period-tab').forEach(btn => {
+    btn.addEventListener('click', () => applyPeriodMode(btn.dataset.mode));
   });
 });
 
-periodDatePicker.addEventListener('change', () => {
-  periodDate = periodDatePicker.value || todayISO();
-  renderRingkasan();
-  renderRiwayat();
-});
+periodDatePicker.addEventListener('change', () => applyPeriodDate(periodDatePicker.value));
+if (periodDatePickerRiwayat) {
+  periodDatePickerRiwayat.addEventListener('change', () => applyPeriodDate(periodDatePickerRiwayat.value));
+}
 
 // ---- BATAS KAPASITAS PALLET PER BLOK ----
 // Jumlah maksimal pallet yang boleh ditampung tiap Blok gudang (A–L).
@@ -4418,11 +4447,26 @@ function getBatasLokasiPallet(lokasi) {
 // (BATAS_PALLET_BLOK) yang dipakai di openBlokModal() & mode "Blok" Katalog,
 // tapi sudah tidak pernah didefinisikan di file ini (sisa dari desain lama
 // sebelum pindah ke batas PER LOKASI lewat getBatasLokasiPallet() di atas) —
-// akibatnya kode itu crash (ReferenceError) tiap kali blok dibuka. Didefinisikan
-// sebagai objek kosong di sini supaya lookup-nya aman (selalu undefined, jadi
-// dianggap "tidak ada batas di level blok", sesuai desain kapasitas per-lokasi
-// yang sekarang dipakai).
-const BATAS_PALLET_BLOK = {};
+// akibatnya kode itu crash (ReferenceError) tiap kali blok dibuka, lalu
+// sempat "ditambal" jadi objek kosong supaya tidak crash — tapi itu artinya
+// info kapasitas & peringatan "kapasitas terlampaui" per Blok jadi tidak
+// pernah muncul sama sekali.
+//
+// PERBAIKAN SEBENARNYA: kapasitas total satu Blok = (jumlah lokasi/rak yang
+// terdaftar di Blok itu di data master) × (kapasitas pallet per lokasi —
+// 43 untuk Blok A-F, 47 untuk Blok G-L). Jumlah lokasi per Blok TIDAK selalu
+// sama (lihat data.js: Blok A & G cuma 5 lorong x 7 tingkat = 35 lokasi,
+// tapi Blok B/C/E/H/I/K punya 17 lorong x 7 tingkat = 119 lokasi, Blok D/J
+// 15 lorong = 105 lokasi, Blok F/L 16 lorong = 112 lokasi) — jadi kapasitas
+// totalnya dihitung dinamis dari data master, bukan angka tetap per blok.
+function getBatasPalletBlok(blok) {
+  const masterLokasi = (typeof MASTER_DATA !== 'undefined' && MASTER_DATA.lokasi) ? MASTER_DATA.lokasi : [];
+  const lokasiDiBlok = masterLokasi.filter(l => getBlokFromLokasi(l) === blok);
+  if (lokasiDiBlok.length === 0) return null;
+  const kapasitasPerLokasi = getBatasLokasiPallet(lokasiDiBlok[0]);
+  if (!kapasitasPerLokasi) return null; // Blok di luar A-L tidak punya batasan
+  return lokasiDiBlok.length * kapasitasPerLokasi;
+}
 
 // ---- Helper terpusat: cek sisa kapasitas pallet suatu LOKASI ----
 // Dipakai di SEMUA jalur yang bisa menambah pallet ke suatu lokasi (form
@@ -4450,6 +4494,118 @@ function cekKapasitasBlok(lokasi, deltaPallet, entriesUntukHitung) {
     ok: setelah <= batas, lokasi, lorong, batas, sekarang,
     sisa: Math.max(batas - sekarang, 0), setelah,
   };
+}
+
+/* ==========================================================================
+   DETEKSI ANOMALI LAPORAN — flag laporan yang "layak dicek" oleh admin.
+   Murni penanda visual di Riwayat (TIDAK memblokir apapun), berdasar 4
+   kriteria paling gampang dihitung dari data yang sudah ada:
+     1. Jumlah pallet jauh di luar kebiasaan barang itu sendiri.
+     2. Lokasi tujuan sudah/nyaris penuh (≥90% kapasitas) setelah laporan.
+     3. Barang KELUAR sekaligus >70% dari sisa stok kombinasi ini.
+     4. Kombinasi supplier+pemilik+lokasi yang baru pertama kali dipakai
+        utk kode barang tsb.
+   entries HARUS array currentEntries (sudah dikecualikan yang dihapus).
+========================================================================== */
+function computeEntryFlags(t, entries) {
+  const flags = [];
+  if (!t) return flags;
+
+  // Semua transaksi lain yang tercatat SEBELUM laporan ini (dipakai
+  // sebagai baseline "kebiasaan"/riwayat, supaya tidak menghitung
+  // laporan itu sendiri atau laporan yang lebih baru sebagai pembanding).
+  const sebelum = entries.filter(e => e.id !== t.id && e.createdAt < t.createdAt);
+
+  // ---- 1. Jumlah pallet di luar kebiasaan ----
+  if (t.jumlahPallet != null && t.jumlahPallet > 0) {
+    const historis = sebelum.filter(e =>
+      e.kodeBarang === t.kodeBarang && e.jenis === t.jenis && e.jumlahPallet != null && e.jumlahPallet > 0
+    );
+    // Baseline butuh minimal 3 laporan sebelumnya supaya "rata-rata"-nya
+    // cukup bermakna (bukan kebetulan 1-2 data saja).
+    if (historis.length >= 3) {
+      const rata2 = historis.reduce((s, e) => s + e.jumlahPallet, 0) / historis.length;
+      // Dianggap "di luar kebiasaan" kalau minimal 3x rata-rata DAN
+      // selisihnya minimal 5 pallet — dua syarat ini supaya barang kecil
+      // (rata-rata 1-2 pallet) tidak gampang ke-flag oleh selisih wajar.
+      if (rata2 > 0 && t.jumlahPallet >= rata2 * 3 && (t.jumlahPallet - rata2) >= 5) {
+        flags.push({
+          key: 'pallet-tidak-wajar',
+          label: 'Jumlah pallet di luar kebiasaan',
+          detail: `${roundPalletDisplay(t.jumlahPallet)} pallet — jauh di atas rata-rata ${roundPalletDisplay(rata2)} pallet dari ${historis.length} laporan ${t.jenis} sebelumnya utk barang ini.`,
+        });
+      }
+    }
+  }
+
+  // ---- 2. Kapasitas lokasi ≥90% (khusus barang MASUK) ----
+  if (t.jenis === 'masuk') {
+    const entriesSampaiSini = entries.filter(e => e.createdAt <= t.createdAt);
+    const cek = cekKapasitasBlok(t.lokasi, 0, entriesSampaiSini);
+    if (cek.batas && (cek.sekarang / cek.batas) >= 0.9) {
+      flags.push({
+        key: 'kapasitas-hampir-penuh',
+        label: 'Lokasi hampir penuh',
+        detail: `Lokasi ${t.lokasi} sudah terisi ${roundPalletDisplay(cek.sekarang)} dari ${cek.batas.toLocaleString('id-ID')} pallet (${Math.round((cek.sekarang / cek.batas) * 100)}%) setelah laporan ini.`,
+      });
+    }
+  }
+
+  // ---- 3. Barang KELUAR >70% dari stok kombinasi sekaligus ----
+  if (t.jenis === 'keluar' && t.jumlah > 0) {
+    const stokSebelum = sebelum
+      .filter(e => e.kodeBarang === t.kodeBarang && e.supplier === t.supplier && e.pemilik === t.pemilik && e.lokasi === t.lokasi)
+      .reduce((s, e) => s + (e.jenis === 'masuk' ? e.jumlah : -e.jumlah), 0);
+    if (stokSebelum > 0 && (t.jumlah / stokSebelum) > 0.7) {
+      flags.push({
+        key: 'keluar-besar',
+        label: 'Barang keluar sekaligus dalam jumlah besar',
+        detail: `Keluar ${t.jumlah.toLocaleString('id-ID')} pcs — ${Math.round((t.jumlah / stokSebelum) * 100)}% dari stok kombinasi ini (${stokSebelum.toLocaleString('id-ID')} pcs) sebelum laporan ini.`,
+      });
+    }
+  }
+
+  // ---- 4. Kombinasi supplier/pemilik/lokasi baru pertama kali dipakai ----
+  // Dibedakan jadi 2 keterangan supaya admin langsung tahu mana yang perlu
+  // dicek lebih hati-hati tanpa harus buka detail barang dulu:
+  //   (a) barang ini SAMA SEKALI belum pernah tercatat masuk sebelumnya
+  //       (wajar, laporan pertama utk barang baru — biasanya aman)
+  //   (b) barang ini SUDAH pernah tercatat masuk, tapi dengan kombinasi
+  //       supplier/pemilik/lokasi yang lain (worth dicek — bisa jadi
+  //       memang supplier/lokasi baru, bisa juga salah pilih pas input)
+  if (t.jenis === 'masuk') {
+    const riwayatBarangIni = sebelum.filter(e => e.kodeBarang === t.kodeBarang);
+    const pernahDipakai = riwayatBarangIni.some(e =>
+      e.supplier === t.supplier && e.pemilik === t.pemilik && e.lokasi === t.lokasi
+    );
+    if (!pernahDipakai) {
+      if (riwayatBarangIni.length === 0) {
+        flags.push({
+          key: 'barang-baru',
+          label: 'Barang baru — belum pernah tercatat masuk',
+          detail: `Ini laporan MASUK pertama utk kode barang "${t.kodeBarang}" (belum ada riwayat masuk sama sekali sebelumnya). Wajar utk barang baru — cek sekali saja utk pastikan kode/supplier/pemilik/lokasinya sudah benar.`,
+        });
+      } else {
+        // Kumpulkan kombinasi lain yang PERNAH dipakai sebelumnya utk
+        // barang ini, supaya admin bisa langsung bandingkan tanpa perlu
+        // buka detail barang.
+        const kombinasiLain = new Map();
+        riwayatBarangIni.forEach(e => {
+          const key = comboKey(e.kodeBarang, e.supplier, e.pemilik, e.lokasi);
+          if (!kombinasiLain.has(key)) kombinasiLain.set(key, `${e.supplier} / ${e.pemilik} / ${e.lokasi}`);
+        });
+        const contohLain = [...kombinasiLain.values()].slice(0, 2).join('; ');
+        flags.push({
+          key: 'kombinasi-baru',
+          label: 'Kombinasi supplier/pemilik/lokasi baru utk barang lama',
+          detail: `Barang ini sudah pernah tercatat masuk sebelumnya, tapi SELALU dengan kombinasi lain (mis. ${contohLain}${kombinasiLain.size > 2 ? ', dll' : ''}). Kombinasi supplier "${t.supplier}" + pemilik "${t.pemilik}" + lokasi "${t.lokasi}" ini baru dipakai kali ini — cek apakah memang benar (supplier/lokasi baru) atau salah pilih saat input.`,
+        });
+      }
+    }
+  }
+
+  return flags;
+
 }
 
 // Ambil kode "blok" dari kode lokasi — blok = huruf/segmen pertama sebelum
@@ -4595,7 +4751,7 @@ function openBlokModal(blok) {
   const data = blokData.find(b => b.blok === blok);
   if (!data) return;
   const total = data.terisi + data.kosong;
-  const batasBlok = BATAS_PALLET_BLOK[data.blok];
+  const batasBlok = getBatasPalletBlok(data.blok);
   const isOver = batasBlok ? data.totalPallet > batasBlok : false;
 
   modalBody.innerHTML = `
@@ -4640,6 +4796,69 @@ function openBlokModal(blok) {
     });
     grid.appendChild(cell);
   });
+  itemModal.hidden = false;
+}
+
+/* ---- MODAL "SEMUA BLOK" ----
+   Dipakai tombol "Lihat semua blok →" di kartu "Blok/Rak Terpadat"
+   dashboard admin. Sebelumnya tombol ini cuma manggil goToKatalog('blok'),
+   yang untuk admin ternyata TIDAK terhubung ke apa-apa (panel "Katalog &
+   Stok" admin adalah panel filter kedatangan barang yang beda total dari
+   tampilan blok/lokasi operator) — jadi klik tombol itu tidak menampilkan
+   apa-apa yang berguna. Modal ini menampilkan SEMUA blok gudang (bukan
+   cuma Top 5), diurutkan dari yang paling penuh, satu tampilan yang sama
+   persis dengan kartu dashboard tapi lengkap. Klik satu blok -> buka
+   detail rak per blok lewat openBlokModal (peta lokasi terisi/kosong). */
+function openAllBlokModal() {
+  const blokData = buildLokasiOccupancy(currentEntries);
+  const blokRanked = blokData
+    .map(b => {
+      const total = b.terisi + b.kosong;
+      const batasBlok = getBatasPalletBlok(b.blok);
+      const isOver = batasBlok ? b.totalPallet > batasBlok : false;
+      const pct = batasBlok
+        ? Math.round((b.totalPallet / batasBlok) * 100)
+        : (total > 0 ? Math.round((b.terisi / total) * 100) : 0);
+      return { ...b, total, batasBlok, isOver, pct };
+    })
+    .filter(b => b.total > 0)
+    .sort((a, b) => b.pct - a.pct);
+
+  modalBody.innerHTML = `
+    <div class="modal-item-head">
+      <div class="modal-item-kode">SEMUA BLOK GUDANG</div>
+      <h2 class="modal-item-nama">Blok / Rak Terpadat</h2>
+    </div>
+    <div class="modal-section">
+      ${blokRanked.length === 0 ? '<p class="vis-empty">Belum ada data lokasi/blok tercatat.</p>' : `
+        <div class="bar-list" id="all-blok-list" style="max-height:420px; overflow-y:auto; padding-right:2px;"></div>
+      `}
+    </div>
+  `;
+  if (blokRanked.length > 0) {
+    const list = modalBody.querySelector('#all-blok-list');
+    blokRanked.forEach(b => {
+      // Blok yang sudah penuh/lewat kapasitas SELALU merah — tidak pernah
+      // hijau/oranye lagi meski persentasenya diukur di bawah ambang biasa.
+      const lvl = (b.isOver || b.pct >= 100) ? 'dash-lvl-tinggi' : (b.pct >= 40 ? 'dash-lvl-sedang' : 'dash-lvl-rendah');
+      const row = document.createElement('div');
+      row.className = 'dash-blok-row' + (b.isOver ? ' is-over' : '');
+      row.style.cursor = 'pointer';
+      row.innerHTML = `
+        <div class="dash-blok-top">
+          <span class="dash-blok-name">Blok ${escapeHtml(b.blok)} <span class="muted">(${b.terisi}/${b.total} terisi)</span></span>
+          <span class="dash-blok-pct">${b.pct}%</span>
+        </div>
+        <div class="dash-blok-track"><div class="dash-blok-fill ${lvl}" style="width:${Math.max(Math.min(b.pct, 100), b.terisi > 0 ? 4 : 0)}%"></div></div>
+        <div class="dash-blok-pallet-info muted" style="font-size:12px; margin-top:4px;">
+          ${roundPalletDisplay(b.totalPallet)}${b.batasBlok ? ` / ${b.batasBlok.toLocaleString('id-ID')}` : ''} pallet
+        </div>
+        ${b.isOver ? `<div class="bar-row-warning">⚠️ Kapasitas terlampaui (batas ${b.batasBlok.toLocaleString('id-ID')} pallet)</div>` : ''}
+      `;
+      row.addEventListener('click', () => openBlokModal(b.blok));
+      list.appendChild(row);
+    });
+  }
   itemModal.hidden = false;
 }
 
@@ -4925,10 +5144,25 @@ function renderRingkasan() {
   const btnBarang = document.getElementById('dash-btn-barang');
   if (btnBarang) btnBarang.onclick = () => goToKatalog('barang');
 
-  /* ---- 4) BLOK / RAK TERPADAT (Top 5) — berdasar persentase lokasi terisi ---- */
+  /* ---- 4) BLOK / RAK TERPADAT (Top 5) — berdasar persentase kapasitas
+     PALLET terisi (bukan cuma jumlah lokasi terisi), supaya blok yang
+     pallet-nya sudah penuh/lewat kapasitas selalu tampil MERAH, tidak
+     ketiban warna hijau/oranye hanya karena jumlah lokasi (rak) yang
+     kepakai masih sedikit padahal pallet-nya sudah menumpuk penuh. ---- */
   const blokData = buildLokasiOccupancy(currentEntries);
   const blokRanked = blokData
-    .map(b => ({ ...b, total: b.terisi + b.kosong, pct: (b.terisi + b.kosong) > 0 ? Math.round((b.terisi / (b.terisi + b.kosong)) * 100) : 0 }))
+    .map(b => {
+      const total = b.terisi + b.kosong;
+      const batasBlok = getBatasPalletBlok(b.blok);
+      const isOver = batasBlok ? b.totalPallet > batasBlok : false;
+      // Kalau kapasitas pallet blok ini diketahui, pakai itu sebagai acuan
+      // "penuh" (persentase pallet terhadap batas). Kalau tidak ada data
+      // batas pallet, fallback ke persentase lokasi terisi seperti semula.
+      const pct = batasBlok
+        ? Math.round((b.totalPallet / batasBlok) * 100)
+        : (total > 0 ? Math.round((b.terisi / total) * 100) : 0);
+      return { ...b, total, batasBlok, isOver, pct };
+    })
     .filter(b => b.total > 0)
     .sort((a, b) => b.pct - a.pct)
     .slice(0, 5);
@@ -4941,15 +5175,18 @@ function renderRingkasan() {
     } else {
       topBlokEmpty.hidden = true;
       blokRanked.forEach(b => {
-        const lvl = b.pct >= 90 ? 'dash-lvl-tinggi' : (b.pct >= 40 ? 'dash-lvl-sedang' : 'dash-lvl-rendah');
+        // Blok yang sudah penuh/lewat kapasitas (isOver, atau pct >= 100
+        // walau batas belum tercatat) SELALU merah, tidak peduli angka
+        // ambang biasa — supaya tidak pernah salah kelihatan hijau/aman.
+        const lvl = (b.isOver || b.pct >= 100) ? 'dash-lvl-tinggi' : (b.pct >= 40 ? 'dash-lvl-sedang' : 'dash-lvl-rendah');
         const row = document.createElement('div');
-        row.className = 'dash-blok-row';
+        row.className = 'dash-blok-row' + (b.isOver ? ' is-over' : '');
         row.innerHTML = `
           <div class="dash-blok-top">
             <span class="dash-blok-name">Blok ${escapeHtml(b.blok)}</span>
             <span class="dash-blok-pct">${b.pct}%</span>
           </div>
-          <div class="dash-blok-track"><div class="dash-blok-fill ${lvl}" style="width:${Math.max(b.pct, b.terisi > 0 ? 4 : 0)}%"></div></div>
+          <div class="dash-blok-track"><div class="dash-blok-fill ${lvl}" style="width:${Math.max(Math.min(b.pct, 100), b.terisi > 0 ? 4 : 0)}%"></div></div>
         `;
         row.addEventListener('click', () => openBlokModal(b.blok));
         topBlokList.appendChild(row);
@@ -4957,7 +5194,7 @@ function renderRingkasan() {
     }
   }
   const btnBlok = document.getElementById('dash-btn-blok');
-  if (btnBlok) btnBlok.onclick = () => goToKatalog('blok');
+  if (btnBlok) btnBlok.onclick = () => openAllBlokModal();
 
   /* ---- 5) JENIS BARANG MASUK & KELUAR — jenis unik pada periode terpilih ---- */
   const kodeMasukSet = new Set(), kodeKeluarSet = new Set();
@@ -5456,7 +5693,7 @@ function renderKatalog() {
     katalogHint.textContent = `📁 ${blokData.length} blok gudang. Klik satu blok untuk lihat rak mana yang terisi/kosong, lalu klik rak untuk lihat barang & riwayat lengkapnya.`;
     filtered.forEach(b => {
       const total = b.terisi + b.kosong;
-      const batasBlok = BATAS_PALLET_BLOK[b.blok];
+      const batasBlok = getBatasPalletBlok(b.blok);
       const isOver = batasBlok ? b.totalPallet > batasBlok : false;
       const pct = batasBlok
         ? Math.round((b.totalPallet / batasBlok) * 100)
@@ -6358,14 +6595,16 @@ let riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
 
 function buildTicketCard(t) {
   const isAdjustment = t.tipe === 'penyesuaian';
+  const flags = computeEntryFlags(t, currentEntries);
   const card = document.createElement('div');
-  card.className = 'ticket';
+  card.className = 'ticket' + (flags.length > 0 ? ' ticket-flagged' : '');
   card.innerHTML = `
       <div class="ticket-top">
         <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">
           ${t.jenis === 'masuk' ? 'BARANG MASUK' : 'BARANG KELUAR'}
         </span>
         ${isAdjustment ? '<span class="badge-jenis badge-penyesuaian">PENYESUAIAN</span>' : ''}
+        ${flags.length > 0 ? `<span class="badge-jenis badge-flag" title="Laporan ini otomatis ditandai untuk ditinjau ulang">🚩 PERLU DITINJAU${flags.length > 1 ? ` (${flags.length})` : ''}</span>` : ''}
         <span class="ticket-time">${formatWaktu(t.createdAt)}</span>
         <span class="ticket-actions">
           <button type="button" class="icon-btn btn-edit" title="Edit lokasi / jumlah" aria-label="Edit">
@@ -6389,6 +6628,7 @@ function buildTicketCard(t) {
         <div><span class="lbl">Tanggal: </span>${formatTanggal(t.tanggal)}</div>
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
+      ${flags.length > 0 ? `<div class="ticket-note ticket-flag-note"><b>🚩 Ditandai utk ditinjau:</b><ul class="flag-reason-list">${flags.map(f => `<li><b>${escapeHtml(f.label)}.</b> ${escapeHtml(f.detail)}</li>`).join('')}</ul></div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
       <div class="ticket-edit" hidden>
         <div class="field">
@@ -6495,11 +6735,23 @@ function buildTicketCard(t) {
 }
 
 let riwayatJejakMode = false;
+let riwayatFlagMode = false;
 
 function updateJejakBadge() {
   const badge = document.getElementById('jejak-count-badge');
   if (!badge) return;
   const count = currentEntriesRaw.filter(t => t.dihapus || (t.editLog && t.editLog.length > 0)).length;
+  if (count > 0) { badge.hidden = false; badge.textContent = count > 99 ? '99+' : count; }
+  else badge.hidden = true;
+}
+
+// Sama seperti updateJejakBadge, tapi menghitung laporan yang otomatis
+// ditandai computeEntryFlags() (kriteria anomali) — dihitung dari
+// currentEntries (bukan Raw) supaya laporan yang sudah dihapus tidak ikut.
+function updateFlagBadge() {
+  const badge = document.getElementById('flag-count-badge');
+  if (!badge) return;
+  const count = currentEntries.filter(t => computeEntryFlags(t, currentEntries).length > 0).length;
   if (count > 0) { badge.hidden = false; badge.textContent = count > 99 ? '99+' : count; }
   else badge.hidden = true;
 }
@@ -6562,12 +6814,16 @@ function renderJejak() {
 function renderRiwayat() {
   if (currentRole() !== 'admin') return;
   updateJejakBadge();
+  updateFlagBadge();
   if (riwayatJejakMode) { renderJejak(); return; }
 
   const range = getPeriodRange(periodMode, periodDate);
-  riwayatHint.textContent = `Menampilkan laporan periode: ${range.label}`;
+  riwayatHint.textContent = riwayatFlagMode
+    ? `Menampilkan laporan yang ditandai 🚩 perlu ditinjau — periode: ${range.label}`
+    : `Menampilkan laporan periode: ${range.label}`;
 
   let all = currentEntries.filter(t => inPeriod(t, range));
+  if (riwayatFlagMode) all = all.filter(t => computeEntryFlags(t, currentEntries).length > 0);
   all = all.sort((a, b) => b.createdAt - a.createdAt);
 
   const q = searchRiwayat.value.trim().toLowerCase();
@@ -6587,7 +6843,9 @@ function renderRiwayat() {
   riwayatList.innerHTML = '';
   if (filtered.length === 0) {
     riwayatEmpty.hidden = false;
-    riwayatEmpty.textContent = all.length === 0 ? 'Belum ada laporan pada periode ini.' : 'Tidak ada laporan yang cocok dengan pencarian.';
+    riwayatEmpty.textContent = all.length === 0
+      ? (riwayatFlagMode ? 'Tidak ada laporan yang ditandai perlu ditinjau pada periode ini. 👍' : 'Belum ada laporan pada periode ini.')
+      : 'Tidak ada laporan yang cocok dengan pencarian.';
     return;
   }
   riwayatEmpty.hidden = true;
@@ -6619,7 +6877,22 @@ const btnToggleJejak = document.getElementById('btn-toggle-jejak');
 if (btnToggleJejak) {
   btnToggleJejak.addEventListener('click', () => {
     riwayatJejakMode = !riwayatJejakMode;
+    if (riwayatJejakMode) riwayatFlagMode = false;
     btnToggleJejak.classList.toggle('is-active', riwayatJejakMode);
+    const btnFlag = document.getElementById('btn-toggle-flag');
+    if (btnFlag) btnFlag.classList.remove('is-active');
+    riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
+    renderRiwayat();
+  });
+}
+
+const btnToggleFlag = document.getElementById('btn-toggle-flag');
+if (btnToggleFlag) {
+  btnToggleFlag.addEventListener('click', () => {
+    riwayatFlagMode = !riwayatFlagMode;
+    if (riwayatFlagMode) riwayatJejakMode = false;
+    btnToggleFlag.classList.toggle('is-active', riwayatFlagMode);
+    if (btnToggleJejak) btnToggleJejak.classList.remove('is-active');
     riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
     renderRiwayat();
   });

@@ -1888,6 +1888,23 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .ticket-jejak { border-style: dashed; }
 .ticket-dihapus { opacity: 0.85; background: var(--merah-flag-soft); border-color: var(--merah-flag); }
 
+/* ==========================================================================
+   DETEKSI ANOMALI LAPORAN — badge "PERLU DITINJAU" & rincian alasannya di
+   kartu Riwayat, dipasangkan sama tombol filter #btn-toggle-flag. Warna
+   pakai token merah-flag yang sama dipakai utk "DIHAPUS", supaya konsisten
+   sebagai sinyal "butuh perhatian admin".
+========================================================================== */
+.badge-flag { color: var(--merah-flag); background: var(--merah-flag-soft); }
+.ticket-flagged { border-color: var(--merah-flag); }
+.ticket-flag-note {
+  background: var(--merah-flag-soft); color: var(--merah-flag);
+  border: 1px solid var(--merah-flag);
+}
+.flag-reason-list { margin: 6px 0 0; padding-left: 18px; }
+.flag-reason-list li { margin-bottom: 4px; }
+.flag-reason-list li:last-child { margin-bottom: 0; }
+#btn-toggle-flag.is-active { background: var(--merah-flag); color: var(--text-on-dark); border-color: var(--merah-flag); }
+
 .jejak-dihapus-note {
   margin-top: 10px; padding: 9px 12px; background: var(--merah-flag-soft); border: 1px solid var(--merah-flag);
   border-radius: 9px; font-size: 12.5px; color: var(--merah-flag);
@@ -2303,6 +2320,8 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .dash-blok-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
 .dash-blok-name { font-family: var(--font-mono); font-size: 13px; font-weight: 800; color: var(--ink); letter-spacing: 0.3px; }
 .dash-blok-pct { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.dash-blok-row.is-over .dash-blok-pct { color: var(--merah); }
+.dash-blok-row.is-over .dash-blok-name { color: var(--merah); }
 .dash-blok-track { width: 100%; height: 8px; border-radius: 6px; background: var(--kraft-line); overflow: hidden; }
 .dash-blok-fill { height: 100%; border-radius: 6px; transition: width .3s ease; }
 .dash-blok-fill.dash-lvl-tinggi { background: var(--merah-flag); }

@@ -712,7 +712,7 @@
             <div class="dash-card-title">Blok / Rak Terpadat <span class="dash-card-title-note">(Top 5)</span></div>
             <div id="dash-top-blok-empty" class="vis-empty" hidden>Belum ada data lokasi.</div>
             <div class="dash-blok-list" id="dash-top-blok-list"></div>
-            <button type="button" class="dash-link-btn" id="dash-btn-blok">Lihat semua lokasi →</button>
+            <button type="button" class="dash-link-btn" id="dash-btn-blok">Lihat semua blok →</button>
           </div>
 
         </div>
@@ -1248,6 +1248,21 @@
       <!-- PANEL: RIWAYAT LAPORAN — hanya admin -->
       <div class="op-panel admin-panel admin-only" id="admin-panel-riwayat" data-admin-panel="riwayat">
       <section class="riwayat-section">
+
+        <!-- PILIHAN PERIODE — sinkron dengan tab periode di Dashboard
+             (variabel periodMode/periodDate yang sama), jadi admin bisa
+             ganti periode dari sini TANPA perlu pindah ke tab Dashboard. -->
+        <div class="period-tabs" id="period-tabs-riwayat">
+          <div class="period-tab-group">
+            <button type="button" class="period-tab is-active" data-mode="harian">Harian</button>
+            <button type="button" class="period-tab" data-mode="mingguan">Mingguan</button>
+            <button type="button" class="period-tab" data-mode="bulanan">Bulanan</button>
+            <button type="button" class="period-tab" data-mode="tahunan">Tahunan</button>
+            <button type="button" class="period-tab" data-mode="semua">Semua</button>
+          </div>
+          <input type="date" id="period-date-picker-riwayat" class="period-date">
+        </div>
+
         <div class="riwayat-header">
           <h3>Riwayat Laporan</h3>
           <div class="riwayat-actions">
@@ -1258,6 +1273,9 @@
             <button type="button" id="btn-export" class="btn-secondary">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
               Unduh Excel
+            </button>
+            <button type="button" id="btn-toggle-flag" class="btn-secondary">
+              🚩 Perlu Ditinjau <span id="flag-count-badge" class="jejak-count-badge" hidden>0</span>
             </button>
             <button type="button" id="btn-toggle-jejak" class="btn-secondary">
               🕵️ Jejak Edit/Hapus <span id="jejak-count-badge" class="jejak-count-badge" hidden>0</span>
