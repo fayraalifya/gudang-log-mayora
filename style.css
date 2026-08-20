@@ -2286,6 +2286,20 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .dash-row-3 .dash-card:nth-child(2) { animation-delay: .08s; }
 .dash-row-3 .dash-card:nth-child(3) { animation-delay: .14s; }
 
+/* ---- Baris "quad" (4 kartu): Kondisi Stok, Stok Terbanyak, Pallet
+   Terbanyak, Blok/Rak Terpadat. Pakai selector 2-kelas supaya spesifisitasnya
+   lebih tinggi dari .dash-row-3 biasa (termasuk di dalam media query di
+   bawah), jadi baris ini konsisten 4 kolom sendiri tanpa harus duplikat
+   semua breakpoint punya .dash-row-3. ---- */
+.dash-row-3.dash-row-quad { grid-template-columns: repeat(4, 1fr); }
+.dash-row-3.dash-row-quad .dash-card:nth-child(4) { animation-delay: .2s; }
+@media (max-width: 1300px) {
+  .dash-row-3.dash-row-quad { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .dash-row-3.dash-row-quad { grid-template-columns: 1fr; }
+}
+
 /* ---- Kondisi Stok Saat Ini ---- */
 .dash-mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px; }
 .dash-mini-stat { 
@@ -2960,7 +2974,7 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .kds-sort-label .kds-native-select { width: auto; padding: 8px 34px 8px 12px; font-size: 12.5px; }
 
 .kds-table-wrap { overflow-x: auto; border: 2px solid var(--kraft-line); border-radius: 12px; margin-bottom: 20px; }
-.kds-table { width: 100%; border-collapse: collapse; min-width: 920px; }
+.kds-table { width: 100%; border-collapse: collapse; min-width: 1040px; }
 .kds-table thead th {
   text-align: left; font-family: var(--font-display); font-weight: 700; font-size: 10.5px;
   letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-muted);

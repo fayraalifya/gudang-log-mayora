@@ -666,8 +666,8 @@
           </div>
         </div>
 
-        <!-- BARIS 2: Kondisi Stok · Barang Terbanyak · Blok/Rak Terpadat -->
-        <div class="dash-row-3">
+        <!-- BARIS 2: Kondisi Stok · Stok Terbanyak · Pallet Terbanyak · Blok/Rak Terpadat -->
+        <div class="dash-row-3 dash-row-quad">
 
           <div class="dash-card">
             <div class="dash-card-title">Kondisi Stok Saat Ini</div>
@@ -707,6 +707,13 @@
             <div id="dash-top-barang-empty" class="vis-empty" hidden>Belum ada data stok.</div>
             <div class="dash-rank-list" id="dash-top-barang-list"></div>
             <button type="button" class="dash-link-btn" id="dash-btn-barang">Lihat semua barang →</button>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-title">Barang dengan Pallet Terbanyak <span class="dash-card-title-note">(Top 5)</span></div>
+            <div id="dash-top-pallet-empty" class="vis-empty" hidden>Belum ada data pallet.</div>
+            <div class="dash-rank-list" id="dash-top-pallet-list"></div>
+            <button type="button" class="dash-link-btn" id="dash-btn-pallet">Lihat semua barang →</button>
           </div>
 
           <div class="dash-card">
@@ -957,6 +964,7 @@
                   <option value="tanggal-asc">Tanggal (Terlama)</option>
                   <option value="nama-asc">Nama Barang (A-Z)</option>
                   <option value="pcs-desc">Total PCS (Terbesar)</option>
+                  <option value="pallet-desc">Total Pallet (Terbesar)</option>
                 </select>
               </label>
               <button type="button" class="btn-secondary" id="kds-btn-export">
@@ -976,6 +984,7 @@
                   <th>Supplier</th>
                   <th>Pemilik Barang</th>
                   <th>Lokasi</th>
+                  <th>Tanggal Kedatangan</th>
                   <th>Total Masuk (PCS)</th>
                   <th>Total Keluar (PCS)</th>
                   <th>Stok Saat Ini</th>

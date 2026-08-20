@@ -103,6 +103,19 @@ function getPalletKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
 }
 
+// Tanggal kedatangan (masuk) paling awal untuk satu kombinasi kode+supplier+
+// pemilik+lokasi. Dipakai untuk menampilkan "asal" tanggal kedatangan barang
+// pada laporan KELUAR di Riwayat (jenis 'keluar' hanya punya tanggal
+// penginputan, jadi tanggal kedatangan aslinya perlu dicari dari transaksi
+// MASUK dengan kombinasi yang sama).
+function getTanggalKedatanganKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
+  const tanggalMasuk = entries
+    .filter(t => t.jenis === 'masuk' && t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi && t.tanggal)
+    .map(t => t.tanggal)
+    .sort();
+  return tanggalMasuk.length > 0 ? tanggalMasuk[0] : null;
+}
+
 // Daftar semua kombinasi supplier+pemilik+lokasi (+ sisa stok, pallet, dan
 // tanggal kedatangan) yang MASIH ADA STOKNYA untuk satu kode barang. Inilah
 // "kesatuan" yang ditampilkan ke operator saat lapor barang KELUAR, supaya
@@ -3352,6 +3365,10 @@ function kdsBuildCombinationStats(combo) {
   const totalPallet = relatedTx
     .filter(t => t.jumlahPallet != null)
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+
+  // Tanggal kedatangan (transaksi MASUK paling awal) untuk kombinasi ini —
+  // ditampilkan sebagai kolom "Tanggal Kedatangan" di tabel Katalog & Stok.
+  const tanggalKedatangan = getTanggalKedatanganKombinasi(allTransactions, combo.kodeBarang, combo.supplier, combo.pemilik, combo.lokasi);
   
   // Tentukan status stok
   let status = 'tersedia';
@@ -3364,6 +3381,7 @@ function kdsBuildCombinationStats(combo) {
     totalKeluar,
     stokSaatIni,
     totalPallet,
+    tanggalKedatangan,
     status,
     transactionCount: relatedTx.length
   };
@@ -3449,6 +3467,9 @@ function kdsSortCombinations(combinations, mode) {
     case 'pcs-desc':
       sorted.sort((a, b) => (b.totalMasuk || 0) - (a.totalMasuk || 0));
       break;
+    case 'pallet-desc':
+      sorted.sort((a, b) => (b.totalPallet || 0) - (a.totalPallet || 0));
+      break;
   }
   return sorted;
 }
@@ -3497,6 +3518,9 @@ function kdsSortRows(rows, mode) {
       break;
     case 'pcs-desc':
       sorted.sort((a, b) => (b.jumlah || 0) - (a.jumlah || 0));
+      break;
+    case 'pallet-desc':
+      sorted.sort((a, b) => (b.jumlahPallet || 0) - (a.jumlahPallet || 0));
       break;
     case 'tanggal-desc':
     default:
@@ -3617,6 +3641,7 @@ function kdsBuildRow(combo) {
       <td>${escapeHtml(combo.supplier || '-')}</td>
       <td>${escapeHtml(combo.pemilik || '-')}</td>
       <td class="mono">${escapeHtml(combo.lokasi || '-')}</td>
+      <td>${combo.tanggalKedatangan ? formatTanggal(combo.tanggalKedatangan) : '-'}</td>
       <td class="kds-td-num">${(combo.totalMasuk || 0).toLocaleString('id-ID')} pcs</td>
       <td class="kds-td-num">${(combo.totalKeluar || 0).toLocaleString('id-ID')} pcs</td>
       <td class="kds-td-num">
@@ -5220,6 +5245,32 @@ function renderRingkasan() {
   const btnBarang = document.getElementById('dash-btn-barang');
   if (btnBarang) btnBarang.onclick = () => goToKatalog('barang');
 
+  /* ---- 3b) BARANG DENGAN PALLET TERBANYAK (Top 5) ---- */
+  const topPallet = stokItems.filter(it => it.stokPallet > 0).sort((a, b) => b.stokPallet - a.stokPallet).slice(0, 5);
+  const topPalletList = document.getElementById('dash-top-pallet-list');
+  const topPalletEmpty = document.getElementById('dash-top-pallet-empty');
+  if (topPalletList && topPalletEmpty) {
+    topPalletList.innerHTML = '';
+    if (topPallet.length === 0) {
+      topPalletEmpty.hidden = false;
+    } else {
+      topPalletEmpty.hidden = true;
+      topPallet.forEach((it, i) => {
+        const row = document.createElement('div');
+        row.className = 'dash-rank-row';
+        row.innerHTML = `
+          <span class="dash-rank-num">${i + 1}</span>
+          <span class="dash-rank-name" title="${escapeHtml(it.nama)}">${escapeHtml(it.nama)}</span>
+          <span class="dash-rank-val">${roundPalletDisplay(it.stokPallet)} pallet</span>
+        `;
+        row.addEventListener('click', () => openItemModal(it.kode, it.nama));
+        topPalletList.appendChild(row);
+      });
+    }
+  }
+  const btnPallet = document.getElementById('dash-btn-pallet');
+  if (btnPallet) btnPallet.onclick = () => goToKatalog('barang');
+
   /* ---- 4) BLOK / RAK TERPADAT (Top 5) — berdasar persentase kapasitas
      PALLET terisi (bukan cuma jumlah lokasi terisi), supaya blok yang
      pallet-nya sudah penuh/lewat kapasitas selalu tampil MERAH, tidak
@@ -6676,6 +6727,14 @@ const RIWAYAT_EDIT_HAPUS_AKTIF = false;
 
 function buildTicketCard(t) {
   const isAdjustment = t.tipe === 'penyesuaian';
+  // Untuk laporan KELUAR, t.tanggal adalah tanggal PENGINPUTAN — bukan
+  // tanggal kedatangan barangnya. Cari tanggal kedatangan asli (transaksi
+  // MASUK paling awal) dari kombinasi kode+supplier+pemilik+lokasi yang
+  // sama, supaya admin tetap bisa lihat sudah berapa lama barang itu
+  // tersimpan sebelum akhirnya keluar.
+  const tanggalKedatanganAsal = t.jenis === 'keluar'
+    ? getTanggalKedatanganKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi)
+    : null;
   const card = document.createElement('div');
   card.className = 'ticket';
   card.innerHTML = `
@@ -6706,6 +6765,7 @@ function buildTicketCard(t) {
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet}</div>` : ''}
         <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
+        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
