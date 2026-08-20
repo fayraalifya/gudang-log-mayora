@@ -457,11 +457,12 @@
           </div>
 
           <div class="field">
-            <label for="input-tanggal">Tanggal Kedatangan <span class="req">*</span></label>
+            <label for="input-tanggal"><span id="label-tanggal-text">Tanggal Kedatangan</span> <span class="req">*</span></label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
               <input type="date" id="input-tanggal">
             </div>
+            <p class="muted tanggal-hint" id="tanggal-hint" hidden>Tanggal form ini dilaporkan/diinput — <strong>bukan</strong> tanggal barang pertama kali datang (lihat "📅 Datang" di kartu Stok Tersedia di atas untuk tanggal kedatangan aslinya).</p>
           </div>
 
           <div class="field">
@@ -804,11 +805,15 @@
            PANEL: KATALOG & STOK — ADMIN. Berbeda dari #op-panel-katalog di
            atas (yang browse-only, dipakai bersama operator): panel ini
            khusus admin, berbasis FILTER + TABEL HASIL PENCARIAN per
-           kedatangan barang (bukan folder). Alurnya: admin isi filter →
-           klik "Terapkan Filter" → hasil muncul per baris kedatangan →
-           klik "Detail" untuk lihat detail kedatangan → dari situ bisa
+           TRANSAKSI barang — baik barang MASUK maupun barang KELUAR
+           (seperti operator, yang laporannya juga mencatat masuk & keluar),
+           bukan folder. Filter "Jenis Transaksi" bisa dipakai untuk
+           mempersempit ke salah satu jenis saja, default menampilkan
+           keduanya. Alurnya: admin isi filter → klik "Terapkan Filter" →
+           hasil muncul per baris transaksi (ditandai badge MASUK/KELUAR) →
+           klik "Detail" untuk lihat detail transaksi → dari situ bisa
            lanjut ke "Riwayat Kedatangan" untuk lihat semua riwayat barang
-           yang sama.
+           masuk yang sama.
       ======================================================================= -->
       <div class="op-panel admin-panel admin-only" id="admin-panel-katalog-stok" data-admin-panel="katalog" hidden>
 
@@ -896,12 +901,13 @@
             </div>
 
             <div class="field">
-              <label>Tanggal Kedatangan</label>
+              <label>Rentang Tanggal</label>
               <div class="kds-date-range">
                 <input type="date" id="kds-tanggal-dari" aria-label="Dari tanggal">
                 <span class="kds-date-arrow">→</span>
                 <input type="date" id="kds-tanggal-sampai" aria-label="Sampai tanggal">
               </div>
+              <p class="muted kds-date-hint">Tanggal Kedatangan untuk Barang Masuk, Tanggal Penginputan untuk Barang Keluar.</p>
             </div>
 
             <div class="field">
@@ -911,6 +917,15 @@
                 <option value="tersedia">Tersedia</option>
                 <option value="menipis">Menipis</option>
                 <option value="habis">Habis</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Jenis Transaksi</label>
+              <select id="kds-jenis-transaksi" class="kds-native-select">
+                <option value="semua">Masuk &amp; Keluar</option>
+                <option value="masuk">Barang Masuk</option>
+                <option value="keluar">Barang Keluar</option>
               </select>
             </div>
 
@@ -938,8 +953,8 @@
             <div class="kds-results-actions">
               <label class="kds-sort-label">Urutkan:
                 <select id="kds-sort" class="kds-native-select">
-                  <option value="tanggal-desc">Tanggal Kedatangan (Terbaru)</option>
-                  <option value="tanggal-asc">Tanggal Kedatangan (Terlama)</option>
+                  <option value="tanggal-desc">Tanggal (Terbaru)</option>
+                  <option value="tanggal-asc">Tanggal (Terlama)</option>
                   <option value="nama-asc">Nama Barang (A-Z)</option>
                   <option value="pcs-desc">Total PCS (Terbesar)</option>
                 </select>
@@ -951,7 +966,7 @@
             </div>
           </div>
 
-          <div class="empty-state" id="kds-empty" hidden>Tidak ada kedatangan barang yang cocok dengan filter ini.</div>
+          <div class="empty-state" id="kds-empty" hidden>Tidak ada transaksi barang yang cocok dengan filter ini.</div>
 
           <div class="kds-table-wrap" id="kds-table-wrap">
             <table class="kds-table">
@@ -960,11 +975,10 @@
                   <th class="kds-th-nama">Nama Barang</th>
                   <th>Supplier</th>
                   <th>Pemilik Barang</th>
-                  <th>Total PCS</th>
-                  <th>Total Pallet</th>
                   <th>Lokasi</th>
-                  <th>Terakhir Masuk</th>
-                  <th>Operator Input</th>
+                  <th>Total Masuk (PCS)</th>
+                  <th>Total Keluar (PCS)</th>
+                  <th>Stok Saat Ini</th>
                   <th class="kds-th-aksi">Aksi</th>
                 </tr>
               </thead>
@@ -976,9 +990,10 @@
             <div class="kds-summary-panel">
               <div class="kds-summary-title">Ringkasan Hasil Filter</div>
               <div class="kds-summary-grid">
-                <div class="kds-summary-item"><span>Total PCS</span><strong id="kds-sum-pcs">0 pcs</strong></div>
-                <div class="kds-summary-item"><span>Total Pallet</span><strong id="kds-sum-pallet">0 pallet</strong></div>
-                <div class="kds-summary-item"><span>Jumlah Kedatangan</span><strong id="kds-sum-kedatangan">0 kali</strong></div>
+                <div class="kds-summary-item"><span>Total PCS Masuk</span><strong id="kds-sum-pcs">0 pcs</strong></div>
+                <div class="kds-summary-item"><span>Total PCS Keluar</span><strong id="kds-sum-pcs-keluar">0 pcs</strong></div>
+                <div class="kds-summary-item kds-summary-item-highlight"><span>Stok Saat Ini (Total)</span><strong id="kds-sum-stok-saat-ini">0 pcs</strong></div>
+                <div class="kds-summary-item"><span>Jumlah Kombinasi</span><strong id="kds-sum-kedatangan">0 kombinasi</strong></div>
                 <div class="kds-summary-item"><span>Lokasi Tersebar</span><strong id="kds-sum-lokasi">0 lokasi</strong></div>
               </div>
             </div>
@@ -1247,22 +1262,22 @@
 
       <!-- PANEL: RIWAYAT LAPORAN — hanya admin -->
       <div class="op-panel admin-panel admin-only" id="admin-panel-riwayat" data-admin-panel="riwayat">
-      <section class="riwayat-section">
 
-        <!-- PILIHAN PERIODE — sinkron dengan tab periode di Dashboard
-             (variabel periodMode/periodDate yang sama), jadi admin bisa
-             ganti periode dari sini TANPA perlu pindah ke tab Dashboard. -->
-        <div class="period-tabs" id="period-tabs-riwayat">
-          <div class="period-tab-group">
-            <button type="button" class="period-tab is-active" data-mode="harian">Harian</button>
-            <button type="button" class="period-tab" data-mode="mingguan">Mingguan</button>
-            <button type="button" class="period-tab" data-mode="bulanan">Bulanan</button>
-            <button type="button" class="period-tab" data-mode="tahunan">Tahunan</button>
-            <button type="button" class="period-tab" data-mode="semua">Semua</button>
-          </div>
-          <input type="date" id="period-date-picker-riwayat" class="period-date">
+      <!-- PILIHAN PERIODE — sama seperti di Dashboard, biar bisa lihat riwayat
+           per hari/minggu/bulan/tahun tanpa pindah ke tab Dashboard. Kedua
+           set tombol ini berbagi state periodMode/periodDate yang sama,
+           jadi otomatis sinkron dengan filter di Dashboard. -->
+      <div class="period-tabs" id="period-tabs-riwayat">
+        <div class="period-tab-group">
+          <button type="button" class="period-tab" data-mode="harian">Harian</button>
+          <button type="button" class="period-tab" data-mode="mingguan">Mingguan</button>
+          <button type="button" class="period-tab" data-mode="bulanan">Bulanan</button>
+          <button type="button" class="period-tab" data-mode="tahunan">Tahunan</button>
         </div>
+        <input type="date" id="period-date-picker-riwayat" class="period-date">
+      </div>
 
+      <section class="riwayat-section">
         <div class="riwayat-header">
           <h3>Riwayat Laporan</h3>
           <div class="riwayat-actions">
@@ -1270,17 +1285,15 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
               <input type="text" id="search-riwayat" placeholder="Cari operator / barang...">
             </div>
+            <button type="button" id="btn-toggle-jejak" class="btn-secondary" title="Lihat laporan yang pernah diedit atau dihapus">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+              Jejak
+              <span id="jejak-count-badge" class="jejak-count-badge" hidden>0</span>
+            </button>
             <button type="button" id="btn-export" class="btn-secondary">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
               Unduh Excel
             </button>
-            <button type="button" id="btn-toggle-flag" class="btn-secondary">
-              🚩 Perlu Ditinjau <span id="flag-count-badge" class="jejak-count-badge" hidden>0</span>
-            </button>
-            <button type="button" id="btn-toggle-jejak" class="btn-secondary">
-              🕵️ Jejak Edit/Hapus <span id="jejak-count-badge" class="jejak-count-badge" hidden>0</span>
-            </button>
-            <button type="button" id="btn-clear" class="btn-danger-outline">Hapus Semua</button>
           </div>
         </div>
         <p class="riwayat-hint" id="riwayat-hint">Menampilkan laporan sesuai periode yang dipilih di atas.</p>
@@ -1431,6 +1444,23 @@
     <div class="op-detail-panel" id="op-detail-panel">
       <button type="button" class="op-detail-close" id="op-detail-close" aria-label="Tutup">&times;</button>
       <div id="op-detail-body"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: KONFIRMASI (pengganti confirm() bawaan browser, dipakai lewat
+       showConfirmModal() di script.js — tombol #confirm-modal-ok bisa
+       berubah jadi merah/"danger" tergantung tingkat risiko aksinya) -->
+  <div id="confirm-modal" class="modal-overlay" hidden>
+    <div class="modal-panel modal-panel-confirm">
+      <div class="confirm-modal-icon" id="confirm-modal-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+      </div>
+      <h2 class="modal-title" id="confirm-modal-title">Konfirmasi</h2>
+      <p class="confirm-modal-message" id="confirm-modal-message"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="confirm-modal-cancel">Batal</button>
+        <button type="button" class="btn-danger" id="confirm-modal-ok">Ya, Lanjutkan</button>
+      </div>
     </div>
   </div>
 

@@ -788,7 +788,7 @@ class KatalogManager {
   }
 
   async deleteBarang(kode) {
-    if (!confirm(`Hapus kode barang "${kode}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    if (!await showConfirmModal({ title: 'Hapus Kode Barang', message: `Hapus kode barang "${kode}"? Tindakan ini tidak dapat dibatalkan.` })) return;
     try {
       const fb = await waitForFirebase();
       const existing = barangOverlay.get(kode) || {};
@@ -1022,7 +1022,7 @@ class KatalogManager {
   }
 
   async deleteSupplier(nama) {
-    if (!confirm(`Hapus supplier "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    if (!await showConfirmModal({ title: 'Hapus Supplier', message: `Hapus supplier "${nama}"? Tindakan ini tidak dapat dibatalkan.` })) return;
     try {
       const fb = await waitForFirebase();
       const docId = sanitizeMasterId(nama);
@@ -1146,7 +1146,7 @@ class KatalogManager {
   }
 
   async deletePemilik(nama) {
-    if (!confirm(`Hapus pemilik "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    if (!await showConfirmModal({ title: 'Hapus Pemilik', message: `Hapus pemilik "${nama}"? Tindakan ini tidak dapat dibatalkan.` })) return;
     try {
       const fb = await waitForFirebase();
       const docId = sanitizeMasterId(nama);
@@ -1270,7 +1270,7 @@ class KatalogManager {
   }
 
   async deleteLokasi(nama) {
-    if (!confirm(`Hapus lokasi "${nama}"? Tindakan ini tidak dapat dibatalkan.`)) return;
+    if (!await showConfirmModal({ title: 'Hapus Lokasi', message: `Hapus lokasi "${nama}"? Tindakan ini tidak dapat dibatalkan.` })) return;
     try {
       const fb = await waitForFirebase();
       const docId = sanitizeMasterId(nama);
@@ -2042,8 +2042,8 @@ let firestoreReady = false;
 let periodMode = 'harian';
 let periodDate = todayISO();
 
-const MONTH_HEADERS = ['Tanggal', 'Jenis', 'Tipe', 'Nama Operator', 'Kode Barang', 'Nama Barang', 'Supplier', 'Pemilik Barang', 'Lokasi', 'Jumlah (pcs)', 'Qty per Pallet (pcs)', 'Jumlah Pallet', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
-const MONTH_COL_WIDTHS = [12, 9, 13, 18, 14, 34, 22, 14, 10, 12, 16, 12, 28, 22, 22, 14];
+const MONTH_HEADERS = ['Tanggal Kedatangan', 'Tanggal Penginputan', 'Jenis', 'Tipe', 'Nama Operator', 'Kode Barang', 'Nama Barang', 'Supplier', 'Pemilik Barang', 'Lokasi', 'Jumlah (pcs)', 'Qty per Pallet (pcs)', 'Jumlah Pallet', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
+const MONTH_COL_WIDTHS = [16, 18, 9, 13, 18, 14, 34, 22, 14, 10, 12, 16, 12, 28, 22, 22, 14];
 const STOK_HEADERS = ['Kode Barang', 'Nama Barang', 'Lokasi Terpakai', 'Total Masuk', 'Total Keluar', 'Stok Saat Ini', 'Terakhir Masuk', 'Terakhir Keluar', 'Terakhir Diperbarui'];
 const STOK_COL_WIDTHS = [14, 34, 26, 12, 12, 12, 22, 22, 22];
 
@@ -2271,7 +2271,8 @@ function addMonthSheet(workbook, sheetName, entries) {
 
   entries.forEach(t => {
     ws.addRow([
-      isoDateToLocalDate(t.tanggal) || t.tanggal,
+      t.jenis === 'masuk' ? (isoDateToLocalDate(t.tanggal) || t.tanggal) : null,
+      t.jenis === 'keluar' ? (isoDateToLocalDate(t.tanggal) || t.tanggal) : null,
       t.jenis === 'masuk' ? 'MASUK' : 'KELUAR',
       t.tipe === 'penyesuaian' ? 'PENYESUAIAN' : 'TRANSAKSI',
       t.operator,
@@ -2294,18 +2295,19 @@ function addMonthSheet(workbook, sheetName, entries) {
   for (let r = 2; r <= lastRow; r++) {
     const row = ws.getRow(r);
     row.getCell(1).numFmt = 'dd/mm/yyyy';
-    row.getCell(10).numFmt = '#,##0';
+    row.getCell(2).numFmt = 'dd/mm/yyyy';
     row.getCell(11).numFmt = '#,##0';
     row.getCell(12).numFmt = '#,##0';
-    row.getCell(14).numFmt = 'dd/mm/yyyy hh:mm';
+    row.getCell(13).numFmt = '#,##0';
     row.getCell(15).numFmt = 'dd/mm/yyyy hh:mm';
-    row.getCell(10).alignment = { horizontal: 'right' };
+    row.getCell(16).numFmt = 'dd/mm/yyyy hh:mm';
     row.getCell(11).alignment = { horizontal: 'right' };
     row.getCell(12).alignment = { horizontal: 'right' };
+    row.getCell(13).alignment = { horizontal: 'right' };
     const t = entries[r - 2];
-    colorizeBadgeCell(row.getCell(2), t.jenis === 'masuk' ? 'masuk' : 'keluar');
-    if (t.tipe === 'penyesuaian') colorizeBadgeCell(row.getCell(3), 'penyesuaian');
-    else { row.getCell(3).alignment = { horizontal: 'center' }; row.getCell(3).font = { color: { argb: EXCEL_THEME.abu }, size: 10.5 }; }
+    colorizeBadgeCell(row.getCell(3), t.jenis === 'masuk' ? 'masuk' : 'keluar');
+    if (t.tipe === 'penyesuaian') colorizeBadgeCell(row.getCell(4), 'penyesuaian');
+    else { row.getCell(4).alignment = { horizontal: 'center' }; row.getCell(4).font = { color: { argb: EXCEL_THEME.abu }, size: 10.5 }; }
   }
 
   styleExcelSheet(ws, { lastCol: MONTH_HEADERS.length, firstDataRow: 2, lastDataRow: lastRow });
@@ -2436,99 +2438,6 @@ function switchAdminPanel(panel) {
 
 document.querySelectorAll('.admin-nav-btn').forEach(btn => {
   btn.addEventListener('click', () => switchAdminPanel(btn.dataset.adminPanel));
-});
-
-/* ---- Pencarian cepat (admin) ---- */
-const adminScanInput = document.getElementById('admin-scan-input');
-const adminScanSuggest = document.getElementById('admin-scan-suggest');
-const adminScanSearchEl = document.getElementById('admin-scan-search');
-
-const scanSearchIconBox = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>';
-const scanSearchIconPin = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
-
-function renderAdminScanSuggest(q, mode) {
-  if (!adminScanSuggest) return;
-  const items = buildStokList(currentEntries);
-  let rows = '';
-
-  if (mode === 'stok-kosong') {
-    const kosong = items.filter(it => (it.masuk - it.keluar) <= 0);
-    if (kosong.length === 0) {
-      adminScanSuggest.innerHTML = '<div class="scan-search-empty">Semua barang masih ada stoknya. 🎉</div>';
-    } else {
-      rows = kosong.slice(0, 20).map(it => scanSearchBarangRow(it)).join('');
-      adminScanSuggest.innerHTML = rows;
-    }
-    adminScanSuggest.classList.add('is-open');
-    return;
-  }
-
-  if (!q) { adminScanSuggest.classList.remove('is-open'); return; }
-  const ql = q.toLowerCase();
-
-  const barangMatch = items.filter(it =>
-    (it.nama || '').toLowerCase().includes(ql) || String(it.kode || '').toLowerCase().includes(ql)
-  ).slice(0, 6);
-
-  const lokasiSet = new Set();
-  currentEntries.forEach(t => { if (t.lokasi && t.lokasi.toLowerCase().includes(ql)) lokasiSet.add(t.lokasi); });
-  const lokasiMatch = Array.from(lokasiSet).slice(0, 4);
-
-  if (barangMatch.length === 0 && lokasiMatch.length === 0) {
-    adminScanSuggest.innerHTML = `<div class="scan-search-empty">Tidak ditemukan hasil untuk "${escapeHtml(q)}"</div>`;
-  } else {
-    rows += barangMatch.map(it => scanSearchBarangRow(it)).join('');
-    rows += lokasiMatch.map(lok => `
-      <button type="button" class="scan-search-row" data-lokasi="${escapeHtml(lok)}">
-        <span class="scan-search-row-icon">${scanSearchIconPin}</span>
-        <span class="scan-search-row-main"><div class="scan-search-row-nama">${escapeHtml(lok)}</div><div class="scan-search-row-sub">Lokasi rak</div></span>
-      </button>
-    `).join('');
-    adminScanSuggest.innerHTML = rows;
-  }
-  adminScanSuggest.classList.add('is-open');
-}
-
-function scanSearchBarangRow(it) {
-  const stok = it.masuk - it.keluar;
-  const st = stok > 0 ? 'pos' : (stok < 0 ? 'neg' : 'zero');
-  return `
-    <button type="button" class="scan-search-row" data-kode="${escapeHtml(it.kode || '')}">
-      <span class="scan-search-row-icon">${scanSearchIconBox}</span>
-      <span class="scan-search-row-main"><div class="scan-search-row-nama">${escapeHtml(it.nama)}</div><div class="scan-search-row-sub">${escapeHtml(it.kode || '-')}</div></span>
-      <span class="scan-search-row-badge ${st}">${stok.toLocaleString('id-ID')} pcs</span>
-    </button>
-  `;
-}
-
-if (adminScanInput) {
-  adminScanInput.addEventListener('input', () => renderAdminScanSuggest(adminScanInput.value.trim(), null));
-  adminScanInput.addEventListener('focus', () => { if (adminScanInput.value.trim()) renderAdminScanSuggest(adminScanInput.value.trim(), null); });
-}
-if (adminScanSuggest) {
-  adminScanSuggest.addEventListener('click', (e) => {
-    const row = e.target.closest('.scan-search-row');
-    if (!row) return;
-    adminScanSuggest.classList.remove('is-open');
-    switchAdminPanel('katalog');
-    if (row.dataset.kode) openItemModal(row.dataset.kode);
-    else if (row.dataset.lokasi) openLokasiModal(row.dataset.lokasi);
-  });
-}
-document.querySelectorAll('.scan-search-chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    if (adminScanInput) adminScanInput.value = '';
-    renderAdminScanSuggest('', chip.dataset.preset);
-  });
-});
-document.addEventListener('click', (e) => {
-  if (adminScanSearchEl && !e.target.closest('.scan-search-wrap')) adminScanSuggest.classList.remove('is-open');
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === '/' && adminScanInput && document.activeElement !== adminScanInput && currentRole() === 'admin') {
-    e.preventDefault();
-    adminScanInput.focus();
-  }
 });
 
 function currentRole() {
@@ -2851,6 +2760,50 @@ function showToast(message, type = 'success') {
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 3400);
+}
+
+// Modal konfirmasi custom — pengganti confirm() bawaan browser supaya
+// tampilannya konsisten dengan desain aplikasi (bukan popup polos bawaan
+// OS/browser). Dipakai dengan: await showConfirmModal({ title, message }).
+// Mengembalikan Promise<boolean> — true kalau user klik "Ya, Lanjutkan",
+// false kalau user klik "Batal", tekan Esc, atau klik di luar modal.
+function showConfirmModal({ title = 'Konfirmasi', message = '', confirmText = 'Ya, Lanjutkan', cancelText = 'Batal' } = {}) {
+  const modal = document.getElementById('confirm-modal');
+  const titleEl = document.getElementById('confirm-modal-title');
+  const messageEl = document.getElementById('confirm-modal-message');
+  const btnOk = document.getElementById('confirm-modal-ok');
+  const btnCancel = document.getElementById('confirm-modal-cancel');
+  if (!modal || !titleEl || !messageEl || !btnOk || !btnCancel) {
+    // Fallback kalau markup modal entah kenapa tidak ada — tetap jangan
+    // sampai aksi hapus berjalan tanpa konfirmasi sama sekali.
+    return Promise.resolve(confirm(message || title));
+  }
+
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  btnOk.textContent = confirmText;
+  btnCancel.textContent = cancelText;
+  modal.hidden = false;
+
+  return new Promise(resolve => {
+    const cleanup = (result) => {
+      modal.hidden = true;
+      btnOk.removeEventListener('click', onOk);
+      btnCancel.removeEventListener('click', onCancel);
+      modal.removeEventListener('click', onOverlayClick);
+      document.removeEventListener('keydown', onKeydown);
+      resolve(result);
+    };
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onOverlayClick = (e) => { if (e.target === modal) cleanup(false); };
+    const onKeydown = (e) => { if (e.key === 'Escape') cleanup(false); };
+    btnOk.addEventListener('click', onOk);
+    btnCancel.addEventListener('click', onCancel);
+    modal.addEventListener('click', onOverlayClick);
+    document.addEventListener('keydown', onKeydown);
+    btnOk.focus();
+  });
 }
 
 /* ==========================================================================
@@ -3227,6 +3180,24 @@ function setJenis(j) {
   jenis = j;
   btnMasuk.classList.toggle('is-active', j === 'masuk');
   btnKeluar.classList.toggle('is-active', j === 'keluar');
+
+  // Label & hint field tanggal berubah sesuai jenis laporan:
+  // - MASUK  -> "Tanggal Kedatangan" (tanggal barang tiba di gudang, dipakai
+  //             untuk urutan FIFO stok).
+  // - KELUAR -> "Tanggal Penginputan" (tanggal form barang keluar ini
+  //             dilaporkan/diinput — TIDAK sama dengan tanggal kedatangan
+  //             batch stok yang diambil; tanggal kedatangan batch tetap
+  //             bisa dilihat di kartu "Stok Tersedia" / "📅 Datang").
+  const labelTanggalText = document.getElementById('label-tanggal-text');
+  const tanggalHint = document.getElementById('tanggal-hint');
+  if (labelTanggalText) labelTanggalText.textContent = j === 'keluar' ? 'Tanggal Penginputan' : 'Tanggal Kedatangan';
+  if (tanggalHint) tanggalHint.hidden = j !== 'keluar';
+  // Tanggal penginputan defaultnya hari ini (bukan tanggal kedatangan
+  // batch) — operator tetap bisa mengubahnya kalau perlu backdate laporan.
+  if (j === 'keluar' && typeof inputTanggal !== 'undefined' && inputTanggal && !inputTanggal.value) {
+    inputTanggal.value = todayISO();
+  }
+
   kombinasiTerkunci = null;
   if (typeof selSupplier !== 'undefined') selSupplier.reset();
   if (typeof selPemilik !== 'undefined') selPemilik.reset();
@@ -3328,6 +3299,161 @@ let kdsPageSize = 10;
 
 const AMBANG_STOK_HABIS = 0;
 
+// ===== AGREGASI PER KOMBINASI BARANG (BARU) =====
+// Fungsi-fungsi baru untuk ubah panel "Katalog & Stok" dari per-transaksi
+// menjadi per-kombinasi (1 kombinasi = 1 barang + supplier + pemilik + lokasi).
+
+// Mengumpulkan semua kombinasi UNIK dari transaksi yang sudah difilter.
+// Setiap kombinasi adalah object { kodeBarang, namaBarang, supplier, pemilik, lokasi }.
+// Kombinasi tidak berisi data transaksi individual, hanya data master barang.
+function kdsGetUniqueCombinations(filteredTransactions) {
+  const comboMap = new Map(); // Key: "kodeBarang||supplier||pemilik||lokasi"
+  
+  filteredTransactions.forEach(t => {
+    const key = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}`;
+    if (!comboMap.has(key)) {
+      comboMap.set(key, {
+        kodeBarang: t.kodeBarang,
+        namaBarang: t.namaBarang,
+        supplier: t.supplier,
+        pemilik: t.pemilik,
+        lokasi: t.lokasi,
+        _key: key // untuk internal tracking
+      });
+    }
+  });
+  
+  return Array.from(comboMap.values());
+}
+
+// Menghitung statistik untuk 1 kombinasi: total masuk, total keluar, stok saat ini, pallet.
+function kdsBuildCombinationStats(combo) {
+  const allTransactions = currentEntries;
+  
+  // Filter semua transaksi yang sesuai kombinasi ini
+  const relatedTx = allTransactions.filter(t => 
+    t.kodeBarang === combo.kodeBarang && 
+    t.supplier === combo.supplier && 
+    t.pemilik === combo.pemilik && 
+    t.lokasi === combo.lokasi
+  );
+  
+  // Hitung statistik
+  const totalMasuk = relatedTx
+    .filter(t => t.jenis === 'masuk')
+    .reduce((s, t) => s + (t.jumlah || 0), 0);
+  
+  const totalKeluar = relatedTx
+    .filter(t => t.jenis === 'keluar')
+    .reduce((s, t) => s + (t.jumlah || 0), 0);
+  
+  const stokSaatIni = totalMasuk - totalKeluar;
+  
+  const totalPallet = relatedTx
+    .filter(t => t.jumlahPallet != null)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+  
+  // Tentukan status stok
+  let status = 'tersedia';
+  if (stokSaatIni <= AMBANG_STOK_HABIS) status = 'habis';
+  else if (stokSaatIni < AMBANG_STOK_MENIPIS) status = 'menipis';
+  
+  return {
+    ...combo,
+    totalMasuk,
+    totalKeluar,
+    stokSaatIni,
+    totalPallet,
+    status,
+    transactionCount: relatedTx.length
+  };
+}
+
+// Mengagregasi stats untuk semua kombinasi dalam daftar.
+function kdsAggregateAllCombinations(combinations) {
+  return combinations.map(combo => kdsBuildCombinationStats(combo));
+}
+
+// Menerapkan filter pada kombinasi (bukan pada transaksi individual).
+// Filter status_stok dan jenis_transaksi diterapkan pada kombinasi yg sudah diagregasi.
+function kdsApplyCombinationFilters(combinations, f) {
+  return combinations.filter(combo => {
+    if (f.barang && combo.kodeBarang !== f.barang.kode) return false;
+    if (f.supplier && combo.supplier !== f.supplier) return false;
+    if (f.pemilik && combo.pemilik !== f.pemilik) return false;
+    if (f.lokasi && combo.lokasi !== f.lokasi) return false;
+    if (f.status && f.status !== 'semua' && combo.status !== f.status) return false;
+    // Filter jenis_transaksi diperluas: untuk kombinasi, cek apakah ada transaksi masuk/keluar
+    if (f.jenis && f.jenis !== 'semua') {
+      const relatedTx = currentEntries.filter(t => 
+        t.kodeBarang === combo.kodeBarang && 
+        t.supplier === combo.supplier && 
+        t.pemilik === combo.pemilik && 
+        t.lokasi === combo.lokasi
+      );
+      const hasJenis = relatedTx.some(t => t.jenis === f.jenis);
+      if (!hasJenis) return false;
+    }
+    // Filter tanggal, operator: ada transaksi dalam range tsb untuk kombinasi ini?
+    if (f.dari || f.sampai || f.operator) {
+      const relatedTx = currentEntries.filter(t => 
+        t.kodeBarang === combo.kodeBarang && 
+        t.supplier === combo.supplier && 
+        t.pemilik === combo.pemilik && 
+        t.lokasi === combo.lokasi
+      );
+      if (f.dari || f.sampai) {
+        const inRange = relatedTx.some(t => 
+          (!f.dari || !t.tanggal || t.tanggal >= f.dari) &&
+          (!f.sampai || !t.tanggal || t.tanggal <= f.sampai)
+        );
+        if (!inRange) return false;
+      }
+      if (f.operator) {
+        const hasOp = relatedTx.some(t => t.operator === f.operator);
+        if (!hasOp) return false;
+      }
+    }
+    return true;
+  });
+}
+
+// Mengurutkan kombinasi berdasarkan mode sort.
+// Mode sort dibuat ulang untuk kombinasi (bukan transaksi).
+function kdsSortCombinations(combinations, mode) {
+  const sorted = [...combinations];
+  switch (mode) {
+    case 'tanggal-desc':
+    case 'tanggal-asc':
+      // Urutkan berdasarkan tanggal transaksi MASUK paling awal (FIFO)
+      sorted.sort((a, b) => {
+        const aTx = currentEntries.filter(t => 
+          t.jenis === 'masuk' && 
+          t.kodeBarang === a.kodeBarang && t.supplier === a.supplier && 
+          t.pemilik === a.pemilik && t.lokasi === a.lokasi
+        );
+        const bTx = currentEntries.filter(t => 
+          t.jenis === 'masuk' && 
+          t.kodeBarang === b.kodeBarang && t.supplier === b.supplier && 
+          t.pemilik === b.pemilik && t.lokasi === b.lokasi
+        );
+        const aDate = aTx.length > 0 ? aTx.map(t => t.tanggal || '').sort()[0] : '';
+        const bDate = bTx.length > 0 ? bTx.map(t => t.tanggal || '').sort()[0] : '';
+        const cmp = aDate.localeCompare(bDate);
+        return mode === 'tanggal-desc' ? -cmp : cmp;
+      });
+      break;
+    case 'nama-asc':
+      sorted.sort((a, b) => (a.namaBarang || '').localeCompare(b.namaBarang || ''));
+      break;
+    case 'pcs-desc':
+      sorted.sort((a, b) => (b.totalMasuk || 0) - (a.totalMasuk || 0));
+      break;
+  }
+  return sorted;
+}
+// ===== /AGREGASI PER KOMBINASI BARANG =====
+
 function kdsStatusLevel(t) {
   const stok = getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi);
   if (stok <= AMBANG_STOK_HABIS) return 'habis';
@@ -3335,8 +3461,14 @@ function kdsStatusLevel(t) {
   return 'tersedia';
 }
 
+// Dulu cuma ambil baris barang MASUK (arrival). Sekarang panel ini
+// menampilkan SEMUA transaksi (masuk & keluar) — persis seperti operator
+// yang laporannya juga mencatat dua jenis itu — supaya admin bisa lihat
+// pergerakan barang keluar juga, bukan cuma kedatangannya saja. Filter
+// "Jenis Transaksi" (lihat kdsApplyFilters) yang menentukan mana yang
+// tampil kalau admin mau mempersempit ke salah satu jenis saja.
 function kdsGetArrivalRows() {
-  return currentEntries.filter(t => t.jenis === 'masuk');
+  return currentEntries.filter(t => t.jenis === 'masuk' || t.jenis === 'keluar');
 }
 
 function kdsApplyFilters(rows, f) {
@@ -3349,6 +3481,7 @@ function kdsApplyFilters(rows, f) {
     if (f.dari && t.tanggal && t.tanggal < f.dari) return false;
     if (f.sampai && t.tanggal && t.tanggal > f.sampai) return false;
     if (f.status && f.status !== 'semua' && kdsStatusLevel(t) !== f.status) return false;
+    if (f.jenis && f.jenis !== 'semua' && t.jenis !== f.jenis) return false;
     return true;
   });
 }
@@ -3382,6 +3515,7 @@ function kdsFilterLabel(key, f) {
     case 'dari': return `Dari: ${formatTanggal(f.dari)}`;
     case 'sampai': return `Sampai: ${formatTanggal(f.sampai)}`;
     case 'status': return `Status Stok: ${f.status.charAt(0).toUpperCase() + f.status.slice(1)}`;
+    case 'jenis': return `Jenis Transaksi: ${f.jenis === 'masuk' ? 'Barang Masuk' : 'Barang Keluar'}`;
     default: return '';
   }
 }
@@ -3396,6 +3530,7 @@ function kdsRemoveFilter(key) {
     dari: () => { delete kdsAppliedFilters.dari; const el = document.getElementById('kds-tanggal-dari'); if (el) el.value = ''; },
     sampai: () => { delete kdsAppliedFilters.sampai; const el = document.getElementById('kds-tanggal-sampai'); if (el) el.value = ''; },
     status: () => { delete kdsAppliedFilters.status; const el = document.getElementById('kds-status-stok'); if (el) el.value = 'semua'; },
+    jenis: () => { delete kdsAppliedFilters.jenis; const el = document.getElementById('kds-jenis-transaksi'); if (el) el.value = 'semua'; },
   };
   if (clearMap[key]) clearMap[key]();
   kdsPage = 1;
@@ -3455,33 +3590,44 @@ function kdsRenderPagination(totalPages, totalItems) {
   controls.appendChild(mkBtn('»', kdsPage + 1, { disabled: kdsPage >= totalPages }));
 }
 
-function kdsBuildRow(t) {
-  const initials = getInitials(t.operator);
+// Label + kelas badge untuk status stok (tersedia/menipis/habis), dipakai
+// bareng oleh kolom "Stok Saat Ini" di tabel Katalog & Stok maupun filter
+// Status Stok, supaya keduanya selalu konsisten satu sama lain.
+function kdsStatusLabel(level) {
+  return level === 'habis' ? 'Habis' : level === 'menipis' ? 'Menipis' : 'Tersedia';
+}
+
+// Build HTML row dari kombinasi barang (PERUBAHAN: dulu per-transaksi, sekarang per-kombinasi)
+// combo = { kodeBarang, namaBarang, supplier, pemilik, lokasi, totalMasuk, totalKeluar, stokSaatIni, totalPallet, status }
+function kdsBuildRow(combo) {
+  const statusLabel = combo.status === 'habis' ? 'Habis' : combo.status === 'menipis' ? 'Menipis' : 'Tersedia';
+  const palletDisplay = combo.totalPallet ? roundPalletDisplay(combo.totalPallet) : '0';
+  
   return `
     <tr>
       <td class="kds-th-nama">
         <div class="kds-item-box">
           <span class="kds-item-icon">📦</span>
           <div>
-            <div class="kds-item-nama">${escapeHtml(t.namaBarang || '-')}</div>
-            <div class="kds-item-kode">Kode Barang: ${escapeHtml(t.kodeBarang || '-')}</div>
+            <div class="kds-item-nama">${escapeHtml(combo.namaBarang || '-')}</div>
+            <div class="kds-item-kode">Kode Barang: ${escapeHtml(combo.kodeBarang || '-')}</div>
           </div>
         </div>
       </td>
-      <td>${escapeHtml(t.supplier || '-')}</td>
-      <td>${escapeHtml(t.pemilik || '-')}</td>
-      <td class="kds-td-num">${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
-      <td class="kds-td-num">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0} pallet</td>
-      <td class="mono">${escapeHtml(t.lokasi || '-')}</td>
-      <td>${formatTanggal(t.tanggal)}</td>
-      <td>
-        <span class="kds-operator">
-          <span class="akun-operator-avatar kds-avatar-sm">${escapeHtml(initials)}</span>
-          ${escapeHtml(t.operator || '-')}
-        </span>
+      <td>${escapeHtml(combo.supplier || '-')}</td>
+      <td>${escapeHtml(combo.pemilik || '-')}</td>
+      <td class="mono">${escapeHtml(combo.lokasi || '-')}</td>
+      <td class="kds-td-num">${(combo.totalMasuk || 0).toLocaleString('id-ID')} pcs</td>
+      <td class="kds-td-num">${(combo.totalKeluar || 0).toLocaleString('id-ID')} pcs</td>
+      <td class="kds-td-num">
+        <div class="kds-stok-cell">
+          <span class="kds-stok-num">${combo.stokSaatIni.toLocaleString('id-ID')} pcs</span>
+          ${combo.totalPallet ? `<span class="kds-stok-pallet">${palletDisplay} pallet</span>` : ''}
+          <span class="kds-stok-badge ${combo.status}">${statusLabel}</span>
+        </div>
       </td>
       <td class="kds-th-aksi">
-        <button type="button" class="kds-btn-detail" data-entry-id="${escapeHtml(t.id || '')}">
+        <button type="button" class="kds-btn-detail" data-combo-key="${escapeHtml(combo._key || '')}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
           Detail
         </button>
@@ -3497,8 +3643,11 @@ function renderKdsResults() {
   const countBadge = document.getElementById('kds-result-count');
   if (!tbody) return;
 
-  const allRows = kdsGetArrivalRows();
-  const filtered = kdsSortRows(kdsApplyFilters(allRows, kdsAppliedFilters), kdsSortMode);
+  // PERUBAHAN: Aggregasi data per kombinasi barang (bukan per transaksi)
+  const allTransactions = kdsGetArrivalRows();
+  const allCombinations = kdsGetUniqueCombinations(allTransactions);
+  const combinationsWithStats = kdsAggregateAllCombinations(allCombinations);
+  const filtered = kdsSortCombinations(kdsApplyCombinationFilters(combinationsWithStats, kdsAppliedFilters), kdsSortMode);
 
   countBadge.textContent = `${filtered.length.toLocaleString('id-ID')} hasil`;
 
@@ -3514,21 +3663,25 @@ function renderKdsResults() {
     const startIdx = (kdsPage - 1) * kdsPageSize;
     const pageRows = filtered.slice(startIdx, startIdx + kdsPageSize);
     tbody.innerHTML = pageRows.map(kdsBuildRow).join('');
-    tbody.querySelectorAll('[data-entry-id]').forEach(btn => {
-      btn.addEventListener('click', () => openKdsDetailModal(btn.dataset.entryId));
+    tbody.querySelectorAll('[data-combo-key]').forEach(btn => {
+      btn.addEventListener('click', () => openKdsDetailModalForCombo(btn.dataset.comboKey));
     });
     kdsRenderPagination(totalPages, filtered.length);
   }
 
-  // Ringkasan hasil filter (dihitung dari SEMUA hasil filter, bukan cuma
-  // yang tampil di halaman saat ini).
-  const totalPcs = filtered.reduce((s, t) => s + (t.jumlah || 0), 0);
-  const totalPallet = filtered.reduce((s, t) => s + (t.jumlahPallet || 0), 0);
-  const lokasiSet = new Set(filtered.map(t => t.lokasi).filter(Boolean));
-  setText('kds-sum-pcs', `${totalPcs.toLocaleString('id-ID')} pcs`);
-  setText('kds-sum-pallet', `${roundPalletDisplay(totalPallet)} pallet`);
-  setText('kds-sum-kedatangan', `${filtered.length.toLocaleString('id-ID')} kali`);
+  // Ringkasan hasil filter — sekarang dihitung dari kombinasi terfilter
+  const totalPcsMasuk = filtered.reduce((s, c) => s + (c.totalMasuk || 0), 0);
+  const totalPcsKeluar = filtered.reduce((s, c) => s + (c.totalKeluar || 0), 0);
+  const lokasiSet = new Set(filtered.map(c => c.lokasi).filter(Boolean));
+  setText('kds-sum-pcs', `${totalPcsMasuk.toLocaleString('id-ID')} pcs`);
+  setText('kds-sum-pcs-keluar', `${totalPcsKeluar.toLocaleString('id-ID')} pcs`);
+  // PERUBAHAN: "Jumlah Transaksi" diganti "Jumlah Kombinasi" (jumlah baris, bukan jumlah transaksi)
+  setText('kds-sum-kedatangan', `${filtered.length.toLocaleString('id-ID')} kombinasi`);
   setText('kds-sum-lokasi', `${lokasiSet.size.toLocaleString('id-ID')} lokasi`);
+
+  // Stok Saat Ini (Total) — jumlahkan stok NET dari semua kombinasi terfilter
+  const totalStokSaatIni = filtered.reduce((s, c) => s + (c.stokSaatIni || 0), 0);
+  setText('kds-sum-stok-saat-ini', `${totalStokSaatIni.toLocaleString('id-ID')} pcs`);
 
   kdsRenderActiveFilters();
 }
@@ -3543,6 +3696,7 @@ function kdsReadFiltersFromInputs() {
   const dari = document.getElementById('kds-tanggal-dari')?.value || '';
   const sampai = document.getElementById('kds-tanggal-sampai')?.value || '';
   const status = document.getElementById('kds-status-stok')?.value || 'semua';
+  const jenis = document.getElementById('kds-jenis-transaksi')?.value || 'semua';
   if (barang) f.barang = barang;
   if (supplier) f.supplier = supplier;
   if (pemilik) f.pemilik = pemilik;
@@ -3551,6 +3705,7 @@ function kdsReadFiltersFromInputs() {
   if (dari) f.dari = dari;
   if (sampai) f.sampai = sampai;
   if (status && status !== 'semua') f.status = status;
+  if (jenis && jenis !== 'semua') f.jenis = jenis;
   return f;
 }
 
@@ -3563,9 +3718,11 @@ function kdsResetFilterInputs() {
   const dari = document.getElementById('kds-tanggal-dari');
   const sampai = document.getElementById('kds-tanggal-sampai');
   const status = document.getElementById('kds-status-stok');
+  const jenis = document.getElementById('kds-jenis-transaksi');
   if (dari) dari.value = '';
   if (sampai) sampai.value = '';
   if (status) status.value = 'semua';
+  if (jenis) jenis.value = 'semua';
 }
 
 // Refresh opsi dropdown filter dari data terbaru (barang/supplier/pemilik/
@@ -3577,7 +3734,7 @@ function kdsRefreshFilterOptions() {
   kdsSelSupplier.updateOptions(MASTER_DATA.supplier || []);
   kdsSelPemilik.updateOptions(rebuildPemilikOptions());
   kdsSelLokasi.updateOptions(LOKASI_OPTIONS);
-  const operatorNames = Array.from(new Set(currentEntries.filter(t => t.jenis === 'masuk' && t.operator).map(t => t.operator))).sort((a, b) => a.localeCompare(b));
+  const operatorNames = Array.from(new Set(currentEntries.filter(t => (t.jenis === 'masuk' || t.jenis === 'keluar') && t.operator).map(t => t.operator))).sort((a, b) => a.localeCompare(b));
   kdsSelOperator.updateOptions(operatorNames);
 }
 
@@ -3655,11 +3812,14 @@ if (kdsBtnExport) {
       return;
     }
     const aoa = [
-      ['Nama Barang', 'Kode Barang', 'Supplier', 'Pemilik Barang', 'Total PCS', 'Total Pallet', 'Lokasi', 'Tanggal Kedatangan', 'Operator Input'],
+      ['Nama Barang', 'Jenis', 'Kode Barang', 'Supplier', 'Pemilik Barang', 'Jumlah PCS', 'Jumlah Pallet', 'Lokasi', 'Tanggal Kedatangan', 'Tanggal Penginputan', 'Operator Input'],
       ...rows.map(t => [
-        t.namaBarang || '-', t.kodeBarang || '-', t.supplier || '-', t.pemilik || '-',
+        t.namaBarang || '-', t.jenis === 'masuk' ? 'Masuk' : 'Keluar', t.kodeBarang || '-', t.supplier || '-', t.pemilik || '-',
         t.jumlah || 0, t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0,
-        t.lokasi || '-', formatTanggal(t.tanggal), t.operator || '-',
+        t.lokasi || '-',
+        t.jenis === 'masuk' ? formatTanggal(t.tanggal) : '-',
+        t.jenis === 'keluar' ? formatTanggal(t.tanggal) : '-',
+        t.operator || '-',
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -3687,15 +3847,107 @@ if (kdsRiwayatModal) {
   kdsRiwayatModal.addEventListener('click', (e) => { if (e.target === kdsRiwayatModal) closeKdsRiwayatModal(); });
 }
 
-function openKdsDetailModal(entryId) {
-  const t = currentEntries.find(e => e.id === entryId);
-  if (!t || !kdsDetailBody) return;
-
+// PERUBAHAN: Fungsi baru untuk membuka detail modal dari kombinasi barang
+// (bukan dari transaksi individual). Menampilkan ringkasan kombinasi + button ke riwayat.
+function openKdsDetailModalForCombo(comboKey) {
+  if (!kdsDetailBody || !comboKey) return;
+  
+  // Parse key format: "kodeBarang||supplier||pemilik||lokasi"
+  const parts = comboKey.split('||');
+  if (parts.length < 4) return;
+  
+  const kodeBarang = parts[0];
+  const supplier = parts[1];
+  const pemilik = parts[2];
+  const lokasi = parts[3];
+  
+  // Cari transaksi pertama untuk kombinasi ini (untuk nama barang, dll)
+  const firstTx = currentEntries.find(t =>
+    t.kodeBarang === kodeBarang && t.supplier === supplier &&
+    t.pemilik === pemilik && t.lokasi === lokasi
+  );
+  if (!firstTx) return;
+  
+  // Hitung statistik kombinasi
+  const stats = kdsBuildCombinationStats({
+    kodeBarang, namaBarang: firstTx.namaBarang, supplier, pemilik, lokasi
+  });
+  
   kdsDetailBody.innerHTML = `
     <div class="kds-modal-head">
       <div class="kds-modal-head-icon">📦</div>
       <div class="kds-modal-head-info">
-        <div class="kds-mh-nama">${escapeHtml(t.namaBarang || '-')}</div>
+        <div class="kds-mh-nama">${escapeHtml(firstTx.namaBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Kode Barang</strong><br>${escapeHtml(kodeBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Supplier</strong><br>${escapeHtml(supplier || '-')}</div>
+        <div class="kds-mh-row"><strong>Pemilik Barang</strong><br>📍 ${escapeHtml(pemilik || '-')}</div>
+        <div class="kds-mh-row"><strong>Lokasi Rak</strong><br>📍 ${escapeHtml(lokasi || '-')}</div>
+      </div>
+    </div>
+
+    <div class="kds-detail-section">
+      <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Ringkasan Stok</div>
+      <div class="kds-detail-grid">
+        <div class="kds-detail-item">
+          <span>Total Masuk</span>
+          <strong>${(stats.totalMasuk || 0).toLocaleString('id-ID')} pcs</strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Total Keluar</span>
+          <strong>${(stats.totalKeluar || 0).toLocaleString('id-ID')} pcs</strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Stok Saat Ini</span>
+          <strong class="kds-stok-highlight">${stats.stokSaatIni.toLocaleString('id-ID')} pcs</strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Total Pallet</span>
+          <strong>${stats.totalPallet ? roundPalletDisplay(stats.totalPallet) : 0} pallet</strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Status Stok</span>
+          <strong>
+            <span class="kds-stok-badge ${stats.status}" style="display:inline-block;">
+              ${stats.status === 'habis' ? 'Habis' : stats.status === 'menipis' ? 'Menipis' : 'Tersedia'}
+            </span>
+          </strong>
+        </div>
+        <div class="kds-detail-item">
+          <span>Jumlah Transaksi</span>
+          <strong>${stats.transactionCount.toLocaleString('id-ID')} transaksi</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" id="kds-btn-lihat-riwayat-combo">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
+        Lihat Riwayat Lengkap
+      </button>
+      <button type="button" class="btn-secondary modal-cancel" id="kds-btn-tutup-detail">Tutup</button>
+    </div>
+  `;
+  kdsDetailBody.querySelector('#kds-btn-tutup-detail').addEventListener('click', closeKdsDetailModal);
+  kdsDetailBody.querySelector('#kds-btn-lihat-riwayat-combo').addEventListener('click', () => {
+    openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi);
+  });
+
+  kdsDetailModal.hidden = false;
+}
+
+function openKdsDetailModal(entryId) {
+  const t = currentEntries.find(e => e.id === entryId);
+  if (!t || !kdsDetailBody) return;
+
+  const isMasuk = t.jenis === 'masuk';
+  kdsDetailBody.innerHTML = `
+    <div class="kds-modal-head">
+      <div class="kds-modal-head-icon">📦</div>
+      <div class="kds-modal-head-info">
+        <div class="kds-mh-nama">
+          ${escapeHtml(t.namaBarang || '-')}
+          <span class="badge-jenis ${isMasuk ? 'badge-masuk' : 'badge-keluar'}" style="margin-left:8px;">${isMasuk ? 'MASUK' : 'KELUAR'}</span>
+        </div>
         <div class="kds-mh-row"><strong>Kode Barang</strong><br>${escapeHtml(t.kodeBarang || '-')}</div>
         <div class="kds-mh-row"><strong>Supplier</strong><br>${escapeHtml(t.supplier || '-')}</div>
         <div class="kds-mh-row"><strong>Pemilik Barang</strong><br>📍 ${escapeHtml(t.pemilik || '-')}</div>
@@ -3703,10 +3955,10 @@ function openKdsDetailModal(entryId) {
     </div>
 
     <div class="kds-detail-section">
-      <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Detail Kedatangan</div>
+      <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">${isMasuk ? 'Detail Kedatangan' : 'Detail Barang Keluar'}</div>
       <div class="kds-detail-grid">
         <div class="kds-detail-item">
-          <span>Tanggal Kedatangan</span>
+          <span>${isMasuk ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}</span>
           <strong>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
             ${formatTanggal(t.tanggal)}
@@ -3760,6 +4012,90 @@ function openKdsDetailModal(entryId) {
   });
 
   kdsDetailModal.hidden = false;
+}
+
+// PERUBAHAN: Fungsi baru untuk menampilkan riwayat LENGKAP kombinasi (masuk + keluar)
+// dengan parameter lokasi. Dipanggil dari detail modal kombinasi.
+function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
+  if (!kdsRiwayatBody) return;
+  
+  // Ambil SEMUA transaksi (masuk + keluar) untuk kombinasi ini
+  const allHistory = currentEntries
+    .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && 
+                  t.pemilik === pemilik && t.lokasi === lokasi)
+    .sort((a, b) => (b.tanggal || '').localeCompare(a.tanggal || '') || b.createdAt - a.createdAt);
+  
+  const first = allHistory[0] || currentEntries.find(t => t.kodeBarang === kodeBarang);
+  const namaBarang = first ? first.namaBarang : kodeBarang;
+  
+  const totalPcsMasuk = allHistory
+    .filter(t => t.jenis === 'masuk')
+    .reduce((s, t) => s + (t.jumlah || 0), 0);
+  const totalPcsKeluar = allHistory
+    .filter(t => t.jenis === 'keluar')
+    .reduce((s, t) => s + (t.jumlah || 0), 0);
+  const totalPallet = allHistory
+    .filter(t => t.jumlahPallet != null)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+  
+  kdsRiwayatBody.innerHTML = `
+    <div class="kds-modal-head">
+      <div class="kds-modal-head-icon">📦</div>
+      <div class="kds-modal-head-info">
+        <div class="kds-mh-nama">${escapeHtml(namaBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Kode Barang</strong><br>${escapeHtml(kodeBarang || '-')}</div>
+        <div class="kds-mh-row"><strong>Supplier</strong><br>${escapeHtml(supplier || '-')}</div>
+        <div class="kds-mh-row"><strong>Pemilik Barang</strong><br>${escapeHtml(pemilik || '-')}</div>
+        <div class="kds-mh-row"><strong>Lokasi Rak</strong><br>${escapeHtml(lokasi || '-')}</div>
+      </div>
+    </div>
+
+    <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Riwayat Transaksi (${allHistory.length.toLocaleString('id-ID')})</div>
+    <div class="kds-riwayat-table-wrap">
+      <table class="kds-riwayat-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Jenis</th>
+            <th>Tanggal</th>
+            <th>Jumlah PCS</th>
+            <th>PCS/Pallet</th>
+            <th>Total Pallet</th>
+            <th>Operator Input</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${allHistory.length ? allHistory.map((t, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td><span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}</span></td>
+              <td>${formatTanggal(t.tanggal)}</td>
+              <td>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
+              <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
+              <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
+              <td>${escapeHtml(t.operator || '-')}</td>
+            </tr>
+          `).join('') : `<tr><td colspan="7" class="empty-state">Belum ada transaksi.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="kds-summary-panel">
+      <div class="kds-summary-grid">
+        <div class="kds-summary-item"><span>Total Transaksi</span><strong>${allHistory.length.toLocaleString('id-ID')} kali</strong></div>
+        <div class="kds-summary-item"><span>Total PCS Masuk</span><strong>${totalPcsMasuk.toLocaleString('id-ID')} pcs</strong></div>
+        <div class="kds-summary-item"><span>Total PCS Keluar</span><strong>${totalPcsKeluar.toLocaleString('id-ID')} pcs</strong></div>
+        <div class="kds-summary-item"><span>Saldo Pallet</span><strong>${roundPalletDisplay(totalPallet)} pallet</strong></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary modal-cancel" id="kds-btn-tutup-riwayat">Tutup</button>
+    </div>
+  `;
+  kdsRiwayatBody.querySelector('#kds-btn-tutup-riwayat').addEventListener('click', closeKdsRiwayatModal);
+
+  kdsRiwayatModal.hidden = false;
 }
 
 /* ---- MODAL: RIWAYAT KEDATANGAN BARANG ---- */
@@ -3886,17 +4222,18 @@ function refreshKombinasiUI(kodeBarang) {
       selPemilik.setValue(c.pemilik);
       selLokasi.reset();
 
-      // Otomatis isi Tanggal begitu operator memilih kombinasi stok —
-      // mengikuti tanggal kedatangan kombinasi yang dipilih.
+      // CATATAN: field Tanggal SENGAJA TIDAK ikut diisi otomatis dengan
+      // tanggal kedatangan kombinasi yang dipilih. Untuk laporan KELUAR,
+      // field tersebut berarti "Tanggal Penginputan" (tanggal form ini
+      // dilaporkan) — konsepnya beda dari tanggal kedatangan batch stok,
+      // jadi keduanya tidak boleh saling menimpa. Tanggal kedatangan batch
+      // tetap terlihat di kartu kombinasi ini ("📅 Datang: ...").
       //
       // Jumlah Barang SENGAJA TIDAK diisi otomatis (walau tersedia di data
       // c.stok) — operator WAJIB mengetik sendiri jumlah pcs yang benar-benar
       // keluar. Ini untuk menghindari risiko operator lupa mengubah angka
       // dan tanpa sadar melaporkan SELURUH sisa stok sebagai keluar padahal
       // yang keluar sebenarnya cuma sebagian.
-      if (inputTanggal && c.tanggalKedatangan) {
-        inputTanggal.value = c.tanggalKedatangan;
-      }
 
       list.querySelectorAll('.kombinasi-chip').forEach(b => b.classList.remove('is-selected'));
       btn.classList.add('is-selected');
@@ -4131,7 +4468,6 @@ async function closeScanModal() {
 
 async function onScanSuccess(decodedText) {
   if (scanBusy) return;
-  console.log('[scan-lokasi] barcode terbaca:', decodedText);
   const matched = findMatchingLokasi(decodedText);
 
   if (matched) {
@@ -4223,7 +4559,7 @@ form.addEventListener('submit', async (e) => {
   if (!supplier) return showError('Pilih supplier terlebih dahulu.');
   if (!pemilik) return showError('Pilih pemilik barang (pabrik) terlebih dahulu.');
   if (!lokasi) return showError('Scan barcode lokasi penyimpanan terlebih dahulu.');
-  if (!tanggal) return showError('Tanggal kedatangan wajib diisi.');
+  if (!tanggal) return showError(jenis === 'keluar' ? 'Tanggal penginputan wajib diisi.' : 'Tanggal kedatangan wajib diisi.');
   if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
   if (!qtyPerPalletRaw || !qtyPerPallet || qtyPerPallet <= 0) return showError('Qty per pallet wajib diisi dengan angka lebih dari 0.');
 
@@ -4375,54 +4711,54 @@ function inPeriod(entry, range) {
   return entry.tanggal >= range.startISO && entry.tanggal <= range.endISO;
 }
 
-const periodTabsWrap = document.getElementById('period-tabs');
-const periodDatePicker = document.getElementById('period-date-picker');
-periodDatePicker.value = periodDate;
+// Ada 2 lokasi tombol periode (Harian/Mingguan/Bulanan/Tahunan): satu di
+// Dashboard, satu lagi di Riwayat Laporan (supaya admin bisa filter riwayat
+// per hari/minggu/bulan/tahun tanpa pindah tab). Keduanya berbagi state
+// periodMode & periodDate yang sama — setPeriodMode/setPeriodDate menyamakan
+// tampilan kedua set tombol itu tiap kali salah satunya diubah.
+const periodTabWraps = [
+  document.getElementById('period-tabs'),
+  document.getElementById('period-tabs-riwayat')
+].filter(Boolean);
+const periodDatePickers = [
+  document.getElementById('period-date-picker'),
+  document.getElementById('period-date-picker-riwayat')
+].filter(Boolean);
 
-// Tab periode di panel Riwayat (duplikat visual dari yang di Dashboard,
-// tapi keduanya menulis/membaca variabel global periodMode & periodDate
-// yang SAMA — jadi mengganti periode dari satu tempat otomatis
-// menyesuaikan tampilan yang satu lagi juga, tanpa perlu 2 sumber kebenaran).
-const periodTabsWrapRiwayat = document.getElementById('period-tabs-riwayat');
-const periodDatePickerRiwayat = document.getElementById('period-date-picker-riwayat');
-if (periodDatePickerRiwayat) periodDatePickerRiwayat.value = periodDate;
-
-// Terapkan periodMode/periodDate yang baru ke KEDUA set tab (Dashboard &
-// Riwayat) sekaligus, lalu render ulang panel yang terpengaruh.
-function syncPeriodTabsUI() {
-  [periodTabsWrap, periodTabsWrapRiwayat].forEach(wrap => {
-    if (!wrap) return;
-    wrap.querySelectorAll('.period-tab').forEach(b => b.classList.toggle('is-active', b.dataset.mode === periodMode));
+function syncPeriodControls() {
+  periodTabWraps.forEach(wrap => {
+    wrap.querySelectorAll('.period-tab').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.mode === periodMode);
+    });
   });
-  if (periodDatePicker) periodDatePicker.value = periodDate;
-  if (periodDatePickerRiwayat) periodDatePickerRiwayat.value = periodDate;
+  periodDatePickers.forEach(picker => { picker.value = periodDate; });
 }
 
-function applyPeriodMode(mode) {
+function setPeriodMode(mode) {
   periodMode = mode;
-  syncPeriodTabsUI();
+  syncPeriodControls();
   renderRingkasan();
   renderRiwayat();
 }
 
-function applyPeriodDate(dateISO) {
+function setPeriodDate(dateISO) {
   periodDate = dateISO || todayISO();
-  syncPeriodTabsUI();
+  syncPeriodControls();
   renderRingkasan();
   renderRiwayat();
 }
 
-[periodTabsWrap, periodTabsWrapRiwayat].forEach(wrap => {
-  if (!wrap) return;
+periodTabWraps.forEach(wrap => {
   wrap.querySelectorAll('.period-tab').forEach(btn => {
-    btn.addEventListener('click', () => applyPeriodMode(btn.dataset.mode));
+    btn.addEventListener('click', () => setPeriodMode(btn.dataset.mode));
   });
 });
 
-periodDatePicker.addEventListener('change', () => applyPeriodDate(periodDatePicker.value));
-if (periodDatePickerRiwayat) {
-  periodDatePickerRiwayat.addEventListener('change', () => applyPeriodDate(periodDatePickerRiwayat.value));
-}
+periodDatePickers.forEach(picker => {
+  picker.addEventListener('change', () => setPeriodDate(picker.value));
+});
+
+syncPeriodControls();
 
 // ---- BATAS KAPASITAS PALLET PER BLOK ----
 // Jumlah maksimal pallet yang boleh ditampung tiap Blok gudang (A–L).
@@ -4496,118 +4832,6 @@ function cekKapasitasBlok(lokasi, deltaPallet, entriesUntukHitung) {
   };
 }
 
-/* ==========================================================================
-   DETEKSI ANOMALI LAPORAN — flag laporan yang "layak dicek" oleh admin.
-   Murni penanda visual di Riwayat (TIDAK memblokir apapun), berdasar 4
-   kriteria paling gampang dihitung dari data yang sudah ada:
-     1. Jumlah pallet jauh di luar kebiasaan barang itu sendiri.
-     2. Lokasi tujuan sudah/nyaris penuh (≥90% kapasitas) setelah laporan.
-     3. Barang KELUAR sekaligus >70% dari sisa stok kombinasi ini.
-     4. Kombinasi supplier+pemilik+lokasi yang baru pertama kali dipakai
-        utk kode barang tsb.
-   entries HARUS array currentEntries (sudah dikecualikan yang dihapus).
-========================================================================== */
-function computeEntryFlags(t, entries) {
-  const flags = [];
-  if (!t) return flags;
-
-  // Semua transaksi lain yang tercatat SEBELUM laporan ini (dipakai
-  // sebagai baseline "kebiasaan"/riwayat, supaya tidak menghitung
-  // laporan itu sendiri atau laporan yang lebih baru sebagai pembanding).
-  const sebelum = entries.filter(e => e.id !== t.id && e.createdAt < t.createdAt);
-
-  // ---- 1. Jumlah pallet di luar kebiasaan ----
-  if (t.jumlahPallet != null && t.jumlahPallet > 0) {
-    const historis = sebelum.filter(e =>
-      e.kodeBarang === t.kodeBarang && e.jenis === t.jenis && e.jumlahPallet != null && e.jumlahPallet > 0
-    );
-    // Baseline butuh minimal 3 laporan sebelumnya supaya "rata-rata"-nya
-    // cukup bermakna (bukan kebetulan 1-2 data saja).
-    if (historis.length >= 3) {
-      const rata2 = historis.reduce((s, e) => s + e.jumlahPallet, 0) / historis.length;
-      // Dianggap "di luar kebiasaan" kalau minimal 3x rata-rata DAN
-      // selisihnya minimal 5 pallet — dua syarat ini supaya barang kecil
-      // (rata-rata 1-2 pallet) tidak gampang ke-flag oleh selisih wajar.
-      if (rata2 > 0 && t.jumlahPallet >= rata2 * 3 && (t.jumlahPallet - rata2) >= 5) {
-        flags.push({
-          key: 'pallet-tidak-wajar',
-          label: 'Jumlah pallet di luar kebiasaan',
-          detail: `${roundPalletDisplay(t.jumlahPallet)} pallet — jauh di atas rata-rata ${roundPalletDisplay(rata2)} pallet dari ${historis.length} laporan ${t.jenis} sebelumnya utk barang ini.`,
-        });
-      }
-    }
-  }
-
-  // ---- 2. Kapasitas lokasi ≥90% (khusus barang MASUK) ----
-  if (t.jenis === 'masuk') {
-    const entriesSampaiSini = entries.filter(e => e.createdAt <= t.createdAt);
-    const cek = cekKapasitasBlok(t.lokasi, 0, entriesSampaiSini);
-    if (cek.batas && (cek.sekarang / cek.batas) >= 0.9) {
-      flags.push({
-        key: 'kapasitas-hampir-penuh',
-        label: 'Lokasi hampir penuh',
-        detail: `Lokasi ${t.lokasi} sudah terisi ${roundPalletDisplay(cek.sekarang)} dari ${cek.batas.toLocaleString('id-ID')} pallet (${Math.round((cek.sekarang / cek.batas) * 100)}%) setelah laporan ini.`,
-      });
-    }
-  }
-
-  // ---- 3. Barang KELUAR >70% dari stok kombinasi sekaligus ----
-  if (t.jenis === 'keluar' && t.jumlah > 0) {
-    const stokSebelum = sebelum
-      .filter(e => e.kodeBarang === t.kodeBarang && e.supplier === t.supplier && e.pemilik === t.pemilik && e.lokasi === t.lokasi)
-      .reduce((s, e) => s + (e.jenis === 'masuk' ? e.jumlah : -e.jumlah), 0);
-    if (stokSebelum > 0 && (t.jumlah / stokSebelum) > 0.7) {
-      flags.push({
-        key: 'keluar-besar',
-        label: 'Barang keluar sekaligus dalam jumlah besar',
-        detail: `Keluar ${t.jumlah.toLocaleString('id-ID')} pcs — ${Math.round((t.jumlah / stokSebelum) * 100)}% dari stok kombinasi ini (${stokSebelum.toLocaleString('id-ID')} pcs) sebelum laporan ini.`,
-      });
-    }
-  }
-
-  // ---- 4. Kombinasi supplier/pemilik/lokasi baru pertama kali dipakai ----
-  // Dibedakan jadi 2 keterangan supaya admin langsung tahu mana yang perlu
-  // dicek lebih hati-hati tanpa harus buka detail barang dulu:
-  //   (a) barang ini SAMA SEKALI belum pernah tercatat masuk sebelumnya
-  //       (wajar, laporan pertama utk barang baru — biasanya aman)
-  //   (b) barang ini SUDAH pernah tercatat masuk, tapi dengan kombinasi
-  //       supplier/pemilik/lokasi yang lain (worth dicek — bisa jadi
-  //       memang supplier/lokasi baru, bisa juga salah pilih pas input)
-  if (t.jenis === 'masuk') {
-    const riwayatBarangIni = sebelum.filter(e => e.kodeBarang === t.kodeBarang);
-    const pernahDipakai = riwayatBarangIni.some(e =>
-      e.supplier === t.supplier && e.pemilik === t.pemilik && e.lokasi === t.lokasi
-    );
-    if (!pernahDipakai) {
-      if (riwayatBarangIni.length === 0) {
-        flags.push({
-          key: 'barang-baru',
-          label: 'Barang baru — belum pernah tercatat masuk',
-          detail: `Ini laporan MASUK pertama utk kode barang "${t.kodeBarang}" (belum ada riwayat masuk sama sekali sebelumnya). Wajar utk barang baru — cek sekali saja utk pastikan kode/supplier/pemilik/lokasinya sudah benar.`,
-        });
-      } else {
-        // Kumpulkan kombinasi lain yang PERNAH dipakai sebelumnya utk
-        // barang ini, supaya admin bisa langsung bandingkan tanpa perlu
-        // buka detail barang.
-        const kombinasiLain = new Map();
-        riwayatBarangIni.forEach(e => {
-          const key = comboKey(e.kodeBarang, e.supplier, e.pemilik, e.lokasi);
-          if (!kombinasiLain.has(key)) kombinasiLain.set(key, `${e.supplier} / ${e.pemilik} / ${e.lokasi}`);
-        });
-        const contohLain = [...kombinasiLain.values()].slice(0, 2).join('; ');
-        flags.push({
-          key: 'kombinasi-baru',
-          label: 'Kombinasi supplier/pemilik/lokasi baru utk barang lama',
-          detail: `Barang ini sudah pernah tercatat masuk sebelumnya, tapi SELALU dengan kombinasi lain (mis. ${contohLain}${kombinasiLain.size > 2 ? ', dll' : ''}). Kombinasi supplier "${t.supplier}" + pemilik "${t.pemilik}" + lokasi "${t.lokasi}" ini baru dipakai kali ini — cek apakah memang benar (supplier/lokasi baru) atau salah pilih saat input.`,
-        });
-      }
-    }
-  }
-
-  return flags;
-
-}
-
 // Ambil kode "blok" dari kode lokasi — blok = huruf/segmen pertama sebelum
 // tanda pemisah pertama (mis. lokasi "A-01-01" -> blok "A"). Kalau lokasi
 // tidak memakai tanda pemisah, ambil karakter pertama saja sebagai fallback.
@@ -4654,93 +4878,6 @@ function buildLokasiOccupancy(entries) {
     b.slots.sort((x, y) => x.lokasi.localeCompare(y.lokasi, undefined, { numeric: true }));
   });
   return Object.values(bloks).sort((a, b) => a.blok.localeCompare(b.blok));
-}
-
-// Sama seperti buildLokasiOccupancy di atas, tapi status TERISI/KOSONG
-// dihitung khusus untuk SATU kode barang tertentu — bukan "ada barang
-// apapun di rak ini", melainkan "barang INI ada di rak ini atau tidak".
-// Dipakai supaya saat admin klik satu barang, langsung kelihatan peta
-// blok/rak mana saja yang sudah terisi barang tsb dan mana yang masih
-// kosong untuknya (persis pola "Status Lokasi per Blok" di dashboard,
-// tapi difokuskan ke satu barang).
-function buildItemLokasiOccupancy(entries, kode) {
-  const locStock = buildLocationStock(entries);
-  const stockMap = new Map(locStock.map(l => [l.lokasi, l]));
-  const masterLokasi = (typeof MASTER_DATA !== 'undefined' && MASTER_DATA.lokasi) ? MASTER_DATA.lokasi : [];
-  const allLokasi = new Set(masterLokasi);
-  entries.forEach(t => { if (t.lokasi) allLokasi.add(t.lokasi); });
-
-  const bloks = {};
-  allLokasi.forEach(lokasi => {
-    const blok = getBlokFromLokasi(lokasi);
-    if (!bloks[blok]) bloks[blok] = { blok, slots: [], terisi: 0, kosong: 0 };
-    const b = bloks[blok];
-    const locData = stockMap.get(lokasi);
-    const itemHere = locData ? locData.items.find(it => (it.kode || it.nama) === kode) : null;
-    const isTerisi = !!(itemHere && itemHere.qty > 0);
-    b.slots.push({
-      lokasi,
-      status: isTerisi ? 'terisi' : 'kosong',
-      qty: itemHere ? itemHere.qty : 0,
-      pallet: itemHere ? itemHere.pallet : 0,
-    });
-    if (isTerisi) b.terisi++; else b.kosong++;
-  });
-
-  Object.values(bloks).forEach(b => {
-    b.slots.sort((x, y) => x.lokasi.localeCompare(y.lokasi, undefined, { numeric: true }));
-  });
-  return Object.values(bloks).sort((a, b) => a.blok.localeCompare(b.blok));
-}
-
-function renderBlokPallet() {
-  const blokListEl = document.getElementById('blok-list');
-  const blokEmptyEl = document.getElementById('blok-empty');
-  const blokTotalEl = document.getElementById('blok-total');
-  if (!blokListEl || !blokEmptyEl) return;
-
-  const blokData = buildLokasiOccupancy(currentEntries);
-  const totalSlot = blokData.reduce((s, b) => s + b.terisi + b.kosong, 0);
-  const totalTerisi = blokData.reduce((s, b) => s + b.terisi, 0);
-  const totalPallet = blokData.reduce((s, b) => s + b.totalPallet, 0);
-
-  if (blokTotalEl) {
-    if (totalSlot > 0) {
-      blokTotalEl.hidden = false;
-      blokTotalEl.textContent = `${totalTerisi.toLocaleString('id-ID')}/${totalSlot.toLocaleString('id-ID')} lokasi terisi · ${roundPalletDisplay(totalPallet)} pallet`;
-    } else {
-      blokTotalEl.hidden = true;
-    }
-  }
-
-  blokListEl.innerHTML = '';
-  if (blokData.length === 0) {
-    blokEmptyEl.hidden = false;
-    return;
-  }
-  blokEmptyEl.hidden = true;
-
-  blokData.forEach(b => {
-    const total = b.terisi + b.kosong;
-    // CATATAN: Validasi input sekarang berbasis PER LOKASI SPESIFIK (A-01-01, dll).
-    // Ringkasan di sini untuk monitoring trend per blok saja (informatif).
-    // Setiap lokasi individual punya batas: 43 pallet (lorong A-F) atau 47 pallet (lorong G-L).
-    const pct = total > 0 ? Math.round((b.terisi / total) * 100) : 0;
-    const barWidthPct = Math.min(pct, 100);
-
-    const row = document.createElement('div');
-    row.className = 'bar-row bar-row-blok' + (isOver ? ' is-over' : '');
-    row.innerHTML = `
-      <div class="bar-row-top">
-        <span class="bar-row-name mono">Blok ${escapeHtml(b.blok)} <span class="muted">(${b.terisi}/${total} terisi · ${b.kosong} kosong)</span></span>
-        <span class="bar-row-val">${roundPalletDisplay(b.totalPallet)}${batasBlok ? ` / ${batasBlok.toLocaleString('id-ID')}` : ''} pallet${batasBlok ? ` · ${pct}%` : ''}</span>
-      </div>
-      <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(barWidthPct, total > 0 && b.terisi > 0 ? 4 : 0)}%"></div></div>
-      ${isOver ? `<div class="bar-row-warning">⚠️ Kapasitas terlampaui (batas ${batasBlok.toLocaleString('id-ID')} pallet)</div>` : ''}
-    `;
-    row.addEventListener('click', () => openBlokModal(b.blok));
-    blokListEl.appendChild(row);
-  });
 }
 
 // ---- Modal peta lokasi per blok — grid kecil semua rak di blok tsb,
@@ -4822,12 +4959,12 @@ function openAllBlokModal() {
       return { ...b, total, batasBlok, isOver, pct };
     })
     .filter(b => b.total > 0)
-    .sort((a, b) => b.pct - a.pct);
+    .sort((a, b) => a.blok.localeCompare(b.blok));
 
   modalBody.innerHTML = `
     <div class="modal-item-head">
       <div class="modal-item-kode">SEMUA BLOK GUDANG</div>
-      <h2 class="modal-item-nama">Blok / Rak Terpadat</h2>
+      <h2 class="modal-item-nama">Semua Blok (A–L)</h2>
     </div>
     <div class="modal-section">
       ${blokRanked.length === 0 ? '<p class="vis-empty">Belum ada data lokasi/blok tercatat.</p>' : `
@@ -4860,81 +4997,6 @@ function openAllBlokModal() {
     });
   }
   itemModal.hidden = false;
-}
-
-/* ---- STATUS LOKASI PER BARANG (dashboard) ----
-   Pencarian barang dari SELURUH master data (bukan cuma yang sudah pernah
-   tercatat transaksi), supaya admin bisa cek "barang ini ada di mana saja"
-   untuk barang apapun, termasuk yang belum pernah masuk/keluar. Baru
-   menampilkan hasil setelah admin mengetik sesuatu, supaya tidak langsung
-   memuat 600+ baris sekaligus di dashboard. */
-const searchLokasiBarang = document.getElementById('search-lokasi-barang');
-const lokasiBarangList = document.getElementById('lokasi-barang-list');
-const lokasiBarangEmpty = document.getElementById('lokasi-barang-empty');
-const LOKASI_BARANG_MAX_HASIL = 40;
-
-function renderLokasiBarangSearch() {
-  if (!lokasiBarangList || !lokasiBarangEmpty) return;
-  const q = searchLokasiBarang.value.trim().toLowerCase();
-  lokasiBarangList.innerHTML = '';
-
-  if (!q) {
-    lokasiBarangEmpty.hidden = false;
-    lokasiBarangEmpty.textContent = 'Ketik nama atau kode barang di atas untuk mulai mencari.';
-    return;
-  }
-
-  const allBarang = (typeof MASTER_DATA !== 'undefined' && MASTER_DATA.barang) ? MASTER_DATA.barang : [];
-  const matched = allBarang.filter(b =>
-    (b.nama || '').toLowerCase().includes(q) || (b.kode || '').toLowerCase().includes(q)
-  );
-
-  if (matched.length === 0) {
-    lokasiBarangEmpty.hidden = false;
-    lokasiBarangEmpty.textContent = 'Tidak ada barang yang cocok dengan pencarian.';
-    return;
-  }
-  lokasiBarangEmpty.hidden = true;
-
-  const shown = matched.slice(0, LOKASI_BARANG_MAX_HASIL);
-  const occupancyCache = {};
-  shown.forEach(b => {
-    // Hitung ringkas jumlah lokasi terisi barang ini, untuk ditampilkan di
-    // baris hasil pencarian (biar kelihatan "penuh" atau belum tanpa perlu
-    // buka modal dulu).
-    const bloks = buildItemLokasiOccupancy(currentEntries, b.kode);
-    const totalSlot = bloks.reduce((s, bl) => s + bl.terisi + bl.kosong, 0);
-    const totalTerisi = bloks.reduce((s, bl) => s + bl.terisi, 0);
-    occupancyCache[b.kode] = { totalSlot, totalTerisi };
-
-    const row = document.createElement('div');
-    row.className = 'bar-row bar-row-lokasi';
-    const info = totalSlot > 0
-      ? `${totalTerisi.toLocaleString('id-ID')}/${totalSlot.toLocaleString('id-ID')} lokasi terisi`
-      : 'Belum ada data lokasi';
-    const pct = totalSlot > 0 ? Math.round((totalTerisi / totalSlot) * 100) : 0;
-    row.innerHTML = `
-      <div class="bar-row-top">
-        <span class="bar-row-name">${escapeHtml(b.nama)} <span class="muted mono">(${escapeHtml(b.kode)})</span></span>
-        <span class="bar-row-val">${info}</span>
-      </div>
-      <div class="bar-row-track"><div class="bar-row-fill" style="width:${Math.max(pct, totalTerisi > 0 ? 4 : 0)}%"></div></div>
-    `;
-    row.addEventListener('click', () => openItemModal(b.kode, b.nama));
-    lokasiBarangList.appendChild(row);
-  });
-
-  if (matched.length > LOKASI_BARANG_MAX_HASIL) {
-    const more = document.createElement('p');
-    more.className = 'vis-hint muted';
-    more.style.marginTop = '10px';
-    more.textContent = `Menampilkan ${LOKASI_BARANG_MAX_HASIL} dari ${matched.length} hasil. Ketik kata kunci lebih spesifik untuk mempersempit.`;
-    lokasiBarangList.appendChild(more);
-  }
-}
-
-if (searchLokasiBarang) {
-  searchLokasiBarang.addEventListener('input', renderLokasiBarangSearch);
 }
 
 /* ==========================================================================
@@ -5042,6 +5104,17 @@ function renderDashActivity() {
   emptyEl.hidden = true;
   terbaru.forEach(t => {
     const isMasuk = t.jenis === 'masuk';
+    // Label tanggal dibuat eksplisit per jenis supaya tidak rancu — baris
+    // tanggal di sini BUKAN "waktu kejadian" campur aduk, tapi benar-benar
+    // menunjukkan field yang sesuai jenis transaksinya:
+    // - MASUK  -> "Datang" = Tanggal Kedatangan barang.
+    // - KELUAR -> "Input"  = Tanggal Penginputan form barang keluar.
+    // Jam di baris bawah SELALU waktu asli laporan disimpan ke sistem
+    // (createdAt) — bisa beda hari dari tanggal di baris atas kalau
+    // operator input tanggal mundur/lain hari, makanya diberi label
+    // "Disimpan" + tooltip supaya jelas ini bukan jam dari tanggal di atasnya.
+    const tanggalLabel = isMasuk ? 'Datang' : 'Input';
+    const tanggalTitle = isMasuk ? 'Tanggal Kedatangan' : 'Tanggal Penginputan';
     const row = document.createElement('div');
     row.className = 'dash-activity-item';
     row.innerHTML = `
@@ -5054,7 +5127,10 @@ function renderDashActivity() {
         <div class="dash-activity-title">${isMasuk ? 'Barang Masuk' : 'Barang Keluar'}</div>
         <div class="dash-activity-sub" title="${escapeHtml(t.namaBarang)}">${escapeHtml(t.namaBarang)}</div>
       </div>
-      <div class="dash-activity-date">${escapeHtml(formatTanggal(t.tanggal))}<br>${escapeHtml(formatJam(t.createdAt))}</div>
+      <div class="dash-activity-date">
+        <span class="dash-activity-date-main" title="${tanggalTitle}">${tanggalLabel} ${escapeHtml(formatTanggal(t.tanggal))}</span>
+        <span class="dash-activity-date-sub" title="Waktu laporan ini disimpan ke sistem">Disimpan ${escapeHtml(formatJam(t.createdAt))}</span>
+      </div>
     `;
     row.addEventListener('click', () => openItemModal(t.kodeBarang, t.namaBarang));
     listEl.appendChild(row);
@@ -5986,7 +6062,7 @@ function renderOperatorDetailInfo(el, a, stats) {
   `;
 
   el.querySelector('#op-detail-btn-hapus').addEventListener('click', async () => {
-    if (!confirm(`Hapus akun operator "${a.nama}"? Operator ini tidak akan bisa masuk lagi sampai mendaftar ulang.`)) return;
+    if (!await showConfirmModal({ title: 'Hapus Akun Operator', message: `Hapus akun operator "${a.nama}"? Operator ini tidak akan bisa masuk lagi sampai mendaftar ulang.` })) return;
     try {
       const fb = window.gudangFirebase;
       // TANPA Cloud Functions: ini SOFT-DELETE. Dokumen profil di
@@ -6190,7 +6266,7 @@ function openComboModal(kode, supplier, pemilik) {
       <div class="batch-table batch-table-keluar">
         <div class="batch-table-row batch-table-head">
           <div class="btc btc-lokasi">Lokasi</div>
-          <div class="btc btc-tanggal">Tanggal Keluar</div>
+          <div class="btc btc-tanggal">Tanggal Penginputan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
           <div class="btc btc-pallet">Total Pallet</div>
@@ -6282,7 +6358,7 @@ function openComboRiwayatView(kode, supplier, pemilik, lokasi) {
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
-            <div><span class="lbl">Tanggal Kedatangan</span><span>${formatTanggal(t.tanggal)}</span></div>
+            <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}</span><span>${formatTanggal(t.tanggal)}</span></div>
             <div><span class="lbl">Operator Input</span><span>${escapeHtml(t.operator || '-')}</span></div>
           </div>
           ${t.keterangan ? `<div class="riwayat-tx-note">${escapeHtml(t.keterangan)}</div>` : ''}
@@ -6474,7 +6550,7 @@ function openItemModal(kode, namaFallback) {
       <div class="batch-table batch-table-keluar">
         <div class="batch-table-row batch-table-head">
           <div class="btc btc-lokasi">Lokasi</div>
-          <div class="btc btc-tanggal">Tanggal Keluar</div>
+          <div class="btc btc-tanggal">Tanggal Penginputan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
           <div class="btc btc-pallet">Total Pallet</div>
@@ -6566,7 +6642,7 @@ function openRiwayatTransaksiView(kode, lokasi) {
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
-            <div><span class="lbl">Tanggal Kedatangan</span><span>${formatTanggal(t.tanggal)}</span></div>
+            <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}</span><span>${formatTanggal(t.tanggal)}</span></div>
             <div><span class="lbl">Operator Input</span><span>${escapeHtml(t.operator || '-')}</span></div>
           </div>
           ${t.keterangan ? `<div class="riwayat-tx-note">${escapeHtml(t.keterangan)}</div>` : ''}
@@ -6593,19 +6669,23 @@ const RIWAYAT_PAGE_SIZE = 50;
 let riwayatQuerySignature = '';
 let riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
 
+// Tombol Edit/Hapus pada tiap kartu Riwayat Laporan dinonaktifkan dulu atas
+// permintaan — set true lagi kapan pun untuk mengembalikan fiturnya tanpa
+// perlu menulis ulang kodenya (semua logikanya masih utuh di bawah).
+const RIWAYAT_EDIT_HAPUS_AKTIF = false;
+
 function buildTicketCard(t) {
   const isAdjustment = t.tipe === 'penyesuaian';
-  const flags = computeEntryFlags(t, currentEntries);
   const card = document.createElement('div');
-  card.className = 'ticket' + (flags.length > 0 ? ' ticket-flagged' : '');
+  card.className = 'ticket';
   card.innerHTML = `
       <div class="ticket-top">
         <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">
           ${t.jenis === 'masuk' ? 'BARANG MASUK' : 'BARANG KELUAR'}
         </span>
         ${isAdjustment ? '<span class="badge-jenis badge-penyesuaian">PENYESUAIAN</span>' : ''}
-        ${flags.length > 0 ? `<span class="badge-jenis badge-flag" title="Laporan ini otomatis ditandai untuk ditinjau ulang">🚩 PERLU DITINJAU${flags.length > 1 ? ` (${flags.length})` : ''}</span>` : ''}
         <span class="ticket-time">${formatWaktu(t.createdAt)}</span>
+        ${RIWAYAT_EDIT_HAPUS_AKTIF ? `
         <span class="ticket-actions">
           <button type="button" class="icon-btn btn-edit" title="Edit lokasi / jumlah" aria-label="Edit">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -6613,7 +6693,7 @@ function buildTicketCard(t) {
           <button type="button" class="icon-btn danger btn-delete" title="Hapus" aria-label="Hapus">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
-        </span>
+        </span>` : ''}
       </div>
       <div class="ticket-grid">
         <div><span class="lbl">Operator: </span>${escapeHtml(t.operator)}</div>
@@ -6625,11 +6705,11 @@ function buildTicketCard(t) {
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet}</div>` : ''}
-        <div><span class="lbl">Tanggal: </span>${formatTanggal(t.tanggal)}</div>
+        <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
-      ${flags.length > 0 ? `<div class="ticket-note ticket-flag-note"><b>🚩 Ditandai utk ditinjau:</b><ul class="flag-reason-list">${flags.map(f => `<li><b>${escapeHtml(f.label)}.</b> ${escapeHtml(f.detail)}</li>`).join('')}</ul></div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
+      ${RIWAYAT_EDIT_HAPUS_AKTIF ? `
       <div class="ticket-edit" hidden>
         <div class="field">
           <label>Lokasi</label>
@@ -6647,111 +6727,101 @@ function buildTicketCard(t) {
           <button type="button" class="btn-mini btn-mini-cancel">Batal</button>
           <button type="button" class="btn-mini btn-mini-save">Simpan Perubahan</button>
         </div>
-      </div>
+      </div>` : ''}
     `;
   card.querySelector('.link-barang:not(.link-lokasi)').addEventListener('click', () => openItemModal(t.kodeBarang));
   card.querySelector('.link-lokasi').addEventListener('click', () => openLokasiModal(t.lokasi));
 
-  const editPanel = card.querySelector('.ticket-edit');
-  card.querySelector('.btn-edit').addEventListener('click', () => {
-    editPanel.hidden = !editPanel.hidden;
-  });
-  card.querySelector('.btn-mini-cancel').addEventListener('click', () => { editPanel.hidden = true; });
-  card.querySelector('.btn-mini-save').addEventListener('click', async () => {
-    if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
-    const newLokasi = card.querySelector('.edit-lokasi').value.trim();
-    const newJumlah = parseInt(card.querySelector('.edit-jumlah').value, 10);
-    const newKeterangan = card.querySelector('.edit-keterangan').value.trim();
-    if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
-    if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
+  if (RIWAYAT_EDIT_HAPUS_AKTIF) {
+    const editPanel = card.querySelector('.ticket-edit');
+    card.querySelector('.btn-edit').addEventListener('click', () => {
+      editPanel.hidden = !editPanel.hidden;
+    });
+    card.querySelector('.btn-mini-cancel').addEventListener('click', () => { editPanel.hidden = true; });
+    card.querySelector('.btn-mini-save').addEventListener('click', async () => {
+      if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
+      const newLokasi = card.querySelector('.edit-lokasi').value.trim();
+      const newJumlah = parseInt(card.querySelector('.edit-jumlah').value, 10);
+      const newKeterangan = card.querySelector('.edit-keterangan').value.trim();
+      if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
+      if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
 
-    // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
-    // lalu pastikan stok di lokasi lama MAUPUN lokasi baru (kalau beda)
-    // tidak jadi minus akibat perubahan ini.
-    const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
-    const entriesSimulasi = [...entriesTanpaIni, { ...t, lokasi: newLokasi, jumlah: newJumlah }];
-    const lokasiTerdampak = new Set([t.lokasi, newLokasi]);
-    for (const lok of lokasiTerdampak) {
-      const stokSimulasi = getStokAtLokasi(entriesSimulasi, t.kodeBarang, lok);
-      if (stokSimulasi < 0) {
-        return showToast(`Perubahan ini membuat stok "${t.namaBarang}" di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah atau lokasinya.`, 'error');
+      // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
+      // lalu pastikan stok di lokasi lama MAUPUN lokasi baru (kalau beda)
+      // tidak jadi minus akibat perubahan ini.
+      const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
+      const entriesSimulasi = [...entriesTanpaIni, { ...t, lokasi: newLokasi, jumlah: newJumlah }];
+      const lokasiTerdampak = new Set([t.lokasi, newLokasi]);
+      for (const lok of lokasiTerdampak) {
+        const stokSimulasi = getStokAtLokasi(entriesSimulasi, t.kodeBarang, lok);
+        if (stokSimulasi < 0) {
+          return showToast(`Perubahan ini membuat stok "${t.namaBarang}" di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah atau lokasinya.`, 'error');
+        }
       }
-    }
 
-    // ---- BLOKIR KAPASITAS BLOK — Edit Laporan ----
-    // Kalau laporan yang diedit ini BARANG MASUK dan lokasinya diubah,
-    // pallet-nya (t.jumlahPallet, tidak berubah oleh edit ini) akan
-    // "pindah" dari lokasi lama ke lokasi baru. Pastikan lokasi baru tidak jadi
-    // melebihi kapasitas akibat perpindahan ini — entriesTanpaIni dipakai
-    // sebagai basis (laporan ini sendiri dikeluarkan dulu) supaya
-    // kontribusi lamanya tidak ikut terhitung dobel di lokasi baru.
-    if (t.jenis === 'masuk' && t.jumlahPallet) {
-      const cekEdit = cekKapasitasBlok(newLokasi, t.jumlahPallet, entriesTanpaIni);
-      if (!cekEdit.ok) {
-        return showToast(
-          `Perubahan lokasi ke ${escapeHtml(cekEdit.lokasi)} melebihi kapasitas.\n` +
-          `Dibutuhkan: ${roundPalletDisplay(t.jumlahPallet)} pallet\n` +
-          `Sisa kapasitas: hanya ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet.\n` +
-          `Pilih lokasi lain atau batalkan perubahan.`, 'error'
-        );
+      // ---- BLOKIR KAPASITAS BLOK — Edit Laporan ----
+      // Kalau laporan yang diedit ini BARANG MASUK dan lokasinya diubah,
+      // pallet-nya (t.jumlahPallet, tidak berubah oleh edit ini) akan
+      // "pindah" dari lokasi lama ke lokasi baru. Pastikan lokasi baru tidak jadi
+      // melebihi kapasitas akibat perpindahan ini — entriesTanpaIni dipakai
+      // sebagai basis (laporan ini sendiri dikeluarkan dulu) supaya
+      // kontribusi lamanya tidak ikut terhitung dobel di lokasi baru.
+      if (t.jenis === 'masuk' && t.jumlahPallet) {
+        const cekEdit = cekKapasitasBlok(newLokasi, t.jumlahPallet, entriesTanpaIni);
+        if (!cekEdit.ok) {
+          return showToast(
+            `Perubahan lokasi ke ${escapeHtml(cekEdit.lokasi)} melebihi kapasitas.\n` +
+            `Dibutuhkan: ${roundPalletDisplay(t.jumlahPallet)} pallet\n` +
+            `Sisa kapasitas: hanya ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet.\n` +
+            `Pilih lokasi lain atau batalkan perubahan.`, 'error'
+          );
+        }
       }
-    }
 
-    try {
+      try {
+        const session = getSession();
+        const oleh = (session && session.nama) || 'Admin';
+        const waktu = Date.now();
+        const adaPerubahan = t.lokasi !== newLokasi || t.jumlah !== newJumlah || (t.keterangan || '') !== newKeterangan;
+        const editLogBaru = adaPerubahan
+          ? [...(t.editLog || []), {
+              oleh, waktu,
+              lokasiLama: t.lokasi, lokasiBaru: newLokasi,
+              jumlahLama: t.jumlah, jumlahBaru: newJumlah,
+            }]
+          : (t.editLog || []);
+        await updateEntryInFirestore(t.id, {
+          lokasi: newLokasi, jumlah: newJumlah, keterangan: newKeterangan,
+          updatedAt: waktu, editLog: editLogBaru,
+        });
+        showToast('Laporan berhasil diperbarui.');
+      } catch (err) {
+        showToast('Gagal menyimpan perubahan: ' + err.message, 'error');
+      }
+    });
+
+    card.querySelector('.btn-delete').addEventListener('click', async () => {
+      if (!await showConfirmModal({ title: 'Hapus Laporan', message: 'Hapus laporan ini? Tindakan ini tidak dapat dibatalkan.' })) return;
+      if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
       const session = getSession();
       const oleh = (session && session.nama) || 'Admin';
-      const waktu = Date.now();
-      const adaPerubahan = t.lokasi !== newLokasi || t.jumlah !== newJumlah || (t.keterangan || '') !== newKeterangan;
-      const editLogBaru = adaPerubahan
-        ? [...(t.editLog || []), {
-            oleh, waktu,
-            lokasiLama: t.lokasi, lokasiBaru: newLokasi,
-            jumlahLama: t.jumlah, jumlahBaru: newJumlah,
-          }]
-        : (t.editLog || []);
-      await updateEntryInFirestore(t.id, {
-        lokasi: newLokasi, jumlah: newJumlah, keterangan: newKeterangan,
-        updatedAt: waktu, editLog: editLogBaru,
-      });
-      showToast('Laporan berhasil diperbarui.');
-    } catch (err) {
-      showToast('Gagal menyimpan perubahan: ' + err.message, 'error');
-    }
-  });
-
-  card.querySelector('.btn-delete').addEventListener('click', async () => {
-    if (!confirm('Hapus laporan ini?')) return;
-    if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
-    const session = getSession();
-    const oleh = (session && session.nama) || 'Admin';
-    try {
-      await softDeleteEntryFromFirestore(t.id, oleh);
-      showToast('Laporan dihapus.');
-    } catch (err) {
-      showToast('Gagal menghapus: ' + err.message, 'error');
-    }
-  });
+      try {
+        await softDeleteEntryFromFirestore(t.id, oleh);
+        showToast('Laporan dihapus.');
+      } catch (err) {
+        showToast('Gagal menghapus: ' + err.message, 'error');
+      }
+    });
+  }
   return card;
 }
 
 let riwayatJejakMode = false;
-let riwayatFlagMode = false;
 
 function updateJejakBadge() {
   const badge = document.getElementById('jejak-count-badge');
   if (!badge) return;
   const count = currentEntriesRaw.filter(t => t.dihapus || (t.editLog && t.editLog.length > 0)).length;
-  if (count > 0) { badge.hidden = false; badge.textContent = count > 99 ? '99+' : count; }
-  else badge.hidden = true;
-}
-
-// Sama seperti updateJejakBadge, tapi menghitung laporan yang otomatis
-// ditandai computeEntryFlags() (kriteria anomali) — dihitung dari
-// currentEntries (bukan Raw) supaya laporan yang sudah dihapus tidak ikut.
-function updateFlagBadge() {
-  const badge = document.getElementById('flag-count-badge');
-  if (!badge) return;
-  const count = currentEntries.filter(t => computeEntryFlags(t, currentEntries).length > 0).length;
   if (count > 0) { badge.hidden = false; badge.textContent = count > 99 ? '99+' : count; }
   else badge.hidden = true;
 }
@@ -6814,16 +6884,12 @@ function renderJejak() {
 function renderRiwayat() {
   if (currentRole() !== 'admin') return;
   updateJejakBadge();
-  updateFlagBadge();
   if (riwayatJejakMode) { renderJejak(); return; }
 
   const range = getPeriodRange(periodMode, periodDate);
-  riwayatHint.textContent = riwayatFlagMode
-    ? `Menampilkan laporan yang ditandai 🚩 perlu ditinjau — periode: ${range.label}`
-    : `Menampilkan laporan periode: ${range.label}`;
+  riwayatHint.textContent = `Menampilkan laporan periode: ${range.label}`;
 
   let all = currentEntries.filter(t => inPeriod(t, range));
-  if (riwayatFlagMode) all = all.filter(t => computeEntryFlags(t, currentEntries).length > 0);
   all = all.sort((a, b) => b.createdAt - a.createdAt);
 
   const q = searchRiwayat.value.trim().toLowerCase();
@@ -6843,9 +6909,7 @@ function renderRiwayat() {
   riwayatList.innerHTML = '';
   if (filtered.length === 0) {
     riwayatEmpty.hidden = false;
-    riwayatEmpty.textContent = all.length === 0
-      ? (riwayatFlagMode ? 'Tidak ada laporan yang ditandai perlu ditinjau pada periode ini. 👍' : 'Belum ada laporan pada periode ini.')
-      : 'Tidak ada laporan yang cocok dengan pencarian.';
+    riwayatEmpty.textContent = all.length === 0 ? 'Belum ada laporan pada periode ini.' : 'Tidak ada laporan yang cocok dengan pencarian.';
     return;
   }
   riwayatEmpty.hidden = true;
@@ -6873,30 +6937,17 @@ function renderRiwayat() {
 
 searchRiwayat.addEventListener('input', renderRiwayat);
 
+/* ---- Toggle "Jejak" (laporan yang pernah diedit/dihapus) ---- */
 const btnToggleJejak = document.getElementById('btn-toggle-jejak');
 if (btnToggleJejak) {
   btnToggleJejak.addEventListener('click', () => {
     riwayatJejakMode = !riwayatJejakMode;
-    if (riwayatJejakMode) riwayatFlagMode = false;
     btnToggleJejak.classList.toggle('is-active', riwayatJejakMode);
-    const btnFlag = document.getElementById('btn-toggle-flag');
-    if (btnFlag) btnFlag.classList.remove('is-active');
-    riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
     renderRiwayat();
   });
 }
 
-const btnToggleFlag = document.getElementById('btn-toggle-flag');
-if (btnToggleFlag) {
-  btnToggleFlag.addEventListener('click', () => {
-    riwayatFlagMode = !riwayatFlagMode;
-    if (riwayatFlagMode) riwayatJejakMode = false;
-    btnToggleFlag.classList.toggle('is-active', riwayatFlagMode);
-    if (btnToggleJejak) btnToggleJejak.classList.remove('is-active');
-    riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
-    renderRiwayat();
-  });
-}
+
 
 /* ==========================================================================
    RIWAYAT LAPORAN SAYA (operator) — versi ringkas & baca-saja dari
@@ -6950,7 +7001,7 @@ function renderRiwayatOperator() {
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet.toLocaleString('id-ID')} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet.toLocaleString('id-ID')}</div>` : ''}
-        <div><span class="lbl">Tanggal Kedatangan: </span>${formatTanggal(t.tanggal)}</div>
+        <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit)` : ''}</div>` : ''}
@@ -7003,18 +7054,6 @@ document.getElementById('btn-export').addEventListener('click', async () => {
   } finally {
     btnExportEl.disabled = false;
     btnExportEl.innerHTML = originalLabel;
-  }
-});
-
-document.getElementById('btn-clear').addEventListener('click', async () => {
-  if (currentEntries.length === 0) return;
-  if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
-  if (!confirm('Hapus SEMUA laporan di database bersama ini? Tindakan ini tidak bisa dibatalkan.')) return;
-  try {
-    await clearAllEntriesInFirestore();
-    showToast('Semua laporan telah dihapus.');
-  } catch (err) {
-    showToast('Gagal menghapus: ' + err.message, 'error');
   }
 });
 
