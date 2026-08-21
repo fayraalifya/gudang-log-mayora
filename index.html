@@ -813,12 +813,17 @@
            atas (yang browse-only, dipakai bersama operator): panel ini
            khusus admin, berbasis FILTER + TABEL HASIL PENCARIAN per
            TRANSAKSI barang — baik barang MASUK maupun barang KELUAR
-           (seperti operator, yang laporannya juga mencatat masuk & keluar),
-           bukan folder. Filter "Jenis Transaksi" bisa dipakai untuk
-           mempersempit ke salah satu jenis saja, default menampilkan
-           keduanya. Alurnya: admin isi filter → klik "Terapkan Filter" →
-           hasil muncul per baris transaksi (ditandai badge MASUK/KELUAR) →
-           klik "Detail" untuk lihat detail transaksi → dari situ bisa
+           (seperti operator, yang laporannya juga mencatat masuk & keluar).
+           Tabelnya gaya Excel: SEMUA transaksi langsung tampil apa adanya
+           per baris (masing-masing baris = 1 transaksi, ditandai badge
+           MASUK/KELUAR), tanpa perlu buka popup dulu untuk melihatnya.
+           Filter "Jenis Transaksi" bisa dipakai untuk mempersempit ke salah
+           satu jenis saja, default menampilkan keduanya. Alurnya: admin isi
+           filter → klik "Terapkan Filter" → semua baris transaksi yang
+           cocok muncul → klik "Detail" pada satu baris untuk lihat detail
+           gabungan KOMBINASI-nya (Nama Barang + Kode Barang + Supplier +
+           Pemilik Barang + Lokasi, dengan Tanggal Kedatangan dihitung dari
+           transaksi masuk paling awal pada kombinasi tsb) → dari situ bisa
            lanjut ke "Riwayat Kedatangan" untuk lihat semua riwayat barang
            masuk yang sama.
       ======================================================================= -->
@@ -963,8 +968,8 @@
                   <option value="tanggal-desc">Tanggal (Terbaru)</option>
                   <option value="tanggal-asc">Tanggal (Terlama)</option>
                   <option value="nama-asc">Nama Barang (A-Z)</option>
-                  <option value="pcs-desc">Total PCS (Terbesar)</option>
-                  <option value="pallet-desc">Total Pallet (Terbesar)</option>
+                  <option value="pcs-desc">Jumlah PCS (Terbesar)</option>
+                  <option value="pallet-desc">Jumlah Pallet (Terbesar)</option>
                 </select>
               </label>
               <button type="button" class="btn-secondary" id="kds-btn-export">
@@ -980,14 +985,15 @@
             <table class="kds-table">
               <thead>
                 <tr>
+                  <th>Jenis</th>
                   <th class="kds-th-nama">Nama Barang</th>
                   <th>Supplier</th>
                   <th>Pemilik Barang</th>
                   <th>Lokasi</th>
-                  <th>Tanggal Kedatangan</th>
-                  <th>Total Masuk (PCS)</th>
-                  <th>Total Keluar (PCS)</th>
-                  <th>Stok Saat Ini</th>
+                  <th>Tanggal</th>
+                  <th>Jumlah (PCS)</th>
+                  <th>Pallet</th>
+                  <th>Operator</th>
                   <th class="kds-th-aksi">Aksi</th>
                 </tr>
               </thead>
@@ -1002,7 +1008,7 @@
                 <div class="kds-summary-item"><span>Total PCS Masuk</span><strong id="kds-sum-pcs">0 pcs</strong></div>
                 <div class="kds-summary-item"><span>Total PCS Keluar</span><strong id="kds-sum-pcs-keluar">0 pcs</strong></div>
                 <div class="kds-summary-item kds-summary-item-highlight"><span>Stok Saat Ini (Total)</span><strong id="kds-sum-stok-saat-ini">0 pcs</strong></div>
-                <div class="kds-summary-item"><span>Jumlah Kombinasi</span><strong id="kds-sum-kedatangan">0 kombinasi</strong></div>
+                <div class="kds-summary-item"><span>Jumlah Transaksi</span><strong id="kds-sum-kedatangan">0 transaksi</strong></div>
                 <div class="kds-summary-item"><span>Lokasi Tersebar</span><strong id="kds-sum-lokasi">0 lokasi</strong></div>
               </div>
             </div>

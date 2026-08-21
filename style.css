@@ -741,6 +741,37 @@ body.role-admin .app-main {
 }
 .stok-table-modal { max-height: 320px; }
 
+/* Mode "Lokasi" di Katalog Barang — tiap lokasi jadi 1 grup, dan RINCIAN
+   barang di dalamnya (nama, kode, supplier, pemilik, jumlah, pallet)
+   langsung tampil sebagai tabel kecil di bawah nama lokasi — tidak perlu
+   klik/buka popup dulu untuk lihat isinya (gaya Excel, sama seperti
+   panel Katalog & Stok admin). Klik judul lokasi tetap membuka modal
+   detail lokasi lengkap kalau perlu riwayat batch kedatangannya. */
+.lokasi-breakdown-list {
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 640px; overflow-y: auto; padding: 4px 4px 4px 0;
+}
+.lokasi-breakdown-group {
+  background: var(--kertas); border: 1px solid var(--kraft-line); border-radius: 10px;
+  overflow: hidden;
+}
+.lokasi-breakdown-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; cursor: pointer; background: var(--kraft);
+  border-bottom: 1px solid var(--kraft-line); transition: background-color .12s;
+}
+.lokasi-breakdown-head:hover { background: var(--navy-pale); }
+.lokasi-breakdown-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.lokasi-breakdown-nama { font-weight: 700; font-size: 14px; color: var(--ink); }
+.lokasi-breakdown-stats { text-align: right; flex-shrink: 0; }
+.lokasi-breakdown-stats .stok-qty-num { font-size: 16px; }
+.batch-table-lokasi-items { padding: 6px 8px; }
+.batch-table-lokasi-items .batch-table-row {
+  grid-template-columns: 1.3fr 0.9fr 1fr 1fr 0.9fr 0.7fr;
+}
+.batch-table-lokasi-items .batch-table-body .batch-table-row { cursor: default; }
+.batch-table-lokasi-items .batch-table-body .batch-table-row:hover { background: var(--kraft); }
+
 /* ==========================================================================
    KATALOG BARANG — tampilan gabungan (mode 'barang'): panel "Katalog
    Barang" & "Lokasi Penyimpanan" berdampingan. Search & judul umum di atas
@@ -1080,6 +1111,11 @@ body.role-operator .katalog-mode-tabs { display: none; }
 .kombinasi-chip-main { font-size: 13.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .kombinasi-chip-sub { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .kombinasi-chip-sep { color: var(--kraft-muted); }
+.kombinasi-chip-batch-list {
+  display: flex; flex-direction: column; gap: 2px; margin-top: 4px;
+  padding-top: 6px; border-top: 1px dashed var(--kraft-line); width: 100%;
+}
+.kombinasi-chip-batch-item { font-size: 11.5px; color: var(--text-muted); }
 .kombinasi-list .no-result {
   font-size: 12.5px; color: var(--text-muted); background: var(--merah-soft);
   border: 2px dashed var(--merah); border-radius: 9px; padding: 12px 14px; line-height: 1.5;

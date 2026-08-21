@@ -152,6 +152,47 @@ function getKombinasiTersedia(entries, kodeBarang) {
   });
 }
 const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
+// Rincian batch kedatangan (FIFO) yang MASIH TERSISA untuk satu kombinasi
+// kode+supplier+pemilik+lokasi. Dipakai supaya operator jelas "stok yang
+// tersisa itu berasal dari kedatangan tanggal berapa saja" — karena satu
+// kombinasi bisa menerima BEBERAPA kali kedatangan (tanggal beda-beda) yang
+// kalau cuma dilihat total stoknya jadi tergabung jadi satu angka saja,
+// tidak kelihatan asal-usulnya. Logika FIFO: batch yang datang paling awal
+// dianggap paling dulu keluar, jadi total pcs yang sudah pernah keluar
+// dikurangkan dari batch tertua dulu, baru lanjut ke batch berikutnya.
+function getBatchBreakdownKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
+  const masukList = entries
+    .filter(t => t.jenis === 'masuk' && t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi)
+    .map(t => ({ tanggal: t.tanggal, qty: t.jumlah || 0 }))
+    .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || ''));
+
+  let totalKeluar = entries
+    .filter(t => t.jenis === 'keluar' && t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi)
+    .reduce((s, t) => s + (t.jumlah || 0), 0);
+
+  // Gabung batch dengan tanggal persis sama jadi satu baris, supaya tidak
+  // ada baris duplikat kalau ada 2x input masuk di hari yang sama.
+  const merged = [];
+  masukList.forEach(b => {
+    const last = merged[merged.length - 1];
+    if (last && last.tanggal === b.tanggal) last.qty += b.qty;
+    else merged.push({ tanggal: b.tanggal, qty: b.qty });
+  });
+
+  const breakdown = [];
+  merged.forEach(b => {
+    let sisa = b.qty;
+    if (totalKeluar > 0) {
+      const potong = Math.min(totalKeluar, sisa);
+      sisa -= potong;
+      totalKeluar -= potong;
+    }
+    if (sisa > 0) breakdown.push({ tanggal: b.tanggal, sisa });
+  });
+  return breakdown;
+}
+
 const BULAN_PANJANG = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
 function todayISO() {
@@ -3312,32 +3353,10 @@ let kdsPageSize = 10;
 
 const AMBANG_STOK_HABIS = 0;
 
-// ===== AGREGASI PER KOMBINASI BARANG (BARU) =====
-// Fungsi-fungsi baru untuk ubah panel "Katalog & Stok" dari per-transaksi
-// menjadi per-kombinasi (1 kombinasi = 1 barang + supplier + pemilik + lokasi).
-
-// Mengumpulkan semua kombinasi UNIK dari transaksi yang sudah difilter.
-// Setiap kombinasi adalah object { kodeBarang, namaBarang, supplier, pemilik, lokasi }.
-// Kombinasi tidak berisi data transaksi individual, hanya data master barang.
-function kdsGetUniqueCombinations(filteredTransactions) {
-  const comboMap = new Map(); // Key: "kodeBarang||supplier||pemilik||lokasi"
-  
-  filteredTransactions.forEach(t => {
-    const key = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}`;
-    if (!comboMap.has(key)) {
-      comboMap.set(key, {
-        kodeBarang: t.kodeBarang,
-        namaBarang: t.namaBarang,
-        supplier: t.supplier,
-        pemilik: t.pemilik,
-        lokasi: t.lokasi,
-        _key: key // untuk internal tracking
-      });
-    }
-  });
-  
-  return Array.from(comboMap.values());
-}
+// ===== AGREGASI PER KOMBINASI BARANG =====
+// Dipakai untuk popup Detail (openKdsDetailModalForCombo) — menghitung
+// ringkasan 1 kombinasi (1 kombinasi = 1 barang + supplier + pemilik +
+// lokasi) meskipun tabel utama sekarang menampilkan transaksi individual.
 
 // Menghitung statistik untuk 1 kombinasi: total masuk, total keluar, stok saat ini, pallet.
 function kdsBuildCombinationStats(combo) {
@@ -3387,92 +3406,6 @@ function kdsBuildCombinationStats(combo) {
   };
 }
 
-// Mengagregasi stats untuk semua kombinasi dalam daftar.
-function kdsAggregateAllCombinations(combinations) {
-  return combinations.map(combo => kdsBuildCombinationStats(combo));
-}
-
-// Menerapkan filter pada kombinasi (bukan pada transaksi individual).
-// Filter status_stok dan jenis_transaksi diterapkan pada kombinasi yg sudah diagregasi.
-function kdsApplyCombinationFilters(combinations, f) {
-  return combinations.filter(combo => {
-    if (f.barang && combo.kodeBarang !== f.barang.kode) return false;
-    if (f.supplier && combo.supplier !== f.supplier) return false;
-    if (f.pemilik && combo.pemilik !== f.pemilik) return false;
-    if (f.lokasi && combo.lokasi !== f.lokasi) return false;
-    if (f.status && f.status !== 'semua' && combo.status !== f.status) return false;
-    // Filter jenis_transaksi diperluas: untuk kombinasi, cek apakah ada transaksi masuk/keluar
-    if (f.jenis && f.jenis !== 'semua') {
-      const relatedTx = currentEntries.filter(t => 
-        t.kodeBarang === combo.kodeBarang && 
-        t.supplier === combo.supplier && 
-        t.pemilik === combo.pemilik && 
-        t.lokasi === combo.lokasi
-      );
-      const hasJenis = relatedTx.some(t => t.jenis === f.jenis);
-      if (!hasJenis) return false;
-    }
-    // Filter tanggal, operator: ada transaksi dalam range tsb untuk kombinasi ini?
-    if (f.dari || f.sampai || f.operator) {
-      const relatedTx = currentEntries.filter(t => 
-        t.kodeBarang === combo.kodeBarang && 
-        t.supplier === combo.supplier && 
-        t.pemilik === combo.pemilik && 
-        t.lokasi === combo.lokasi
-      );
-      if (f.dari || f.sampai) {
-        const inRange = relatedTx.some(t => 
-          (!f.dari || !t.tanggal || t.tanggal >= f.dari) &&
-          (!f.sampai || !t.tanggal || t.tanggal <= f.sampai)
-        );
-        if (!inRange) return false;
-      }
-      if (f.operator) {
-        const hasOp = relatedTx.some(t => t.operator === f.operator);
-        if (!hasOp) return false;
-      }
-    }
-    return true;
-  });
-}
-
-// Mengurutkan kombinasi berdasarkan mode sort.
-// Mode sort dibuat ulang untuk kombinasi (bukan transaksi).
-function kdsSortCombinations(combinations, mode) {
-  const sorted = [...combinations];
-  switch (mode) {
-    case 'tanggal-desc':
-    case 'tanggal-asc':
-      // Urutkan berdasarkan tanggal transaksi MASUK paling awal (FIFO)
-      sorted.sort((a, b) => {
-        const aTx = currentEntries.filter(t => 
-          t.jenis === 'masuk' && 
-          t.kodeBarang === a.kodeBarang && t.supplier === a.supplier && 
-          t.pemilik === a.pemilik && t.lokasi === a.lokasi
-        );
-        const bTx = currentEntries.filter(t => 
-          t.jenis === 'masuk' && 
-          t.kodeBarang === b.kodeBarang && t.supplier === b.supplier && 
-          t.pemilik === b.pemilik && t.lokasi === b.lokasi
-        );
-        const aDate = aTx.length > 0 ? aTx.map(t => t.tanggal || '').sort()[0] : '';
-        const bDate = bTx.length > 0 ? bTx.map(t => t.tanggal || '').sort()[0] : '';
-        const cmp = aDate.localeCompare(bDate);
-        return mode === 'tanggal-desc' ? -cmp : cmp;
-      });
-      break;
-    case 'nama-asc':
-      sorted.sort((a, b) => (a.namaBarang || '').localeCompare(b.namaBarang || ''));
-      break;
-    case 'pcs-desc':
-      sorted.sort((a, b) => (b.totalMasuk || 0) - (a.totalMasuk || 0));
-      break;
-    case 'pallet-desc':
-      sorted.sort((a, b) => (b.totalPallet || 0) - (a.totalPallet || 0));
-      break;
-  }
-  return sorted;
-}
 // ===== /AGREGASI PER KOMBINASI BARANG =====
 
 function kdsStatusLevel(t) {
@@ -3621,38 +3554,42 @@ function kdsStatusLabel(level) {
   return level === 'habis' ? 'Habis' : level === 'menipis' ? 'Menipis' : 'Tersedia';
 }
 
-// Build HTML row dari kombinasi barang (PERUBAHAN: dulu per-transaksi, sekarang per-kombinasi)
-// combo = { kodeBarang, namaBarang, supplier, pemilik, lokasi, totalMasuk, totalKeluar, stokSaatIni, totalPallet, status }
-function kdsBuildRow(combo) {
-  const statusLabel = combo.status === 'habis' ? 'Habis' : combo.status === 'menipis' ? 'Menipis' : 'Tersedia';
-  const palletDisplay = combo.totalPallet ? roundPalletDisplay(combo.totalPallet) : '0';
-  
+// Build HTML row dari SATU transaksi individual (masuk ATAU keluar) — gaya
+// Excel: tabel menampilkan semua transaksi apa adanya per baris, tanpa
+// digabung/diagregat dulu. Tombol "Detail" tetap membuka popup gabungan
+// (kombinasi Kode Barang + Supplier + Pemilik + Lokasi) lewat
+// openKdsDetailModalForCombo, supaya ringkasan kombinasi masih bisa dilihat
+// kalau dibutuhkan.
+// t = 1 baris transaksi { jenis, namaBarang, kodeBarang, supplier, pemilik, lokasi, tanggal, jumlah, jumlahPallet, operator }
+function kdsBuildRow(t) {
+  const isMasuk = t.jenis === 'masuk';
+  const comboKey = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}`;
+  const palletDisplay = t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '0';
+
   return `
     <tr>
+      <td><span class="badge-jenis ${isMasuk ? 'badge-masuk' : 'badge-keluar'}">${isMasuk ? 'MASUK' : 'KELUAR'}</span></td>
       <td class="kds-th-nama">
         <div class="kds-item-box">
           <span class="kds-item-icon">📦</span>
           <div>
-            <div class="kds-item-nama">${escapeHtml(combo.namaBarang || '-')}</div>
-            <div class="kds-item-kode">Kode Barang: ${escapeHtml(combo.kodeBarang || '-')}</div>
+            <div class="kds-item-nama">${escapeHtml(t.namaBarang || '-')}</div>
+            <div class="kds-item-kode">Kode Barang: ${escapeHtml(t.kodeBarang || '-')}</div>
           </div>
         </div>
       </td>
-      <td>${escapeHtml(combo.supplier || '-')}</td>
-      <td>${escapeHtml(combo.pemilik || '-')}</td>
-      <td class="mono">${escapeHtml(combo.lokasi || '-')}</td>
-      <td>${combo.tanggalKedatangan ? formatTanggal(combo.tanggalKedatangan) : '-'}</td>
-      <td class="kds-td-num">${(combo.totalMasuk || 0).toLocaleString('id-ID')} pcs</td>
-      <td class="kds-td-num">${(combo.totalKeluar || 0).toLocaleString('id-ID')} pcs</td>
-      <td class="kds-td-num">
-        <div class="kds-stok-cell">
-          <span class="kds-stok-num">${combo.stokSaatIni.toLocaleString('id-ID')} pcs</span>
-          ${combo.totalPallet ? `<span class="kds-stok-pallet">${palletDisplay} pallet</span>` : ''}
-          <span class="kds-stok-badge ${combo.status}">${statusLabel}</span>
-        </div>
+      <td>${escapeHtml(t.supplier || '-')}</td>
+      <td>${escapeHtml(t.pemilik || '-')}</td>
+      <td class="mono">${escapeHtml(t.lokasi || '-')}</td>
+      <td>${t.tanggal ? formatTanggal(t.tanggal) : '-'}</td>
+      <td class="kds-td-num">${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
+      <td class="kds-td-num">${palletDisplay} pallet</td>
+      <td>
+        <span class="akun-operator-avatar kds-avatar-sm">${escapeHtml(getInitials(t.operator))}</span>
+        ${escapeHtml(t.operator || '-')}
       </td>
       <td class="kds-th-aksi">
-        <button type="button" class="kds-btn-detail" data-combo-key="${escapeHtml(combo._key || '')}">
+        <button type="button" class="kds-btn-detail" data-combo-key="${escapeHtml(comboKey)}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
           Detail
         </button>
@@ -3668,11 +3605,11 @@ function renderKdsResults() {
   const countBadge = document.getElementById('kds-result-count');
   if (!tbody) return;
 
-  // PERUBAHAN: Aggregasi data per kombinasi barang (bukan per transaksi)
+  // Tampilkan SEMUA transaksi (masuk & keluar) sebagai baris individual —
+  // gaya Excel, tanpa digabung/diagregat per kombinasi dulu. Ringkasan
+  // kombinasi tetap bisa dilihat lewat popup "Detail" per baris.
   const allTransactions = kdsGetArrivalRows();
-  const allCombinations = kdsGetUniqueCombinations(allTransactions);
-  const combinationsWithStats = kdsAggregateAllCombinations(allCombinations);
-  const filtered = kdsSortCombinations(kdsApplyCombinationFilters(combinationsWithStats, kdsAppliedFilters), kdsSortMode);
+  const filtered = kdsSortRows(kdsApplyFilters(allTransactions, kdsAppliedFilters), kdsSortMode);
 
   countBadge.textContent = `${filtered.length.toLocaleString('id-ID')} hasil`;
 
@@ -3694,18 +3631,26 @@ function renderKdsResults() {
     kdsRenderPagination(totalPages, filtered.length);
   }
 
-  // Ringkasan hasil filter — sekarang dihitung dari kombinasi terfilter
-  const totalPcsMasuk = filtered.reduce((s, c) => s + (c.totalMasuk || 0), 0);
-  const totalPcsKeluar = filtered.reduce((s, c) => s + (c.totalKeluar || 0), 0);
-  const lokasiSet = new Set(filtered.map(c => c.lokasi).filter(Boolean));
+  // Ringkasan hasil filter — dihitung dari transaksi individual yang terfilter
+  const totalPcsMasuk = filtered.filter(t => t.jenis === 'masuk').reduce((s, t) => s + (t.jumlah || 0), 0);
+  const totalPcsKeluar = filtered.filter(t => t.jenis === 'keluar').reduce((s, t) => s + (t.jumlah || 0), 0);
+  const lokasiSet = new Set(filtered.map(t => t.lokasi).filter(Boolean));
   setText('kds-sum-pcs', `${totalPcsMasuk.toLocaleString('id-ID')} pcs`);
   setText('kds-sum-pcs-keluar', `${totalPcsKeluar.toLocaleString('id-ID')} pcs`);
-  // PERUBAHAN: "Jumlah Transaksi" diganti "Jumlah Kombinasi" (jumlah baris, bukan jumlah transaksi)
-  setText('kds-sum-kedatangan', `${filtered.length.toLocaleString('id-ID')} kombinasi`);
+  setText('kds-sum-kedatangan', `${filtered.length.toLocaleString('id-ID')} transaksi`);
   setText('kds-sum-lokasi', `${lokasiSet.size.toLocaleString('id-ID')} lokasi`);
 
-  // Stok Saat Ini (Total) — jumlahkan stok NET dari semua kombinasi terfilter
-  const totalStokSaatIni = filtered.reduce((s, c) => s + (c.stokSaatIni || 0), 0);
+  // Stok Saat Ini (Total) — jumlahkan stok NET per kombinasi UNIK (Kode
+  // Barang + Supplier + Pemilik + Lokasi) yang muncul di hasil filter.
+  // Dihitung dari SELURUH transaksi (bukan cuma yang lolos filter), supaya
+  // angka stok tetap akurat walau filter tanggal/jenis mempersempit tampilan.
+  const uniqueCombos = new Map();
+  filtered.forEach(t => {
+    const key = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}`;
+    if (!uniqueCombos.has(key)) uniqueCombos.set(key, t);
+  });
+  const totalStokSaatIni = Array.from(uniqueCombos.values())
+    .reduce((s, t) => s + getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi), 0);
   setText('kds-sum-stok-saat-ini', `${totalStokSaatIni.toLocaleString('id-ID')} pcs`);
 
   kdsRenderActiveFilters();
@@ -4231,13 +4176,25 @@ function refreshKombinasiUI(kodeBarang) {
     return;
   }
 
-  list.innerHTML = combos.map((c, i) => `
+  list.innerHTML = combos.map((c, i) => {
+    // Rincian per batch kedatangan (FIFO) yang masih tersisa dalam stok
+    // gabungan ini — supaya operator tidak bingung "stok segini datangnya
+    // dari kapan aja", terutama kalau kombinasi ini pernah kedatangan
+    // lebih dari sekali di tanggal yang berbeda-beda.
+    const breakdown = getBatchBreakdownKombinasi(currentEntries, kodeBarang, c.supplier, c.pemilik, c.lokasi);
+    const breakdownHtml = breakdown.length > 1
+      ? `<div class="kombinasi-chip-batch-list">
+          ${breakdown.map(b => `<div class="kombinasi-chip-batch-item">📅 ${formatTanggal(b.tanggal)} <span class="kombinasi-chip-sep">→</span> ${b.sisa.toLocaleString('id-ID')} pcs</div>`).join('')}
+        </div>`
+      : `<span class="kombinasi-chip-sub">📅 Datang: ${c.tanggalKedatangan ? formatTanggal(c.tanggalKedatangan) : '-'}</span>`;
+    return `
     <button type="button" class="kombinasi-chip" data-idx="${i}">
       <span class="kombinasi-chip-main">🏭 ${escapeHtml(c.supplier)} <span class="kombinasi-chip-sep">·</span> 🏢 ${escapeHtml(c.pemilik)}</span>
-      <span class="kombinasi-chip-sub">📍 ${escapeHtml(c.lokasi)} <span class="kombinasi-chip-sep">·</span> ${c.stok.toLocaleString('id-ID')} pcs${c.pallet ? ` <span class="kombinasi-chip-sep">·</span> ${roundPalletDisplay(c.pallet)} pallet` : ''}</span>
-      <span class="kombinasi-chip-sub">📅 Datang: ${c.tanggalKedatangan ? formatTanggal(c.tanggalKedatangan) : '-'}</span>
+      <span class="kombinasi-chip-sub">📍 ${escapeHtml(c.lokasi)} <span class="kombinasi-chip-sep">·</span> <b>${c.stok.toLocaleString('id-ID')} pcs</b>${c.pallet ? ` <span class="kombinasi-chip-sep">·</span> ${roundPalletDisplay(c.pallet)} pallet` : ''}</span>
+      ${breakdownHtml}
     </button>
-  `).join('');
+  `;
+  }).join('');
 
   list.querySelectorAll('.kombinasi-chip').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5767,6 +5724,7 @@ function renderKatalog() {
   katalogList.classList.add('stok-table');
   katalogList.classList.remove('folder-grid');
   katalogList.classList.remove('bar-list');
+  katalogList.classList.remove('lokasi-breakdown-list');
   // Mode 'barang' pakai tampilan gabungan Katalog Barang + Lokasi
   // Penyimpanan berdampingan (lihat renderKatalogBarangSplit) yang punya
   // search & judul sendiri per panel — sembunyikan search/hint umum di
@@ -5779,26 +5737,67 @@ function renderKatalog() {
     return;
 
   } else if (katalogMode === 'lokasi') {
+    // PERUBAHAN: dulu tiap lokasi cuma tampil sebagai 1 kartu ringkasan
+    // (total stok) yang harus DIKLIK dulu untuk lihat isinya lewat popup.
+    // Sekarang rinciannya (barang apa saja, berapa jumlahnya) langsung
+    // tampil di bawah nama lokasi tanpa perlu klik — gaya Excel, sama
+    // seperti panel Katalog & Stok admin. l.items sudah berisi breakdown
+    // per barang (netted, hasil buildLocationStock), jadi tidak perlu
+    // query ulang ke currentEntries.
     const all = buildLocationStock(currentEntries);
-    const filtered = q ? all.filter(l => l.lokasi.toLowerCase().includes(q)) : all;
+    const filtered = q
+      ? all.filter(l =>
+          l.lokasi.toLowerCase().includes(q) ||
+          l.items.some(it => (it.nama || '').toLowerCase().includes(q) || String(it.kode || '').toLowerCase().includes(q))
+        )
+      : all;
+    katalogList.classList.remove('stok-table');
+    katalogList.classList.add('lokasi-breakdown-list');
     if (all.length === 0) return setKatalogEmpty('Belum ada stok tercatat di lokasi manapun.');
-    if (filtered.length === 0) return setKatalogEmpty('Tidak ada lokasi yang cocok dengan pencarian.');
+    if (filtered.length === 0) return setKatalogEmpty('Tidak ada lokasi atau barang yang cocok dengan pencarian.');
     katalogEmpty.hidden = true;
-    katalogHint.textContent = `📁 ${all.length} lokasi terisi. Klik baris untuk lihat barang apa saja di dalamnya.`;
+    katalogHint.textContent = `📁 ${all.length} lokasi terisi. Rincian barang di tiap lokasi langsung tampil di bawah ini — klik nama lokasi kalau butuh riwayat kedatangan lengkapnya.`;
     filtered.forEach(l => {
-      const statusClass = l.totalQty > 0 ? 'pos' : (l.totalQty < 0 ? 'neg' : 'zero');
-      const statusLabel = l.totalQty > 0 ? 'Stok Tersedia' : (l.totalQty < 0 ? 'Stok Minus' : 'Stok Kosong');
-      const barangUtama = l.items[0] ? l.items[0].nama : '-';
-      appendStokRow(katalogList, {
-        nama: l.lokasi, sub: 'Lokasi Penyimpanan', subMono: false, stok: l.totalQty, statusClass, statusLabel, pallet: l.totalPallet,
-        meta: [
-          { icon: '📦', label: 'Jenis Barang', value: `${l.itemCount} jenis` },
-          { icon: '⭐', label: 'Barang Utama', value: barangUtama },
-          { icon: '📅', label: 'Tanggal Kedatangan', value: l.tanggalKedatangan ? formatTanggal(l.tanggalKedatangan) : '-' },
-          { icon: '🕒', label: 'Terakhir', value: l.lastActivity ? formatWaktu(l.lastActivity) : '-' },
-        ],
-        onClick: () => openLokasiModal(l.lokasi),
-      });
+      const group = document.createElement('div');
+      group.className = 'lokasi-breakdown-group';
+      const itemRowsHtml = l.items.map(it => `
+        <div class="batch-table-row">
+          <div class="btc btc-nama" title="${escapeHtml(it.nama || '-')}">${escapeHtml(it.nama || '-')}</div>
+          <div class="btc mono">${escapeHtml(it.kode || '-')}</div>
+          <div class="btc">${escapeHtml(formatSetList(it.supplierSet))}</div>
+          <div class="btc">${escapeHtml(formatSetList(it.pemilikSet))}</div>
+          <div class="btc btc-jumlah">${it.qty.toLocaleString('id-ID')} pcs</div>
+          <div class="btc">${it.pallet ? roundPalletDisplay(it.pallet) : 0} pallet</div>
+        </div>
+      `).join('');
+      group.innerHTML = `
+        <div class="lokasi-breakdown-head" role="button" tabindex="0" data-lokasi="${escapeHtml(l.lokasi)}" aria-label="Lihat riwayat kedatangan lengkap lokasi ${escapeHtml(l.lokasi)}">
+          <div class="lokasi-breakdown-title">
+            <span class="lokasi-breakdown-nama mono">${escapeHtml(l.lokasi)}</span>
+            <span class="muted">${l.itemCount} jenis barang</span>
+          </div>
+          <div class="lokasi-breakdown-stats">
+            <span class="stok-qty-num ${l.totalQty > 0 ? 'pos' : (l.totalQty < 0 ? 'neg' : 'zero')}">${l.totalQty.toLocaleString('id-ID')} pcs</span>
+            ${l.totalPallet ? `<span class="stok-qty-pallet">${roundPalletDisplay(l.totalPallet)} pallet</span>` : ''}
+          </div>
+        </div>
+        <div class="batch-table batch-table-lokasi-items">
+          <div class="batch-table-row batch-table-head">
+            <div class="btc btc-nama">Barang</div>
+            <div class="btc">Kode</div>
+            <div class="btc">Supplier</div>
+            <div class="btc">Pemilik</div>
+            <div class="btc btc-jumlah">Jumlah PCS</div>
+            <div class="btc">Pallet</div>
+          </div>
+          <div class="batch-table-body">${itemRowsHtml}</div>
+        </div>
+      `;
+      katalogList.appendChild(group);
+    });
+    katalogList.querySelectorAll('.lokasi-breakdown-head').forEach(head => {
+      head.addEventListener('click', () => openLokasiModal(head.dataset.lokasi));
+      head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLokasiModal(head.dataset.lokasi); } });
     });
 
   } else if (katalogMode === 'blok') {
@@ -7042,6 +7041,14 @@ function renderRiwayatOperator() {
 
   filtered.forEach(t => {
     const isAdjustment = t.tipe === 'penyesuaian';
+    // Untuk laporan KELUAR, t.tanggal adalah tanggal PENGINPUTAN — bukan
+    // tanggal kedatangan barangnya. Cari tanggal kedatangan asli (transaksi
+    // MASUK paling awal) dari kombinasi kode+supplier+pemilik+lokasi yang
+    // sama, supaya operator juga bisa lihat sudah berapa lama barang itu
+    // tersimpan sebelum akhirnya keluar (sama seperti kartu admin).
+    const tanggalKedatanganAsal = t.jenis === 'keluar'
+      ? getTanggalKedatanganKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi)
+      : null;
     const card = document.createElement('div');
     card.className = 'ticket';
     card.innerHTML = `
@@ -7062,6 +7069,7 @@ function renderRiwayatOperator() {
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet.toLocaleString('id-ID')} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet.toLocaleString('id-ID')}</div>` : ''}
         <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
+        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit)` : ''}</div>` : ''}
