@@ -208,6 +208,17 @@ function isoOfDate(d) {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+// Ubah string tanggal ISO ("YYYY-MM-DD") jadi objek Date lokal (bukan UTC)
+// supaya ExcelJS bisa menaruhnya sebagai sel tanggal asli (bisa di-sort,
+// diformat dd/mm/yyyy), bukan sekadar teks.
+function isoToExcelDate(iso) {
+  if (!iso) return null;
+  const parts = iso.split('-');
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts.map(p => parseInt(p, 10));
+  return new Date(y, m - 1, d);
+}
+
 function formatTanggal(iso) {
   if (!iso) return '-';
   const parts = iso.split('-');
@@ -226,6 +237,16 @@ function formatWaktu(ts) {
 function formatJam(ts) {
   if (!ts) return '-';
   return new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Format angka jumlah/qty dengan pemisah ribuan ala Indonesia (mis. 12500
+// -> "12.500") supaya tidak keliru dibaca sekilas. Dipakai di SEMUA tempat
+// yang menampilkan jumlah pcs/pallet — kartu laporan, modal detail, jejak
+// edit — biar konsisten dengan angka di Ringkasan/Dashboard yang sudah
+// lebih dulu pakai format ini.
+function fmtQty(n) {
+  if (n == null || isNaN(n)) return '-';
+  return Number(n).toLocaleString('id-ID');
 }
 
 function genId() {
@@ -2098,8 +2119,8 @@ let periodDate = todayISO();
 
 const MONTH_HEADERS = ['Tanggal Kedatangan', 'Tanggal Penginputan', 'Jenis', 'Tipe', 'Nama Operator', 'Kode Barang', 'Nama Barang', 'Supplier', 'Pemilik Barang', 'Lokasi', 'Jumlah (pcs)', 'Qty per Pallet (pcs)', 'Jumlah Pallet', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
 const MONTH_COL_WIDTHS = [16, 18, 9, 13, 18, 14, 34, 22, 14, 10, 12, 16, 12, 28, 22, 22, 14];
-const STOK_HEADERS = ['Kode Barang', 'Nama Barang', 'Lokasi Terpakai', 'Total Masuk', 'Total Keluar', 'Stok Saat Ini', 'Terakhir Masuk', 'Terakhir Keluar', 'Terakhir Diperbarui'];
-const STOK_COL_WIDTHS = [14, 34, 26, 12, 12, 12, 22, 22, 22];
+const STOK_HEADERS = ['Kode Barang', 'Nama Barang', 'Lokasi Terpakai', 'Total Masuk', 'Total Keluar', 'Stok Saat Ini', 'Tgl Terakhir Masuk', 'Jml Terakhir Masuk', 'Tgl Terakhir Keluar', 'Jml Terakhir Keluar', 'Terakhir Diperbarui'];
+const STOK_COL_WIDTHS = [14, 34, 26, 12, 12, 12, 16, 14, 16, 14, 22];
 
 /* ---- Tema warna untuk file Excel yang diunduh (disamakan dengan palet
    warna aplikasi: navy utk header, hijau/oranye/emas utk badge Jenis/Tipe) ---- */
@@ -2377,6 +2398,11 @@ function addStokSheet(workbook, sheetName, entries) {
   ws.columns = STOK_HEADERS.map((h, i) => ({ header: h, width: STOK_COL_WIDTHS[i] }));
 
   items.forEach(it => {
+    // Tanggal & jumlah terakhir masuk/keluar ditaruh di kolom TERPISAH
+    // (bukan digabung jadi satu teks "2026-01-05 (12500 pcs)") supaya
+    // Excel bisa memformat tanggal dan angkanya sendiri-sendiri — jadi
+    // gampang dibaca, gampang di-sort, dan angka besar otomatis dapat
+    // pemisah ribuan alih-alih ditulis mentah di dalam teks.
     ws.addRow([
       it.kode,
       it.nama,
@@ -2384,8 +2410,10 @@ function addStokSheet(workbook, sheetName, entries) {
       it.masuk,
       it.keluar,
       it.masuk - it.keluar,
-      it.lastMasuk ? `${it.lastMasuk.tanggal} (${it.lastMasuk.jumlah} pcs)` : '-',
-      it.lastKeluar ? `${it.lastKeluar.tanggal} (${it.lastKeluar.jumlah} pcs)` : '-',
+      it.lastMasuk ? isoToExcelDate(it.lastMasuk.tanggal) : null,
+      it.lastMasuk ? it.lastMasuk.jumlah : null,
+      it.lastKeluar ? isoToExcelDate(it.lastKeluar.tanggal) : null,
+      it.lastKeluar ? it.lastKeluar.jumlah : null,
       it.updated ? new Date(it.updated) : '-',
     ]);
   });
@@ -2393,8 +2421,9 @@ function addStokSheet(workbook, sheetName, entries) {
   const lastRow = items.length + 1;
   for (let r = 2; r <= lastRow; r++) {
     const row = ws.getRow(r);
-    [4, 5, 6].forEach(c => { row.getCell(c).numFmt = '#,##0'; row.getCell(c).alignment = { horizontal: 'right' }; });
-    if (row.getCell(9).value instanceof Date) row.getCell(9).numFmt = 'dd/mm/yyyy hh:mm';
+    [4, 5, 6, 8, 10].forEach(c => { row.getCell(c).numFmt = '#,##0'; row.getCell(c).alignment = { horizontal: 'right' }; });
+    [7, 9].forEach(c => { if (row.getCell(c).value instanceof Date) { row.getCell(c).numFmt = 'dd/mm/yyyy'; row.getCell(c).alignment = { horizontal: 'right' }; } });
+    if (row.getCell(11).value instanceof Date) row.getCell(11).numFmt = 'dd/mm/yyyy hh:mm';
     const stokCell = row.getCell(6);
     const stok = items[r - 2].masuk - items[r - 2].keluar;
     stokCell.font = { bold: true, color: { argb: stok < 0 ? EXCEL_THEME.merah : stok > 0 ? EXCEL_THEME.hijau : EXCEL_THEME.abu } };
@@ -6760,9 +6789,9 @@ function buildTicketCard(t) {
         <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier)}</div>
         <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik)}</div>
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
-        <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
-        ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet} pcs</div>` : ''}
-        ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet}</div>` : ''}
+        <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
+        ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
+        ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
         <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
         ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
       </div>
@@ -6892,7 +6921,7 @@ function buildJejakCard(t) {
   const editRows = editLog.slice().reverse().map(e => {
     const perubahan = [];
     if (e.lokasiLama !== e.lokasiBaru) perubahan.push(`Lokasi: ${escapeHtml(e.lokasiLama)} → ${escapeHtml(e.lokasiBaru)}`);
-    if (e.jumlahLama !== e.jumlahBaru) perubahan.push(`Jumlah: ${e.jumlahLama} → ${e.jumlahBaru} pcs`);
+    if (e.jumlahLama !== e.jumlahBaru) perubahan.push(`Jumlah: ${fmtQty(e.jumlahLama)} → ${fmtQty(e.jumlahBaru)} pcs`);
     return `
       <div class="jejak-log-row">
         <span class="jejak-log-oleh">✏️ ${escapeHtml(e.oleh)}</span>
@@ -6912,7 +6941,7 @@ function buildJejakCard(t) {
       <div><span class="lbl">Barang: </span>${escapeHtml(t.namaBarang)}</div>
       <div><span class="lbl">Kode: </span><span class="mono">${escapeHtml(t.kodeBarang)}</span></div>
       <div><span class="lbl">Lokasi saat ini: </span>${escapeHtml(t.lokasi)}</div>
-      <div><span class="lbl">Jumlah saat ini: </span>${t.jumlah} pcs</div>
+      <div><span class="lbl">Jumlah saat ini: </span>${fmtQty(t.jumlah)} pcs</div>
     </div>
     ${t.dihapus ? `<div class="jejak-dihapus-note">🗑 Dihapus oleh <b>${escapeHtml(t.dihapusOleh || '-')}</b> · ${formatWaktu(t.dihapusAt)}</div>` : ''}
     ${editRows ? `<div class="jejak-log-list">${editRows}</div>` : ''}
@@ -7065,9 +7094,9 @@ function renderRiwayatOperator() {
         <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier || '-')}</div>
         <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik || '-')}</div>
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
-        <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${t.jumlah} pcs</div>
-        ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${t.qtyPerPallet.toLocaleString('id-ID')} pcs</div>` : ''}
-        ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${t.jumlahPallet.toLocaleString('id-ID')}</div>` : ''}
+        <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
+        ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
+        ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
         <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
         ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
       </div>
