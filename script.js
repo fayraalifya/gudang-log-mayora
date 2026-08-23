@@ -5191,7 +5191,7 @@ function openAllBlokModal() {
     </div>
     <div class="modal-section">
       ${blokRanked.length === 0 ? '<p class="vis-empty">Belum ada data lokasi/blok tercatat.</p>' : `
-        <div class="bar-list" id="all-blok-list" style="max-height:420px; overflow-y:auto; padding-right:2px;"></div>
+        <div class="bar-list" id="all-blok-list"></div>
       `}
     </div>
   `;
@@ -5480,16 +5480,24 @@ function renderRingkasan() {
       const total = b.terisi + b.kosong;
       const batasBlok = getBatasPalletBlok(b.blok);
       const isOver = batasBlok ? b.totalPallet > batasBlok : false;
-      // Kalau kapasitas pallet blok ini diketahui, pakai itu sebagai acuan
-      // "penuh" (persentase pallet terhadap batas). Kalau tidak ada data
-      // batas pallet, fallback ke persentase lokasi terisi seperti semula.
-      const pct = batasBlok
-        ? Math.round((b.totalPallet / batasBlok) * 100)
-        : (total > 0 ? Math.round((b.terisi / total) * 100) : 0);
-      return { ...b, total, batasBlok, isOver, pct };
+      // pctRaw = persentase ASLI (belum dibulatkan), dipakai untuk
+      // MENGURUTKAN. pct = versi dibulatkan, dipakai HANYA untuk tampilan.
+      // PENTING: sebelumnya sort() memakai pct yang SUDAH dibulatkan —
+      // akibatnya blok yang isinya sedikit (mis. 12/5.264 pallet = 0,23%,
+      // dibulatkan jadi "0%") dianggap SERI dengan blok yang benar-benar
+      // kosong total (0/0 = "0%"), lalu kalah urutan alfabet ke blok yang
+      // kosong itu — blok yang justru ada isinya jadi tidak muncul di
+      // Top 5 sementara blok yang kosong total malah nongol. Dengan
+      // pctRaw, blok manapun yang punya isi (sekecil apapun) akan selalu
+      // diurutkan di atas blok yang kosong total.
+      const pctRaw = batasBlok
+        ? (b.totalPallet / batasBlok) * 100
+        : (total > 0 ? (b.terisi / total) * 100 : 0);
+      const pct = Math.round(pctRaw);
+      return { ...b, total, batasBlok, isOver, pct, pctRaw };
     })
     .filter(b => b.total > 0)
-    .sort((a, b) => b.pct - a.pct)
+    .sort((a, b) => b.pctRaw - a.pctRaw || b.totalPallet - a.totalPallet)
     .slice(0, 5);
   const topBlokList = document.getElementById('dash-top-blok-list');
   const topBlokEmpty = document.getElementById('dash-top-blok-empty');
