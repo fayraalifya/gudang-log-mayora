@@ -975,6 +975,8 @@ body.role-operator .katalog-mode-tabs { display: none; }
   align-items: center; gap: 6px; padding: 8px 8px; border-radius: 8px; font-size: 11.5px;
 }
 .batch-table-lokasi .batch-table-row { grid-template-columns: 1.3fr 0.8fr 1fr 1fr 0.9fr 0.7fr 0.7fr 0.8fr 0.5fr; }
+.batch-table-keluar .batch-table-row { grid-template-columns: 1fr 1.05fr 1.15fr 1fr 0.9fr 0.8fr 0.9fr 0.5fr; }
+.btc-tanggal-asal { font-weight: 600; color: var(--oranye); }
 .batch-table-head {
   font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-muted);
   font-family: var(--font-display); font-weight: 700; position: sticky; top: 0; background: var(--kertas); z-index: 1;
@@ -996,6 +998,7 @@ body.role-operator .katalog-mode-tabs { display: none; }
 @media (max-width: 620px) {
   .batch-table { overflow-x: auto; }
   .batch-table-row, .batch-table-lokasi .batch-table-row { min-width: 620px; }
+  .batch-table-keluar .batch-table-row { min-width: 720px; }
 }
 
 .riwayat-tx-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }

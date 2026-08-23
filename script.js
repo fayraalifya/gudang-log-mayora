@@ -6167,10 +6167,26 @@ function openLokasiModal(lokasi) {
   // Baris tabel = tiap BATCH kedatangan (transaksi MASUK) di lokasi ini,
   // bukan digabung/dinetkan per barang — supaya kelihatan riwayat
   // kedatangan barang satu-satu, dan operator bisa langsung klik satu
-  // baris untuk membuka Detail Barang-nya.
-  const batchRows = currentEntries
+  // baris untuk membuka Detail Barang-nya. Jumlah PCS & Pallet yang
+  // ditampilkan adalah SISA BERSIH batch itu (masuk dikurangi keluar dari
+  // batch yang sama), bukan jumlah kedatangan kotor — supaya totalnya
+  // sinkron dengan "Total PCS" & "Total Pallet" di ringkasan atas, dan
+  // batch yang sudah habis terpakai tidak lagi muncul di sini.
+  const batchMap = new Map();
+  currentEntries
     .filter(t => t.lokasi === lokasi && t.jenis === 'masuk')
-    .slice()
+    .forEach(t => {
+      const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, t.tanggal);
+      const existing = batchMap.get(key);
+      if (!existing || t.createdAt > existing.createdAt) batchMap.set(key, t);
+    });
+  const batchRows = [...batchMap.values()]
+    .map(t => {
+      const sisaPcs = getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, t.tanggal);
+      const sisaPallet = getPalletKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, t.tanggal);
+      return { ...t, sisaPcs, sisaPallet };
+    })
+    .filter(t => t.sisaPcs > 0)
     .sort((a, b) => b.createdAt - a.createdAt);
 
   modalBody.innerHTML = `
@@ -6209,9 +6225,9 @@ function openLokasiModal(lokasi) {
               <div class="btc btc-pemilik">${escapeHtml(t.pemilik || '-')}</div>
               <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
               <div class="btc btc-supplier">${escapeHtml(t.supplier || '-')}</div>
-              <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-jumlah">${t.sisaPcs.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
-              <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
+              <div class="btc btc-pallet">${t.sisaPallet ? roundPalletDisplay(t.sisaPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-kode-aksi="${escapeHtml(t.kodeBarang || t.namaBarang || '')}" data-supplier-aksi="${escapeHtml(t.supplier || '')}" data-pemilik-aksi="${escapeHtml(t.pemilik || '')}" aria-label="Lihat detail barang" title="Detail Barang">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -6271,15 +6287,25 @@ function openComboModal(kode, supplier, pemilik) {
   // lengkap (masuk & keluar) kombinasi ini di lokasi tersebut.
   const batchRows = [...combo.history]
     .filter(t => t.jenis === 'masuk')
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => {
+      if (a.tanggal !== b.tanggal) return (a.tanggal || '') < (b.tanggal || '') ? -1 : 1;
+      return a.createdAt - b.createdAt;
+    });
 
   // Baris tabel kedua = tiap BATCH pengeluaran (transaksi KELUAR) untuk
   // kombinasi ini — ditampilkan berdampingan dengan batch kedatangan di
   // atas, supaya pemasukan & pengeluaran sama-sama kelihatan sekaligus
-  // dan tidak bikin bingung.
+  // dan tidak bikin bingung. Diurutkan berdasarkan tanggal kedatangan
+  // barang ASAL-nya (bukan tanggal input) supaya sejalan dengan urutan
+  // batch kedatangan di atas.
   const batchRowsKeluar = [...combo.history]
     .filter(t => t.jenis === 'keluar')
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => {
+      const tglA = tanggalBatchOf(currentEntries, a) || '';
+      const tglB = tanggalBatchOf(currentEntries, b) || '';
+      if (tglA !== tglB) return tglA < tglB ? -1 : 1;
+      return a.createdAt - b.createdAt;
+    });
 
   modalBody.innerHTML = `
     <div class="modal-item-head">
@@ -6337,6 +6363,7 @@ function openComboModal(kode, supplier, pemilik) {
         <div class="batch-table-row batch-table-head">
           <div class="btc btc-lokasi">Lokasi</div>
           <div class="btc btc-tanggal">Tanggal Penginputan</div>
+          <div class="btc btc-tanggal-asal">Tanggal Kedatangan Barang</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
           <div class="btc btc-pallet">Total Pallet</div>
@@ -6348,6 +6375,7 @@ function openComboModal(kode, supplier, pemilik) {
             <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}">
               <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
               <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-tanggal-asal">${formatTanggal(tanggalBatchOf(currentEntries, t))}</div>
               <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
               <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
@@ -6556,14 +6584,24 @@ function openItemModal(kode, namaFallback) {
   // Riwayat Transaksi lengkap (masuk & keluar) untuk lokasi tersebut.
   const batchRows = [...item.history]
     .filter(t => t.jenis === 'masuk')
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => {
+      if (a.tanggal !== b.tanggal) return (a.tanggal || '') < (b.tanggal || '') ? -1 : 1;
+      return a.createdAt - b.createdAt;
+    });
 
   // Baris tabel kedua = tiap BATCH pengeluaran (transaksi KELUAR) barang
   // ini, ditampilkan berdampingan dengan batch kedatangan di atas supaya
-  // pemasukan & pengeluaran sama-sama terlihat sekaligus.
+  // pemasukan & pengeluaran sama-sama terlihat sekaligus. Diurutkan
+  // berdasarkan tanggal kedatangan barang ASAL-nya, sejalan dengan urutan
+  // batch kedatangan di atas.
   const batchRowsKeluar = [...item.history]
     .filter(t => t.jenis === 'keluar')
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => {
+      const tglA = tanggalBatchOf(currentEntries, a) || '';
+      const tglB = tanggalBatchOf(currentEntries, b) || '';
+      if (tglA !== tglB) return tglA < tglB ? -1 : 1;
+      return a.createdAt - b.createdAt;
+    });
 
   modalBody.innerHTML = `
     <div class="modal-item-head">
@@ -6621,6 +6659,7 @@ function openItemModal(kode, namaFallback) {
         <div class="batch-table-row batch-table-head">
           <div class="btc btc-lokasi">Lokasi</div>
           <div class="btc btc-tanggal">Tanggal Penginputan</div>
+          <div class="btc btc-tanggal-asal">Tanggal Kedatangan Barang</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
           <div class="btc btc-pallet">Total Pallet</div>
@@ -6632,6 +6671,7 @@ function openItemModal(kode, namaFallback) {
             <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}">
               <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
               <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-tanggal-asal">${formatTanggal(tanggalBatchOf(currentEntries, t))}</div>
               <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
               <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
@@ -6779,12 +6819,12 @@ function buildTicketCard(t) {
         <div><span class="lbl">Kode: </span><span class="mono">${escapeHtml(t.kodeBarang)}</span></div>
         <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier)}</div>
         <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik)}</div>
+        ${t.jenis === 'masuk' ? `<div><span class="lbl">Tanggal Kedatangan: </span>${formatTanggal(t.tanggal)}</div>` : ''}
+        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
-        <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
-        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
@@ -7084,12 +7124,12 @@ function renderRiwayatOperator() {
         <div><span class="lbl">Kode: </span><span class="mono">${escapeHtml(t.kodeBarang)}</span></div>
         <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier || '-')}</div>
         <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik || '-')}</div>
+        ${t.jenis === 'masuk' ? `<div><span class="lbl">Tanggal Kedatangan: </span>${formatTanggal(t.tanggal)}</div>` : ''}
+        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
-        <div><span class="lbl">${t.jenis === 'masuk' ? 'Tanggal Kedatangan' : 'Tanggal Penginputan'}: </span>${formatTanggal(t.tanggal)}</div>
-        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit)` : ''}</div>` : ''}
