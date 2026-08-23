@@ -73,41 +73,32 @@ function getStokAtLokasi(entries, kodeBarang, lokasi) {
 /* ==========================================================================
    KOMBINASI TERIKAT (ITEM MASTER "SATU IKAT")
    Barang tidak lagi bebas keluar dengan supplier/pemilik/lokasi apa saja.
-   Setiap barang MASUK mengikat kode+nama+supplier+pemilik+lokasi menjadi
-   satu kombinasi. Barang KELUAR wajib memakai kombinasi yang PERSIS sama
-   dengan yang pernah tercatat masuk (dan masih ada sisa stok/palletnya) —
-   kalau kombinasinya beda, dianggap "barang lain" walau kode & namanya
-   sama, dan akan ditolak. Ini dihitung langsung dari riwayat transaksi
-   (currentEntries), jadi tidak perlu koleksi/master data baru di Firestore
-   ataupun migrasi data lama — cukup mengikat data yang sudah ada.
+   Setiap barang MASUK mengikat kode+nama+supplier+pemilik+lokasi+TANGGAL
+   KEDATANGAN menjadi satu kombinasi. Barang KELUAR wajib memakai kombinasi
+   yang PERSIS sama dengan yang pernah tercatat masuk (dan masih ada sisa
+   stok/palletnya) — kalau kombinasinya beda (termasuk beda tanggal
+   kedatangan), dianggap "barang lain"/"batch lain" walau kode, nama,
+   supplier, pemilik, dan lokasinya sama, dan akan ditolak. Menambahkan
+   tanggal kedatangan ke ikatan ini membuat setiap batch kedatangan (di
+   tanggal berbeda) diperlakukan sebagai lot yang benar-benar terpisah,
+   bukan sekadar digabung ke satu saldo lalu dipecah ulang untuk tampilan
+   FIFO saja. Ini dihitung langsung dari riwayat transaksi (currentEntries),
+   jadi tidak perlu koleksi/master data baru di Firestore ataupun migrasi
+   data lama — cukup mengikat data yang sudah ada.
 ========================================================================== */
 
 // Kunci unik satu kombinasi (dipakai untuk mengelompokkan transaksi).
-function comboKey(kodeBarang, supplier, pemilik, lokasi) {
-  return [kodeBarang, supplier, pemilik, lokasi].join('␟');
-}
-
-// Sisa stok (pcs) HANYA untuk kombinasi kode+supplier+pemilik+lokasi yang
-// persis sama — ini yang membuat barang "terikat" (beda supplier/pemilik/
-// lokasi = beda saldo, tidak bisa saling menutupi).
-function getStokKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
-  return entries
-    .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi)
-    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlah : -t.jumlah), 0);
-}
-
-// Sama seperti getStokKombinasi tapi untuk saldo jumlah pallet-nya.
-function getPalletKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
-  return entries
-    .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi && t.jumlahPallet != null)
-    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+function comboKey(kodeBarang, supplier, pemilik, lokasi, tanggalKedatangan) {
+  return [kodeBarang, supplier, pemilik, lokasi, tanggalKedatangan].join('␟');
 }
 
 // Tanggal kedatangan (masuk) paling awal untuk satu kombinasi kode+supplier+
-// pemilik+lokasi. Dipakai untuk menampilkan "asal" tanggal kedatangan barang
-// pada laporan KELUAR di Riwayat (jenis 'keluar' hanya punya tanggal
-// penginputan, jadi tanggal kedatangan aslinya perlu dicari dari transaksi
-// MASUK dengan kombinasi yang sama).
+// pemilik+lokasi. Dipakai sebagai FALLBACK untuk data lama (transaksi
+// KELUAR yang dibuat SEBELUM tanggal kedatangan menjadi bagian dari
+// kombinasi terkunci, sehingga belum punya t.tanggalKedatanganAsal
+// tersimpan) — supaya laporan lama tetap bisa "diikat" ke sebuah batch
+// (dianggap mengambil dari batch paling awal, sama seperti perilaku FIFO
+// sebelumnya), bukan malah hilang dari perhitungan stok.
 function getTanggalKedatanganKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
   const tanggalMasuk = entries
     .filter(t => t.jenis === 'masuk' && t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi && t.tanggal)
@@ -116,82 +107,68 @@ function getTanggalKedatanganKombinasi(entries, kodeBarang, supplier, pemilik, l
   return tanggalMasuk.length > 0 ? tanggalMasuk[0] : null;
 }
 
-// Daftar semua kombinasi supplier+pemilik+lokasi (+ sisa stok, pallet, dan
-// tanggal kedatangan) yang MASIH ADA STOKNYA untuk satu kode barang. Inilah
+// Tanggal kedatangan BATCH ASAL dari satu transaksi:
+// - MASUK  -> t.tanggal itu sendiri (memang tanggal kedatangan).
+// - KELUAR -> t.tanggalKedatanganAsal, yaitu tanggal kedatangan batch yang
+//             diambil, disimpan saat operator mengunci kombinasi dari kartu
+//             "Stok Tersedia" (BUKAN t.tanggal, yang untuk KELUAR berarti
+//             tanggal PENGINPUTAN laporan, bukan tanggal kedatangan barang).
+//             Untuk laporan KELUAR lama yang belum punya field ini, jatuh
+//             kembali ke getTanggalKedatanganKombinasi() sebagai perkiraan.
+function tanggalBatchOf(entries, t) {
+  if (t.jenis === 'masuk') return t.tanggal || null;
+  if (t.tanggalKedatanganAsal) return t.tanggalKedatanganAsal;
+  return getTanggalKedatanganKombinasi(entries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi);
+}
+
+// Sisa stok (pcs) HANYA untuk kombinasi kode+supplier+pemilik+lokasi+
+// TANGGAL KEDATANGAN yang persis sama — ini yang membuat barang "terikat"
+// (beda supplier/pemilik/lokasi/tanggal kedatangan = beda saldo, tidak bisa
+// saling menutupi).
+function getStokKombinasi(entries, kodeBarang, supplier, pemilik, lokasi, tanggalKedatangan) {
+  return entries
+    .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi && tanggalBatchOf(entries, t) === tanggalKedatangan)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlah : -t.jumlah), 0);
+}
+
+// Sama seperti getStokKombinasi tapi untuk saldo jumlah pallet-nya.
+function getPalletKombinasi(entries, kodeBarang, supplier, pemilik, lokasi, tanggalKedatangan) {
+  return entries
+    .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi && tanggalBatchOf(entries, t) === tanggalKedatangan && t.jumlahPallet != null)
+    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+}
+
+// Daftar semua kombinasi supplier+pemilik+lokasi+TANGGAL KEDATANGAN (+ sisa
+// stok, pallet) yang MASIH ADA STOKNYA untuk satu kode barang. Inilah
 // "kesatuan" yang ditampilkan ke operator saat lapor barang KELUAR, supaya
 // operator hanya bisa memilih kombinasi yang benar-benar tersedia — bukan
-// mengetik bebas.
+// mengetik bebas. Karena tanggal kedatangan sekarang bagian dari kombinasi,
+// satu kartu = satu batch kedatangan spesifik (bukan gabungan beberapa
+// tanggal kedatangan lagi).
 //
-// tanggalKedatangan = tanggal transaksi MASUK paling awal untuk kombinasi
-// ini. Dipakai supaya daftar bisa diurutkan FIFO (First In First Out) —
-// stok yang datang paling lama ditampilkan paling atas, supaya operator
-// memprioritaskan mengeluarkan barang lama dulu sebelum barang baru.
+// Daftar diurutkan FIFO (First In First Out) — stok yang datang paling
+// lama ditampilkan paling atas, supaya operator memprioritaskan
+// mengeluarkan barang lama dulu sebelum barang baru.
 function getKombinasiTersedia(entries, kodeBarang) {
   const map = new Map();
   entries.filter(t => t.kodeBarang === kodeBarang).forEach(t => {
-    const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi);
+    const tglBatch = tanggalBatchOf(entries, t);
+    if (!tglBatch) return; // transaksi tanpa tanggal kedatangan yang jelas tidak bisa diikat per batch
+    const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tglBatch);
     if (!map.has(key)) {
-      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, stok: 0, pallet: 0, tanggalKedatangan: null });
+      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, tanggalKedatangan: tglBatch, stok: 0, pallet: 0 });
     }
     const c = map.get(key);
     const arah = t.jenis === 'masuk' ? 1 : -1;
     c.stok += arah * t.jumlah;
     if (t.jumlahPallet != null) c.pallet += arah * t.jumlahPallet;
-    if (t.jenis === 'masuk' && t.tanggal && (!c.tanggalKedatangan || t.tanggal < c.tanggalKedatangan)) {
-      c.tanggalKedatangan = t.tanggal;
-    }
   });
   return [...map.values()].filter(c => c.stok > 0).sort((a, b) => {
-    // Urutkan dari tanggal kedatangan PALING LAMA di atas (FIFO). Kombinasi
-    // tanpa tanggal kedatangan (kasus langka/data lama) ditaruh di bawah.
-    if (a.tanggalKedatangan && b.tanggalKedatangan && a.tanggalKedatangan !== b.tanggalKedatangan) {
-      return a.tanggalKedatangan < b.tanggalKedatangan ? -1 : 1;
-    }
-    if (!!a.tanggalKedatangan !== !!b.tanggalKedatangan) return a.tanggalKedatangan ? -1 : 1;
+    if (a.tanggalKedatangan !== b.tanggalKedatangan) return a.tanggalKedatangan < b.tanggalKedatangan ? -1 : 1;
     return b.stok - a.stok;
   });
 }
 const BULAN = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-
-// Rincian batch kedatangan (FIFO) yang MASIH TERSISA untuk satu kombinasi
-// kode+supplier+pemilik+lokasi. Dipakai supaya operator jelas "stok yang
-// tersisa itu berasal dari kedatangan tanggal berapa saja" — karena satu
-// kombinasi bisa menerima BEBERAPA kali kedatangan (tanggal beda-beda) yang
-// kalau cuma dilihat total stoknya jadi tergabung jadi satu angka saja,
-// tidak kelihatan asal-usulnya. Logika FIFO: batch yang datang paling awal
-// dianggap paling dulu keluar, jadi total pcs yang sudah pernah keluar
-// dikurangkan dari batch tertua dulu, baru lanjut ke batch berikutnya.
-function getBatchBreakdownKombinasi(entries, kodeBarang, supplier, pemilik, lokasi) {
-  const masukList = entries
-    .filter(t => t.jenis === 'masuk' && t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi)
-    .map(t => ({ tanggal: t.tanggal, qty: t.jumlah || 0 }))
-    .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || ''));
-
-  let totalKeluar = entries
-    .filter(t => t.jenis === 'keluar' && t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi)
-    .reduce((s, t) => s + (t.jumlah || 0), 0);
-
-  // Gabung batch dengan tanggal persis sama jadi satu baris, supaya tidak
-  // ada baris duplikat kalau ada 2x input masuk di hari yang sama.
-  const merged = [];
-  masukList.forEach(b => {
-    const last = merged[merged.length - 1];
-    if (last && last.tanggal === b.tanggal) last.qty += b.qty;
-    else merged.push({ tanggal: b.tanggal, qty: b.qty });
-  });
-
-  const breakdown = [];
-  merged.forEach(b => {
-    let sisa = b.qty;
-    if (totalKeluar > 0) {
-      const potong = Math.min(totalKeluar, sisa);
-      sisa -= potong;
-      totalKeluar -= potong;
-    }
-    if (sisa > 0) breakdown.push({ tanggal: b.tanggal, sisa });
-  });
-  return breakdown;
-}
 
 const BULAN_PANJANG = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
@@ -3387,16 +3364,24 @@ const AMBANG_STOK_HABIS = 0;
 // ringkasan 1 kombinasi (1 kombinasi = 1 barang + supplier + pemilik +
 // lokasi) meskipun tabel utama sekarang menampilkan transaksi individual.
 
-// Menghitung statistik untuk 1 kombinasi: total masuk, total keluar, stok saat ini, pallet.
+// Menghitung statistik untuk 1 kombinasi (kode+supplier+pemilik+lokasi+
+// TANGGAL KEDATANGAN): total masuk, total keluar, stok saat ini, pallet.
+// combo.tanggalKedatangan WAJIB diisi (batch spesifik) — kalau kosong,
+// jatuh kembali ke gabungan semua tanggal (data lama / dipanggil tanpa
+// tanggal) supaya modal Detail tidak error.
 function kdsBuildCombinationStats(combo) {
   const allTransactions = currentEntries;
-  
-  // Filter semua transaksi yang sesuai kombinasi ini
-  const relatedTx = allTransactions.filter(t => 
-    t.kodeBarang === combo.kodeBarang && 
-    t.supplier === combo.supplier && 
-    t.pemilik === combo.pemilik && 
-    t.lokasi === combo.lokasi
+  const tanggalKedatangan = combo.tanggalKedatangan
+    || getTanggalKedatanganKombinasi(allTransactions, combo.kodeBarang, combo.supplier, combo.pemilik, combo.lokasi);
+
+  // Filter semua transaksi yang sesuai kombinasi ini (termasuk tanggal
+  // kedatangan batch-nya, supaya batch kedatangan lain tidak ikut tercampur).
+  const relatedTx = allTransactions.filter(t =>
+    t.kodeBarang === combo.kodeBarang &&
+    t.supplier === combo.supplier &&
+    t.pemilik === combo.pemilik &&
+    t.lokasi === combo.lokasi &&
+    tanggalBatchOf(allTransactions, t) === tanggalKedatangan
   );
   
   // Hitung statistik
@@ -3414,10 +3399,6 @@ function kdsBuildCombinationStats(combo) {
     .filter(t => t.jumlahPallet != null)
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
 
-  // Tanggal kedatangan (transaksi MASUK paling awal) untuk kombinasi ini —
-  // ditampilkan sebagai kolom "Tanggal Kedatangan" di tabel Katalog & Stok.
-  const tanggalKedatangan = getTanggalKedatanganKombinasi(allTransactions, combo.kodeBarang, combo.supplier, combo.pemilik, combo.lokasi);
-  
   // Tentukan status stok
   let status = 'tersedia';
   if (stokSaatIni <= AMBANG_STOK_HABIS) status = 'habis';
@@ -3438,7 +3419,7 @@ function kdsBuildCombinationStats(combo) {
 // ===== /AGREGASI PER KOMBINASI BARANG =====
 
 function kdsStatusLevel(t) {
-  const stok = getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi);
+  const stok = getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tanggalBatchOf(currentEntries, t));
   if (stok <= AMBANG_STOK_HABIS) return 'habis';
   if (stok < AMBANG_STOK_MENIPIS) return 'menipis';
   return 'tersedia';
@@ -3592,7 +3573,8 @@ function kdsStatusLabel(level) {
 // t = 1 baris transaksi { jenis, namaBarang, kodeBarang, supplier, pemilik, lokasi, tanggal, jumlah, jumlahPallet, operator }
 function kdsBuildRow(t) {
   const isMasuk = t.jenis === 'masuk';
-  const comboKey = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}`;
+  const tglBatch = tanggalBatchOf(currentEntries, t);
+  const comboKey = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}||${tglBatch || ''}`;
   const palletDisplay = t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '0';
 
   return `
@@ -3675,11 +3657,12 @@ function renderKdsResults() {
   // angka stok tetap akurat walau filter tanggal/jenis mempersempit tampilan.
   const uniqueCombos = new Map();
   filtered.forEach(t => {
-    const key = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}`;
-    if (!uniqueCombos.has(key)) uniqueCombos.set(key, t);
+    const tglBatch = tanggalBatchOf(currentEntries, t);
+    const key = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}||${tglBatch || ''}`;
+    if (!uniqueCombos.has(key)) uniqueCombos.set(key, { t, tglBatch });
   });
   const totalStokSaatIni = Array.from(uniqueCombos.values())
-    .reduce((s, t) => s + getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi), 0);
+    .reduce((s, { t, tglBatch }) => s + getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tglBatch), 0);
   setText('kds-sum-stok-saat-ini', `${totalStokSaatIni.toLocaleString('id-ID')} pcs`);
 
   kdsRenderActiveFilters();
@@ -3851,7 +3834,7 @@ if (kdsRiwayatModal) {
 function openKdsDetailModalForCombo(comboKey) {
   if (!kdsDetailBody || !comboKey) return;
   
-  // Parse key format: "kodeBarang||supplier||pemilik||lokasi"
+  // Parse key format: "kodeBarang||supplier||pemilik||lokasi||tanggalKedatangan"
   const parts = comboKey.split('||');
   if (parts.length < 4) return;
   
@@ -3859,6 +3842,7 @@ function openKdsDetailModalForCombo(comboKey) {
   const supplier = parts[1];
   const pemilik = parts[2];
   const lokasi = parts[3];
+  const tanggalKedatangan = parts[4] || null;
   
   // Cari transaksi pertama untuk kombinasi ini (untuk nama barang, dll)
   const firstTx = currentEntries.find(t =>
@@ -3867,9 +3851,9 @@ function openKdsDetailModalForCombo(comboKey) {
   );
   if (!firstTx) return;
   
-  // Hitung statistik kombinasi
+  // Hitung statistik kombinasi (satu batch kedatangan spesifik)
   const stats = kdsBuildCombinationStats({
-    kodeBarang, namaBarang: firstTx.namaBarang, supplier, pemilik, lokasi
+    kodeBarang, namaBarang: firstTx.namaBarang, supplier, pemilik, lokasi, tanggalKedatangan
   });
   
   kdsDetailBody.innerHTML = `
@@ -3881,6 +3865,7 @@ function openKdsDetailModalForCombo(comboKey) {
         <div class="kds-mh-row"><strong>Supplier</strong><br>${escapeHtml(supplier || '-')}</div>
         <div class="kds-mh-row"><strong>Pemilik Barang</strong><br>📍 ${escapeHtml(pemilik || '-')}</div>
         <div class="kds-mh-row"><strong>Lokasi Rak</strong><br>📍 ${escapeHtml(lokasi || '-')}</div>
+        <div class="kds-mh-row"><strong>Tanggal Kedatangan</strong><br>📅 ${stats.tanggalKedatangan ? formatTanggal(stats.tanggalKedatangan) : '-'}</div>
       </div>
     </div>
 
@@ -4205,25 +4190,18 @@ function refreshKombinasiUI(kodeBarang) {
     return;
   }
 
-  list.innerHTML = combos.map((c, i) => {
-    // Rincian per batch kedatangan (FIFO) yang masih tersisa dalam stok
-    // gabungan ini — supaya operator tidak bingung "stok segini datangnya
-    // dari kapan aja", terutama kalau kombinasi ini pernah kedatangan
-    // lebih dari sekali di tanggal yang berbeda-beda.
-    const breakdown = getBatchBreakdownKombinasi(currentEntries, kodeBarang, c.supplier, c.pemilik, c.lokasi);
-    const breakdownHtml = breakdown.length > 1
-      ? `<div class="kombinasi-chip-batch-list">
-          ${breakdown.map(b => `<div class="kombinasi-chip-batch-item">📅 ${formatTanggal(b.tanggal)} <span class="kombinasi-chip-sep">→</span> ${b.sisa.toLocaleString('id-ID')} pcs</div>`).join('')}
-        </div>`
-      : `<span class="kombinasi-chip-sub">📅 Datang: ${c.tanggalKedatangan ? formatTanggal(c.tanggalKedatangan) : '-'}</span>`;
-    return `
+  // Setiap kartu sekarang = satu kombinasi supplier+pemilik+lokasi+TANGGAL
+  // KEDATANGAN yang spesifik (bukan lagi gabungan beberapa tanggal
+  // kedatangan yang dipecah ulang untuk tampilan FIFO saja) — kalau
+  // kombinasi yang sama pernah kedatangan lebih dari sekali di tanggal
+  // berbeda, itu akan muncul sebagai kartu-kartu terpisah di sini.
+  list.innerHTML = combos.map((c, i) => `
     <button type="button" class="kombinasi-chip" data-idx="${i}">
       <span class="kombinasi-chip-main">🏭 ${escapeHtml(c.supplier)} <span class="kombinasi-chip-sep">·</span> 🏢 ${escapeHtml(c.pemilik)}</span>
       <span class="kombinasi-chip-sub">📍 ${escapeHtml(c.lokasi)} <span class="kombinasi-chip-sep">·</span> <b>${c.stok.toLocaleString('id-ID')} pcs</b>${c.pallet ? ` <span class="kombinasi-chip-sep">·</span> ${roundPalletDisplay(c.pallet)} pallet` : ''}</span>
-      ${breakdownHtml}
+      <span class="kombinasi-chip-sub">📅 Datang: ${c.tanggalKedatangan ? formatTanggal(c.tanggalKedatangan) : '-'}</span>
     </button>
-  `;
-  }).join('');
+  `).join('');
 
   list.querySelectorAll('.kombinasi-chip').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -4238,7 +4216,9 @@ function refreshKombinasiUI(kodeBarang) {
       // field tersebut berarti "Tanggal Penginputan" (tanggal form ini
       // dilaporkan) — konsepnya beda dari tanggal kedatangan batch stok,
       // jadi keduanya tidak boleh saling menimpa. Tanggal kedatangan batch
-      // tetap terlihat di kartu kombinasi ini ("📅 Datang: ...").
+      // yang terkunci (c.tanggalKedatangan) tetap disimpan di
+      // kombinasiTerkunci dan akan ikut ditulis ke laporan sebagai
+      // tanggalKedatanganAsal saat disimpan.
       //
       // Jumlah Barang SENGAJA TIDAK diisi otomatis (walau tersedia di data
       // c.stok) — operator WAJIB mengetik sendiri jumlah pcs yang benar-benar
@@ -4248,7 +4228,7 @@ function refreshKombinasiUI(kodeBarang) {
 
       list.querySelectorAll('.kombinasi-chip').forEach(b => b.classList.remove('is-selected'));
       btn.classList.add('is-selected');
-      showToast(`Kombinasi dipilih (sisa stok ${Number(c.stok || 0).toLocaleString('id-ID')} pcs). Masukkan jumlah pcs yang keluar, lalu scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
+      showToast(`Kombinasi dipilih (kedatangan ${formatTanggal(c.tanggalKedatangan)}, sisa stok ${Number(c.stok || 0).toLocaleString('id-ID')} pcs). Masukkan jumlah pcs yang keluar, lalu scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
     });
   });
 }
@@ -4579,21 +4559,25 @@ form.addEventListener('submit', async (e) => {
     // jaring pengaman terakhir sebelum data tersimpan, kalau-kalau ada
     // cara lain form ini terisi tanpa lewat klik kartu kombinasi.
     if (!kombinasiTerkunci) {
-      return showError('Pilih salah satu kombinasi supplier/pemilik dari daftar "Stok Tersedia" terlebih dahulu.');
+      return showError('Pilih salah satu kombinasi supplier/pemilik/tanggal kedatangan dari daftar "Stok Tersedia" terlebih dahulu.');
     }
     // Pastikan supplier, pemilik, DAN lokasi yang benar-benar akan
     // disimpan masih persis sama dengan kombinasi yang dikunci — bukan
-    // cuma dicek stoknya, tapi identitas kombinasinya sendiri.
+    // cuma dicek stoknya, tapi identitas kombinasinya sendiri. (Tanggal
+    // kedatangan batch ikut terkunci lewat kombinasiTerkunci.tanggalKedatangan
+    // — tidak perlu dicek ulang di sini karena tidak ada input terpisah
+    // untuk itu di form, field Tanggal berarti tanggal penginputan.)
     if (supplier !== kombinasiTerkunci.supplier || pemilik !== kombinasiTerkunci.pemilik || lokasi !== kombinasiTerkunci.lokasi) {
       return showError('Kombinasi supplier/pemilik/lokasi berubah. Pilih ulang kombinasinya dari daftar "Stok Tersedia" dan scan ulang lokasinya.');
     }
-    // Cek stok HANYA dari kombinasi kode+supplier+pemilik+lokasi yang
-    // persis sama (satu ikat) — bukan total stok kode barang di lokasi
-    // itu saja, supaya kombinasi lain di lokasi yang sama tidak ikut
-    // "menutupi" kekurangan stok kombinasi ini.
-    const stokKombinasi = getStokKombinasi(currentEntries, barang.kode, supplier, pemilik, lokasi);
+    // Cek stok HANYA dari kombinasi kode+supplier+pemilik+lokasi+tanggal
+    // kedatangan yang persis sama (satu ikat) — bukan total stok kode
+    // barang di lokasi itu saja, supaya kombinasi/batch lain (termasuk
+    // batch dengan tanggal kedatangan berbeda) tidak ikut "menutupi"
+    // kekurangan stok kombinasi ini.
+    const stokKombinasi = getStokKombinasi(currentEntries, barang.kode, supplier, pemilik, lokasi, kombinasiTerkunci.tanggalKedatangan);
     if (jumlah > stokKombinasi) {
-      return showError(`Jumlah keluar (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok kombinasi ini (supplier ${supplier}, pemilik ${pemilik}, lokasi ${lokasi}): ${stokKombinasi.toLocaleString('id-ID')} pcs. Kombinasi lain di lokasi yang sama tidak bisa dipakai untuk menutupi kekurangan ini.`);
+      return showError(`Jumlah keluar (${jumlah.toLocaleString('id-ID')} pcs) melebihi stok kombinasi ini (supplier ${supplier}, pemilik ${pemilik}, lokasi ${lokasi}, kedatangan ${formatTanggal(kombinasiTerkunci.tanggalKedatangan)}): ${stokKombinasi.toLocaleString('id-ID')} pcs. Kombinasi/batch lain (termasuk tanggal kedatangan berbeda) tidak bisa dipakai untuk menutupi kekurangan ini.`);
     }
   }
 
@@ -4627,7 +4611,14 @@ form.addEventListener('submit', async (e) => {
     const now = Date.now();
     const entryData = {
       jenis, tipe: 'transaksi', operator, kodeBarang: barang.kode, namaBarang: barang.nama,
-      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, keterangan: '', tanggal, createdAt: now, updatedAt: now,
+      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, keterangan: '', tanggal,
+      // Untuk laporan KELUAR, simpan tanggal kedatangan batch yang diambil
+      // (dari kombinasi yang dikunci operator lewat "Stok Tersedia") supaya
+      // batch ini benar-benar terikat termasuk tanggal kedatangannya, bukan
+      // cuma dicari ulang belakangan. Untuk MASUK tidak perlu — t.tanggal
+      // sendiri sudah berarti tanggal kedatangan.
+      tanggalKedatanganAsal: jenis === 'keluar' ? kombinasiTerkunci.tanggalKedatangan : null,
+      createdAt: now, updatedAt: now,
     };
 
     // PENTING soal offline: addEntryToFirestore() menyimpan laporan ke
@@ -6761,7 +6752,7 @@ function buildTicketCard(t) {
   // sama, supaya admin tetap bisa lihat sudah berapa lama barang itu
   // tersimpan sebelum akhirnya keluar.
   const tanggalKedatanganAsal = t.jenis === 'keluar'
-    ? getTanggalKedatanganKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi)
+    ? (t.tanggalKedatanganAsal || getTanggalKedatanganKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi))
     : null;
   const card = document.createElement('div');
   card.className = 'ticket';
@@ -7076,7 +7067,7 @@ function renderRiwayatOperator() {
     // sama, supaya operator juga bisa lihat sudah berapa lama barang itu
     // tersimpan sebelum akhirnya keluar (sama seperti kartu admin).
     const tanggalKedatanganAsal = t.jenis === 'keluar'
-      ? getTanggalKedatanganKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi)
+      ? (t.tanggalKedatanganAsal || getTanggalKedatanganKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi))
       : null;
     const card = document.createElement('div');
     card.className = 'ticket';
