@@ -2262,6 +2262,46 @@ function buildBarangComboList(entries) {
   });
 }
 
+// Susun barang menjadi KARTU per kombinasi unik Kode Barang + Pemilik SAJA
+// (supplier TIDAK ikut jadi pembeda kartu) — dipakai Katalog Barang supaya
+// barang yang sama & pemiliknya sama tapi datang dari beberapa supplier
+// berbeda tetap muncul sebagai SATU kartu (satu grup), bukan pecah jadi
+// beberapa kartu duplikat. Nama supplier tiap batch kedatangan tetap
+// disimpan di t.supplier masing-masing sehingga bisa ditampilkan lagi saat
+// kartu ini diklik (lihat openKodePemilikModal).
+function buildKodePemilikList(entries) {
+  const map = {};
+  entries.forEach(t => {
+    const kode = String(t.kodeBarang || t.namaBarang || '').trim();
+    const pemilik = String(t.pemilik || '-').trim() || '-';
+    const key = [kode, pemilik].join('␟');
+    if (!map[key]) {
+      map[key] = {
+        kode: t.kodeBarang, nama: t.namaBarang, pemilik,
+        masuk: 0, keluar: 0, masukPallet: 0, keluarPallet: 0,
+        lokasiSet: new Set(), supplierSet: new Set(), history: [], updated: 0,
+      };
+    }
+    const c = map[key];
+    c.history.push(t);
+    if (t.lokasi) c.lokasiSet.add(t.lokasi);
+    if (t.supplier) c.supplierSet.add(t.supplier);
+    if (t.jenis === 'masuk') {
+      c.masuk += t.jumlah;
+      if (t.jumlahPallet != null) c.masukPallet += t.jumlahPallet;
+    } else {
+      c.keluar += t.jumlah;
+      if (t.jumlahPallet != null) c.keluarPallet += t.jumlahPallet;
+    }
+    if (t.updatedAt > c.updated) c.updated = t.updatedAt;
+  });
+  return Object.values(map).sort((a, b) => {
+    const byNama = a.nama.localeCompare(b.nama);
+    if (byNama !== 0) return byNama;
+    return a.pemilik.localeCompare(b.pemilik);
+  });
+}
+
 function buildLocationStock(entries) {
   const map = {};
   entries.forEach(t => {
@@ -5461,13 +5501,13 @@ function getAreaFromLokasi(lokasi) {
 }
 
 function renderKatalogBarangSplit() {
-  const combos = buildBarangComboList(currentEntries);
+  const combos = buildKodePemilikList(currentEntries);
   const bq = katalogSplitBarangQuery.trim().toLowerCase();
   const filteredCombos = bq
     ? combos.filter(c =>
         c.nama.toLowerCase().includes(bq) ||
         String(c.kode).toLowerCase().includes(bq) ||
-        (c.supplier || '').toLowerCase().includes(bq) ||
+        Array.from(c.supplierSet).some(s => (s || '').toLowerCase().includes(bq)) ||
         (c.pemilik || '').toLowerCase().includes(bq)
       )
     : combos;
@@ -5488,10 +5528,10 @@ function renderKatalogBarangSplit() {
   const pageStart = (katalogSplitBarangPage - 1) * KATALOG_COMBO_PAGE_SIZE;
   const pageCombos = filteredCombos.slice(pageStart, pageStart + KATALOG_COMBO_PAGE_SIZE);
 
-  // Satu kartu = satu kombinasi unik Barang + Supplier + Pemilik. Kedatangan
-  // (batch masuk) dengan kombinasi ketiganya persis sama sudah dinetkan jadi
-  // satu angka stok/pallet di sini — rincian per-batchnya baru kelihatan
-  // saat kartu ini diklik (lihat openComboModal).
+  // Satu kartu = satu kombinasi unik Barang + Pemilik (supplier BISA lebih
+  // dari satu, digabung jadi satu kartu). Rincian per-batch per-supplier
+  // baru kelihatan saat kartu ini diklik (lihat openKodePemilikModal),
+  // diurutkan berdasarkan tanggal kedatangan.
   const renderComboCard = (c) => {
     const stok = c.masuk - c.keluar;
     const totalPallet = (c.masukPallet || 0) - (c.keluarPallet || 0);
@@ -5499,7 +5539,6 @@ function renderKatalogBarangSplit() {
     return `
       <button type="button" class="barang-pick-row combo-card"
         data-kode="${escapeHtml(c.kode || '')}"
-        data-supplier="${escapeHtml(c.supplier || '')}"
         data-pemilik="${escapeHtml(c.pemilik || '')}">
         <div class="barang-pick-icon">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>
@@ -5508,7 +5547,7 @@ function renderKatalogBarangSplit() {
           <div class="barang-pick-nama" title="${escapeHtml(c.nama)}">${escapeHtml(c.nama)}</div>
           <div class="barang-pick-kode mono">Kode Barang: ${escapeHtml(c.kode || '-')}</div>
           <div class="combo-card-attrs">
-            <div class="combo-card-attr"><span class="combo-card-attr-label">Supplier:</span> <span class="combo-card-attr-val">${escapeHtml(c.supplier || '-')}</span></div>
+            <div class="combo-card-attr"><span class="combo-card-attr-label">Supplier:</span> <span class="combo-card-attr-val">${escapeHtml(formatSetList(c.supplierSet))}</span></div>
             <div class="combo-card-attr"><span class="combo-card-attr-label">Pemilik:</span> <span class="combo-card-attr-val">${escapeHtml(c.pemilik || '-')}</span></div>
           </div>
           <div class="barang-pick-meta">
@@ -5650,7 +5689,7 @@ function renderKatalogBarangSplit() {
   `;
 
   katalogList.querySelectorAll('.combo-card').forEach(row => {
-    row.addEventListener('click', () => openComboModal(row.dataset.kode, row.dataset.supplier, row.dataset.pemilik));
+    row.addEventListener('click', () => openKodePemilikModal(row.dataset.kode, row.dataset.pemilik));
   });
   katalogList.querySelectorAll('.katalog-pager-btn[data-page]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -6255,6 +6294,182 @@ function openLokasiModal(lokasi) {
   itemModal.hidden = false;
 }
 
+/* ---- Modal detail KARTU KATALOG (satu kombinasi Barang + Pemilik SAJA,
+   supplier bisa lebih dari satu) ---- Ini yang dibuka saat kartu di panel
+   "Katalog Barang" diklik. Beda dari openComboModal (yang menghitung
+   berdasarkan Barang+Supplier+Pemilik PERSIS sama), modal ini menggabungkan
+   SEMUA supplier untuk kombinasi Barang+Pemilik yang sama, lalu menampilkan
+   nama supplier di kolom tersendiri per baris batch — dan batch-batchnya
+   diurutkan berdasarkan tanggal kedatangan (paling lama di atas). ---- */
+function openKodePemilikModal(kode, pemilik) {
+  if (!kode) return;
+  const combos = buildKodePemilikList(currentEntries);
+  const pemilikKey = pemilik || '-';
+  const combo = combos.find(c => c.kode === kode && c.pemilik === pemilikKey);
+  if (!combo) return;
+
+  const stok = combo.masuk - combo.keluar;
+  const totalPallet = (combo.masukPallet || 0) - (combo.keluarPallet || 0);
+  const avgPcsPerPallet = totalPallet > 0
+    ? Math.round(stok / totalPallet)
+    : (() => {
+        const lastMasukPallet = [...combo.history]
+          .filter(t => t.jenis === 'masuk' && t.qtyPerPallet)
+          .sort((a, b) => b.createdAt - a.createdAt)[0];
+        return lastMasukPallet ? lastMasukPallet.qtyPerPallet : null;
+      })();
+  const areaSet = new Set(Array.from(combo.lokasiSet || []).map(getAreaFromLokasi));
+
+  // Baris tabel kedatangan = tiap BATCH unik (Barang+Supplier+Pemilik+
+  // Lokasi+Tanggal Kedatangan) untuk kombinasi Barang+Pemilik ini, digabung
+  // dari SEMUA supplier — diurutkan dari tanggal kedatangan paling lama.
+  // Jumlah PCS & Pallet yang ditampilkan adalah SISA BERSIH batch itu
+  // (masuk dikurangi keluar dari batch yang sama persis), supaya totalnya
+  // sinkron dengan "Total PCS" & "Total Pallet" di ringkasan atas.
+  const batchMap = new Map();
+  combo.history.filter(t => t.jenis === 'masuk').forEach(t => {
+    const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, t.tanggal);
+    const existing = batchMap.get(key);
+    if (!existing || t.createdAt > existing.createdAt) batchMap.set(key, t);
+  });
+  const batchRows = [...batchMap.values()]
+    .map(t => {
+      const sisaPcs = getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, t.tanggal);
+      const sisaPallet = getPalletKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, t.tanggal);
+      return { ...t, sisaPcs, sisaPallet };
+    })
+    .filter(t => t.sisaPcs > 0)
+    .sort((a, b) => {
+      if (a.tanggal !== b.tanggal) return (a.tanggal || '') < (b.tanggal || '') ? -1 : 1;
+      return a.createdAt - b.createdAt;
+    });
+
+  // Baris tabel pengeluaran = tiap transaksi KELUAR untuk kombinasi
+  // Barang+Pemilik ini (dari semua supplier), diurutkan berdasarkan
+  // tanggal kedatangan batch ASAL-nya supaya sejalan dengan urutan
+  // batch kedatangan di atas.
+  const batchRowsKeluar = [...combo.history]
+    .filter(t => t.jenis === 'keluar')
+    .sort((a, b) => {
+      const tglA = tanggalBatchOf(currentEntries, a) || '';
+      const tglB = tanggalBatchOf(currentEntries, b) || '';
+      if (tglA !== tglB) return tglA < tglB ? -1 : 1;
+      return a.createdAt - b.createdAt;
+    });
+
+  modalBody.innerHTML = `
+    <div class="modal-item-head">
+      <div class="modal-item-kode mono">Kode Barang: ${escapeHtml(combo.kode || '-')}</div>
+      <h2 class="modal-item-nama">${escapeHtml(combo.nama)}</h2>
+    </div>
+
+    <div class="modal-section-inline">
+      <div><span class="lbl">🚚 Supplier</span><span>${escapeHtml(formatSetList(combo.supplierSet))}</span></div>
+      <div><span class="lbl">🏭 Pemilik Barang</span><span>${escapeHtml(combo.pemilik || '-')}</span></div>
+    </div>
+
+    <div class="modal-stat-grid modal-stat-grid-4">
+      <div class="modal-stat"><span>Total PCS</span><strong class="${stok <= 0 ? 'neg' : ''}">${stok.toLocaleString('id-ID')}</strong></div>
+      <div class="modal-stat"><span>Total Pallet</span><strong>${totalPallet ? roundPalletDisplay(totalPallet) : 0}</strong></div>
+      <div class="modal-stat"><span>PCS per Pallet (Rata-rata)</span><strong>${avgPcsPerPallet ? avgPcsPerPallet.toLocaleString('id-ID') : '-'}</strong></div>
+      <div class="modal-stat"><span>Area Penyimpanan</span><strong class="modal-stat-small">${escapeHtml(formatSetList(areaSet))}</strong></div>
+    </div>
+
+    <div class="modal-section">
+      <h4>Lokasi &amp; Batch Kedatangan (${batchRows.length})</h4>
+      <p class="modal-history-hint muted">Diurutkan dari tanggal kedatangan paling lama, digabung dari semua supplier untuk barang + pemilik ini. Klik salah satu baris untuk lihat riwayat transaksinya.</p>
+      <div class="batch-table batch-table-kp">
+        <div class="batch-table-row batch-table-head">
+          <div class="btc btc-supplier">Supplier</div>
+          <div class="btc btc-lokasi">Lokasi</div>
+          <div class="btc btc-tanggal">Tanggal Kedatangan</div>
+          <div class="btc btc-jumlah">Jumlah PCS</div>
+          <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-pallet">Total Pallet</div>
+          <div class="btc btc-operator">Operator Input</div>
+          <div class="btc btc-aksi-head">Aksi</div>
+        </div>
+        <div class="batch-table-body">
+          ${batchRows.length ? batchRows.map(t => `
+            <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}" data-supplier="${escapeHtml(t.supplier || '')}">
+              <div class="btc btc-supplier">${escapeHtml(t.supplier || '-')}</div>
+              <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
+              <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-jumlah">${t.sisaPcs.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-pallet">${t.sisaPallet ? roundPalletDisplay(t.sisaPallet) : '-'}</div>
+              <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
+              <button type="button" class="btc-aksi" data-batch-lokasi="${escapeHtml(t.lokasi || '')}" data-batch-supplier="${escapeHtml(t.supplier || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          `).join('') : `<div class="empty-state">Belum ada batch masuk yang tercatat.</div>`}
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <h4>Lokasi &amp; Batch Pengeluaran (${batchRowsKeluar.length})</h4>
+      <p class="modal-history-hint muted">Diurutkan dari tanggal kedatangan batch asalnya, digabung dari semua supplier untuk barang + pemilik ini. Klik salah satu baris untuk lihat riwayat transaksinya.</p>
+      <div class="batch-table batch-table-kp batch-table-keluar">
+        <div class="batch-table-row batch-table-head">
+          <div class="btc btc-supplier">Supplier</div>
+          <div class="btc btc-lokasi">Lokasi</div>
+          <div class="btc btc-tanggal">Tanggal Penginputan</div>
+          <div class="btc btc-tanggal-asal">Tanggal Kedatangan Barang</div>
+          <div class="btc btc-jumlah">Jumlah PCS</div>
+          <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-pallet">Total Pallet</div>
+          <div class="btc btc-operator">Operator Input</div>
+          <div class="btc btc-aksi-head">Aksi</div>
+        </div>
+        <div class="batch-table-body">
+          ${batchRowsKeluar.length ? batchRowsKeluar.map(t => `
+            <div class="batch-table-row" data-lokasi="${escapeHtml(t.lokasi || '')}" data-supplier="${escapeHtml(t.supplier || '')}">
+              <div class="btc btc-supplier">${escapeHtml(t.supplier || '-')}</div>
+              <div class="btc btc-lokasi mono">${escapeHtml(t.lokasi || '-')}</div>
+              <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
+              <div class="btc btc-tanggal-asal">${formatTanggal(tanggalBatchOf(currentEntries, t))}</div>
+              <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
+              <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
+              <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
+              <button type="button" class="btc-aksi" data-batch-lokasi-keluar="${escapeHtml(t.lokasi || '')}" data-batch-supplier-keluar="${escapeHtml(t.supplier || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          `).join('') : `<div class="empty-state">Belum ada batch keluar yang tercatat.</div>`}
+        </div>
+      </div>
+    </div>
+  `;
+  modalBody.querySelectorAll('.batch-table:not(.batch-table-keluar) .batch-table-row[data-lokasi]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.btc-aksi')) return;
+      openComboRiwayatView(combo.kode, row.dataset.supplier, combo.pemilik, row.dataset.lokasi, () => openKodePemilikModal(combo.kode, combo.pemilik));
+    });
+  });
+  modalBody.querySelectorAll('.batch-table:not(.batch-table-keluar) .btc-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openComboRiwayatView(combo.kode, btn.dataset.batchSupplier, combo.pemilik, btn.dataset.batchLokasi, () => openKodePemilikModal(combo.kode, combo.pemilik));
+    });
+  });
+  modalBody.querySelectorAll('.batch-table-keluar .batch-table-row[data-lokasi]').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.btc-aksi')) return;
+      openComboRiwayatView(combo.kode, row.dataset.supplier, combo.pemilik, row.dataset.lokasi, () => openKodePemilikModal(combo.kode, combo.pemilik));
+    });
+  });
+  modalBody.querySelectorAll('.batch-table-keluar .btc-aksi').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openComboRiwayatView(combo.kode, btn.dataset.batchSupplierKeluar, combo.pemilik, btn.dataset.batchLokasiKeluar, () => openKodePemilikModal(combo.kode, combo.pemilik));
+    });
+  });
+  itemModal.hidden = false;
+}
+
 /* ---- Modal detail KARTU KATALOG (satu kombinasi Barang + Supplier +
    Pemilik) ---- Ini yang dibuka saat kartu di panel "Katalog Barang"
    diklik. Beda dari openItemModal (yang menjumlahkan SEMUA supplier/
@@ -6421,7 +6636,7 @@ function openComboModal(kode, supplier, pemilik) {
 // menampilkan transaksi yang kombinasi ketiganya persis sama dengan kartu
 // katalog yang sedang dibuka (bukan semua transaksi kode barang itu di
 // lokasi tsb, yang bisa saja tercampur dari supplier/pemilik lain).
-function openComboRiwayatView(kode, supplier, pemilik, lokasi) {
+function openComboRiwayatView(kode, supplier, pemilik, lokasi, backTo) {
   const combos = buildBarangComboList(currentEntries);
   const supplierKey = supplier || '-';
   const pemilikKey = pemilik || '-';
@@ -6467,7 +6682,7 @@ function openComboRiwayatView(kode, supplier, pemilik, lokasi) {
       `).join('') : `<div class="empty-state">Belum ada transaksi kombinasi ini di lokasi tersebut.</div>`}
     </div>
   `;
-  document.getElementById('riwayat-back-btn')?.addEventListener('click', () => openComboModal(kode, supplier, pemilik));
+  document.getElementById('riwayat-back-btn')?.addEventListener('click', () => (backTo ? backTo() : openComboModal(kode, supplier, pemilik)));
   itemModal.hidden = false;
 }
 

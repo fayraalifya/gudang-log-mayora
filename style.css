@@ -976,6 +976,8 @@ body.role-operator .katalog-mode-tabs { display: none; }
 }
 .batch-table-lokasi .batch-table-row { grid-template-columns: 1.3fr 0.8fr 1fr 1fr 0.9fr 0.7fr 0.7fr 0.8fr 0.5fr; }
 .batch-table-keluar .batch-table-row { grid-template-columns: 1fr 1.05fr 1.15fr 1fr 0.9fr 0.8fr 0.9fr 0.5fr; }
+.batch-table-kp .batch-table-row { grid-template-columns: 1fr 0.95fr 1fr 0.9fr 0.8fr 0.7fr 0.9fr 0.5fr; }
+.batch-table-kp.batch-table-keluar .batch-table-row { grid-template-columns: 0.9fr 0.85fr 0.95fr 1.05fr 0.85fr 0.75fr 0.7fr 0.85fr 0.5fr; }
 .btc-tanggal-asal { font-weight: 600; color: var(--oranye); }
 .batch-table-head {
   font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-muted);
@@ -999,6 +1001,8 @@ body.role-operator .katalog-mode-tabs { display: none; }
   .batch-table { overflow-x: auto; }
   .batch-table-row, .batch-table-lokasi .batch-table-row { min-width: 620px; }
   .batch-table-keluar .batch-table-row { min-width: 720px; }
+  .batch-table-kp .batch-table-row { min-width: 720px; }
+  .batch-table-kp.batch-table-keluar .batch-table-row { min-width: 820px; }
 }
 
 .riwayat-tx-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
