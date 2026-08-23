@@ -3015,6 +3015,7 @@ function rebuildPemilikOptions() {
   if (typeof katalogManager !== 'undefined' && katalogManager.renderPemilikList) {
     katalogManager.renderPemilikList(document.getElementById('search-pemilik')?.value || '');
   }
+  refreshEditDatalists();
   return PEMILIK_OPTIONS_MERGED;
 }
 
@@ -3138,9 +3139,35 @@ function computeSimpleMerged(entity) {
   return result.sort();
 }
 
+// Isi ulang <datalist> yang dipakai oleh form "Edit Laporan" di Riwayat
+// (Kode/Nama Barang, Supplier, Pemilik Barang) supaya saran ketik-cari-nya
+// selalu sinkron dengan data master terbaru — sama seperti dl-lokasi.
+function syncDatalist(datalistId, values) {
+  const dl = document.getElementById(datalistId);
+  if (!dl) return;
+  dl.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  const seen = new Set();
+  values.forEach(v => {
+    if (!v || seen.has(v)) return;
+    seen.add(v);
+    const opt = document.createElement('option');
+    opt.value = v;
+    frag.appendChild(opt);
+  });
+  dl.appendChild(frag);
+}
+
+function refreshEditDatalists() {
+  syncDatalist('dl-barang-edit', (BARANG_OPTIONS || []).map(b => b.nama));
+  syncDatalist('dl-supplier-edit', SUPPLIER_OPTIONS || []);
+  syncDatalist('dl-pemilik-edit', PEMILIK_OPTIONS_MERGED || []);
+}
+
 function rebuildSupplierOptions() {
   SUPPLIER_OPTIONS = computeSimpleMerged('supplier');
   if (selSupplier && selSupplier.updateOptions) selSupplier.updateOptions(SUPPLIER_OPTIONS);
+  refreshEditDatalists();
   // PENTING: sama seperti rebuildBarangOptions(), tabel "Pengelolaan Barang"
   // (tab Supplier) di panel admin HARUS ikut di-refresh di sini — sebelumnya
   // baris ini tidak ada, jadi tambah/edit/hapus supplier sukses ditulis ke
@@ -3187,6 +3214,7 @@ function rebuildBarangOptions() {
   if (typeof katalogManager !== 'undefined' && katalogManager.renderBarangList) {
     katalogManager.renderBarangList(document.getElementById('search-barang')?.value || '');
   }
+  refreshEditDatalists();
 }
 
 // Start listening to all 4 overlay collections
@@ -3397,6 +3425,10 @@ if (kdsBarangValueEl) {
     getLabel: o => o, placeholder: 'Pilih operator...', onSelect: () => {},
   });
 }
+
+// Pastikan datalist untuk form "Edit Laporan" di Riwayat sudah terisi sejak
+// awal (jangan menunggu listener Firestore pertama kali menyala).
+refreshEditDatalists();
 
 // Filter yang SEDANG DITERAPKAN (hanya berubah saat klik "Terapkan Filter"
 // atau "Reset Filter" / "Bersihkan semua filter") — dipisah dari nilai
@@ -7169,7 +7201,7 @@ function buildTicketCard(t) {
         <span class="ticket-time">${formatWaktu(t.createdAt)}</span>
         ${RIWAYAT_EDIT_HAPUS_AKTIF ? `
         <span class="ticket-actions">
-          <button type="button" class="icon-btn btn-edit" title="Edit lokasi / jumlah" aria-label="Edit">
+          <button type="button" class="icon-btn btn-edit" title="Edit laporan" aria-label="Edit">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
           </button>
           <button type="button" class="icon-btn danger btn-delete" title="Hapus" aria-label="Hapus">
@@ -7195,12 +7227,40 @@ function buildTicketCard(t) {
       ${RIWAYAT_EDIT_HAPUS_AKTIF ? `
       <div class="ticket-edit" hidden>
         <div class="field">
+          <label>Nama Barang</label>
+          <input type="text" class="edit-nama-barang" list="dl-barang-edit" value="${escapeHtml(t.namaBarang || '')}" placeholder="Ketik nama barang...">
+        </div>
+        <div class="field">
+          <label>Kode Barang</label>
+          <input type="text" class="edit-kode-barang" value="${escapeHtml(t.kodeBarang || '')}" placeholder="Kode barang">
+        </div>
+        <div class="field">
+          <label>Supplier</label>
+          <input type="text" class="edit-supplier" list="dl-supplier-edit" value="${escapeHtml(t.supplier || '')}" placeholder="Ketik supplier...">
+        </div>
+        <div class="field">
+          <label>Pemilik Barang</label>
+          <input type="text" class="edit-pemilik" list="dl-pemilik-edit" value="${escapeHtml(t.pemilik || '')}" placeholder="Ketik pemilik barang...">
+        </div>
+        <div class="field">
           <label>Lokasi</label>
           <input type="text" class="edit-lokasi" list="dl-lokasi" value="${escapeHtml(t.lokasi)}">
         </div>
         <div class="field">
-          <label>Jumlah</label>
+          <label>${t.jenis === 'keluar' ? 'Tanggal Penginputan' : 'Tanggal Kedatangan'}</label>
+          <input type="date" class="edit-tanggal" value="${escapeHtml(t.tanggal || '')}">
+        </div>
+        <div class="field">
+          <label>Jumlah (pcs)</label>
           <input type="number" class="edit-jumlah" min="1" value="${t.jumlah}">
+        </div>
+        <div class="field">
+          <label>Qty per Pallet (pcs)</label>
+          <input type="number" class="edit-qty-pallet" min="1" value="${t.qtyPerPallet != null ? t.qtyPerPallet : ''}" placeholder="Opsional">
+        </div>
+        <div class="field">
+          <label>Jumlah Pallet (otomatis)</label>
+          <input type="text" class="edit-jumlah-pallet-display" value="${t.jumlahPallet != null ? roundPalletDisplay(t.jumlahPallet) : '-'}" readonly disabled>
         </div>
         <div class="field field-full">
           <label>Keterangan</label>
@@ -7217,44 +7277,98 @@ function buildTicketCard(t) {
 
   if (RIWAYAT_EDIT_HAPUS_AKTIF) {
     const editPanel = card.querySelector('.ticket-edit');
+    const editNamaBarangEl = card.querySelector('.edit-nama-barang');
+    const editKodeBarangEl = card.querySelector('.edit-kode-barang');
+    const editJumlahEl = card.querySelector('.edit-jumlah');
+    const editQtyPalletEl = card.querySelector('.edit-qty-pallet');
+    const editJumlahPalletDisplayEl = card.querySelector('.edit-jumlah-pallet-display');
+
+    // Kalau Nama Barang diketik/dipilih persis sama dengan salah satu opsi
+    // di data master, otomatis isikan Kode Barang-nya (tetap bisa diubah
+    // manual sesudahnya kalau memang perlu koreksi kode yang tidak baku).
+    editNamaBarangEl.addEventListener('change', () => {
+      const match = (BARANG_OPTIONS || []).find(b => b.nama === editNamaBarangEl.value.trim());
+      if (match) editKodeBarangEl.value = match.kode;
+    });
+
+    // Hitung ulang tampilan Jumlah Pallet setiap kali Jumlah atau Qty per
+    // Pallet diubah — sama seperti hitungJumlahPallet() di form laporan.
+    function recalcJumlahPalletEdit() {
+      const jumlah = parseInt(editJumlahEl.value, 10);
+      const qtyPallet = parseInt(editQtyPalletEl.value, 10);
+      if (!jumlah || !qtyPallet || qtyPallet <= 0) {
+        editJumlahPalletDisplayEl.value = '-';
+        return;
+      }
+      editJumlahPalletDisplayEl.value = roundPalletDisplay(jumlah / qtyPallet);
+    }
+    editJumlahEl.addEventListener('input', recalcJumlahPalletEdit);
+    editQtyPalletEl.addEventListener('input', recalcJumlahPalletEdit);
+
     card.querySelector('.btn-edit').addEventListener('click', () => {
       editPanel.hidden = !editPanel.hidden;
     });
     card.querySelector('.btn-mini-cancel').addEventListener('click', () => { editPanel.hidden = true; });
     card.querySelector('.btn-mini-save').addEventListener('click', async () => {
       if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
+      const newNamaBarang = editNamaBarangEl.value.trim();
+      const newKodeBarang = editKodeBarangEl.value.trim();
+      const newSupplier = card.querySelector('.edit-supplier').value.trim();
+      const newPemilik = card.querySelector('.edit-pemilik').value.trim();
       const newLokasi = card.querySelector('.edit-lokasi').value.trim();
-      const newJumlah = parseInt(card.querySelector('.edit-jumlah').value, 10);
+      const newTanggal = card.querySelector('.edit-tanggal').value;
+      const newJumlah = parseInt(editJumlahEl.value, 10);
       const newKeterangan = card.querySelector('.edit-keterangan').value.trim();
+      const qtyPalletRaw = editQtyPalletEl.value.trim();
+      const newQtyPerPallet = qtyPalletRaw ? parseInt(qtyPalletRaw, 10) : null;
+
+      if (!newNamaBarang) return showToast('Nama barang tidak boleh kosong.', 'error');
+      if (!newKodeBarang) return showToast('Kode barang tidak boleh kosong.', 'error');
+      if (!newSupplier) return showToast('Supplier tidak boleh kosong.', 'error');
+      if (!newPemilik) return showToast('Pemilik barang tidak boleh kosong.', 'error');
       if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
+      if (!newTanggal) return showToast('Tanggal tidak boleh kosong.', 'error');
       if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
+      if (qtyPalletRaw && (!newQtyPerPallet || newQtyPerPallet <= 0)) return showToast('Qty per pallet harus lebih dari 0.', 'error');
+
+      const newJumlahPallet = newQtyPerPallet ? Math.round((newJumlah / newQtyPerPallet) * 100) / 100 : null;
 
       // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
-      // lalu pastikan stok di lokasi lama MAUPUN lokasi baru (kalau beda)
-      // tidak jadi minus akibat perubahan ini.
+      // lalu pastikan stok pada kombinasi kode+lokasi LAMA maupun BARU
+      // (kalau ada yang berubah) tidak jadi minus akibat perubahan ini.
       const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
-      const entriesSimulasi = [...entriesTanpaIni, { ...t, lokasi: newLokasi, jumlah: newJumlah }];
-      const lokasiTerdampak = new Set([t.lokasi, newLokasi]);
-      for (const lok of lokasiTerdampak) {
-        const stokSimulasi = getStokAtLokasi(entriesSimulasi, t.kodeBarang, lok);
+      const entriBaru = {
+        ...t,
+        namaBarang: newNamaBarang, kodeBarang: newKodeBarang,
+        supplier: newSupplier, pemilik: newPemilik,
+        lokasi: newLokasi, tanggal: newTanggal, jumlah: newJumlah,
+        qtyPerPallet: newQtyPerPallet, jumlahPallet: newJumlahPallet,
+      };
+      const entriesSimulasi = [...entriesTanpaIni, entriBaru];
+      const kombinasiTerdampak = new Set([
+        `${t.kodeBarang}||${t.lokasi}`,
+        `${newKodeBarang}||${newLokasi}`,
+      ]);
+      for (const key of kombinasiTerdampak) {
+        const [kode, lok] = key.split('||');
+        const stokSimulasi = getStokAtLokasi(entriesSimulasi, kode, lok);
         if (stokSimulasi < 0) {
-          return showToast(`Perubahan ini membuat stok "${t.namaBarang}" di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah atau lokasinya.`, 'error');
+          return showToast(`Perubahan ini membuat stok "${newNamaBarang}" (${kode}) di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah, kode barang, atau lokasinya.`, 'error');
         }
       }
 
       // ---- BLOKIR KAPASITAS BLOK — Edit Laporan ----
-      // Kalau laporan yang diedit ini BARANG MASUK dan lokasinya diubah,
-      // pallet-nya (t.jumlahPallet, tidak berubah oleh edit ini) akan
-      // "pindah" dari lokasi lama ke lokasi baru. Pastikan lokasi baru tidak jadi
-      // melebihi kapasitas akibat perpindahan ini — entriesTanpaIni dipakai
-      // sebagai basis (laporan ini sendiri dikeluarkan dulu) supaya
+      // Kalau laporan yang diedit ini BARANG MASUK, pallet-nya bisa berubah
+      // (lokasi dan/atau qty per pallet ikut diedit). Pastikan lokasi baru
+      // tidak jadi melebihi kapasitas akibat perubahan ini — entriesTanpaIni
+      // dipakai sebagai basis (laporan ini sendiri dikeluarkan dulu) supaya
       // kontribusi lamanya tidak ikut terhitung dobel di lokasi baru.
-      if (t.jenis === 'masuk' && t.jumlahPallet) {
-        const cekEdit = cekKapasitasBlok(newLokasi, t.jumlahPallet, entriesTanpaIni);
+      if (t.jenis === 'masuk' && newJumlahPallet) {
+        const cekEdit = cekKapasitasBlok(newLokasi, newJumlahPallet, entriesTanpaIni);
         if (!cekEdit.ok) {
           return showToast(
             `Perubahan lokasi ke ${escapeHtml(cekEdit.lokasi)} melebihi kapasitas.\n` +
-            `Dibutuhkan: ${roundPalletDisplay(t.jumlahPallet)} pallet\n` +
+            `Dibutuhkan: ${roundPalletDisplay(newJumlahPallet)} pallet\n` +
             `Sisa kapasitas: hanya ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet.\n` +
             `Pilih lokasi lain atau batalkan perubahan.`, 'error'
           );
@@ -7265,16 +7379,30 @@ function buildTicketCard(t) {
         const session = getSession();
         const oleh = (session && session.nama) || 'Admin';
         const waktu = Date.now();
-        const adaPerubahan = t.lokasi !== newLokasi || t.jumlah !== newJumlah || (t.keterangan || '') !== newKeterangan;
+        const adaPerubahan = t.namaBarang !== newNamaBarang || t.kodeBarang !== newKodeBarang
+          || t.supplier !== newSupplier || t.pemilik !== newPemilik
+          || t.lokasi !== newLokasi || t.tanggal !== newTanggal
+          || t.jumlah !== newJumlah || (t.qtyPerPallet ?? null) !== newQtyPerPallet
+          || (t.keterangan || '') !== newKeterangan;
         const editLogBaru = adaPerubahan
           ? [...(t.editLog || []), {
               oleh, waktu,
+              namaBarangLama: t.namaBarang, namaBarangBaru: newNamaBarang,
+              kodeBarangLama: t.kodeBarang, kodeBarangBaru: newKodeBarang,
+              supplierLama: t.supplier, supplierBaru: newSupplier,
+              pemilikLama: t.pemilik, pemilikBaru: newPemilik,
               lokasiLama: t.lokasi, lokasiBaru: newLokasi,
+              tanggalLama: t.tanggal, tanggalBaru: newTanggal,
               jumlahLama: t.jumlah, jumlahBaru: newJumlah,
+              qtyPerPalletLama: t.qtyPerPallet ?? null, qtyPerPalletBaru: newQtyPerPallet,
             }]
           : (t.editLog || []);
         await updateEntryInFirestore(t.id, {
-          lokasi: newLokasi, jumlah: newJumlah, keterangan: newKeterangan,
+          namaBarang: newNamaBarang, kodeBarang: newKodeBarang,
+          supplier: newSupplier, pemilik: newPemilik,
+          lokasi: newLokasi, tanggal: newTanggal, jumlah: newJumlah,
+          qtyPerPallet: newQtyPerPallet, jumlahPallet: newJumlahPallet,
+          keterangan: newKeterangan,
           updatedAt: waktu, editLog: editLogBaru,
         });
         showToast('Laporan berhasil diperbarui.');
@@ -7315,8 +7443,14 @@ function buildJejakCard(t) {
   const editLog = t.editLog || [];
   const editRows = editLog.slice().reverse().map(e => {
     const perubahan = [];
+    if (e.namaBarangLama !== undefined && e.namaBarangLama !== e.namaBarangBaru) perubahan.push(`Nama Barang: ${escapeHtml(e.namaBarangLama)} → ${escapeHtml(e.namaBarangBaru)}`);
+    if (e.kodeBarangLama !== undefined && e.kodeBarangLama !== e.kodeBarangBaru) perubahan.push(`Kode Barang: ${escapeHtml(e.kodeBarangLama)} → ${escapeHtml(e.kodeBarangBaru)}`);
+    if (e.supplierLama !== undefined && e.supplierLama !== e.supplierBaru) perubahan.push(`Supplier: ${escapeHtml(e.supplierLama)} → ${escapeHtml(e.supplierBaru)}`);
+    if (e.pemilikLama !== undefined && e.pemilikLama !== e.pemilikBaru) perubahan.push(`Pemilik: ${escapeHtml(e.pemilikLama)} → ${escapeHtml(e.pemilikBaru)}`);
     if (e.lokasiLama !== e.lokasiBaru) perubahan.push(`Lokasi: ${escapeHtml(e.lokasiLama)} → ${escapeHtml(e.lokasiBaru)}`);
+    if (e.tanggalLama !== undefined && e.tanggalLama !== e.tanggalBaru) perubahan.push(`Tanggal: ${formatTanggal(e.tanggalLama)} → ${formatTanggal(e.tanggalBaru)}`);
     if (e.jumlahLama !== e.jumlahBaru) perubahan.push(`Jumlah: ${fmtQty(e.jumlahLama)} → ${fmtQty(e.jumlahBaru)} pcs`);
+    if (e.qtyPerPalletLama !== undefined && e.qtyPerPalletLama !== e.qtyPerPalletBaru) perubahan.push(`Qty/Pallet: ${e.qtyPerPalletLama != null ? fmtQty(e.qtyPerPalletLama) : '-'} → ${e.qtyPerPalletBaru != null ? fmtQty(e.qtyPerPalletBaru) : '-'} pcs`);
     return `
       <div class="jejak-log-row">
         <span class="jejak-log-oleh">✏️ ${escapeHtml(e.oleh)}</span>
