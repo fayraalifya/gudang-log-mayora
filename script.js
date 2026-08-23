@@ -3769,11 +3769,11 @@ function renderKdsResults() {
   const countBadge = document.getElementById('kds-result-count');
   if (!tbody) return;
 
-  // Filter "Nama Barang" (kode barang) diterapkan -> tampilkan hasil dalam
-  // mode dikelompokkan (Kode Barang + Pemilik Barang, FIFO berdasarkan
-  // tanggal kedatangan). Tanpa filter itu, tetap tampilkan gaya Excel:
-  // semua transaksi (masuk & keluar) sebagai baris individual.
-  const groupedMode = !!kdsAppliedFilters.barang;
+  // Filter "Nama Barang" ATAU "Pemilik Barang" diterapkan -> tampilkan hasil
+  // dalam mode dikelompokkan (Kode Barang + Pemilik Barang, FIFO berdasarkan
+  // tanggal kedatangan). Tanpa salah satu filter itu, tetap tampilkan gaya
+  // Excel: semua transaksi (masuk & keluar) sebagai baris individual.
+  const groupedMode = !!(kdsAppliedFilters.barang || kdsAppliedFilters.pemilik);
 
   const allTransactions = kdsGetArrivalRows();
   const rawFiltered = kdsApplyFilters(allTransactions, kdsAppliedFilters);
