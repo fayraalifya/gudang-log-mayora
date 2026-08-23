@@ -6416,7 +6416,7 @@ function openKodePemilikModal(kode, pemilik) {
           <div class="btc btc-supplier">Supplier</div>
           <div class="btc btc-lokasi">Lokasi</div>
           <div class="btc btc-tanggal">Tanggal Penginputan</div>
-          <div class="btc btc-tanggal-asal">Tanggal Kedatangan Barang</div>
+          <div class="btc btc-tanggal-asal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
           <div class="btc btc-pallet">Total Pallet</div>
