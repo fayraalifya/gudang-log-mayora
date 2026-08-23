@@ -6578,7 +6578,7 @@ function openComboModal(kode, supplier, pemilik) {
         <div class="batch-table-row batch-table-head">
           <div class="btc btc-lokasi">Lokasi</div>
           <div class="btc btc-tanggal">Tanggal Penginputan</div>
-          <div class="btc btc-tanggal-asal">Tanggal Kedatangan Barang</div>
+          <div class="btc btc-tanggal-asal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
           <div class="btc btc-pallet">Total Pallet</div>
@@ -6874,7 +6874,7 @@ function openItemModal(kode, namaFallback) {
         <div class="batch-table-row batch-table-head">
           <div class="btc btc-lokasi">Lokasi</div>
           <div class="btc btc-tanggal">Tanggal Penginputan</div>
-          <div class="btc btc-tanggal-asal">Tanggal Kedatangan Barang</div>
+          <div class="btc btc-tanggal-asal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
           <div class="btc btc-pallet">Total Pallet</div>
@@ -7035,7 +7035,7 @@ function buildTicketCard(t) {
         <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier)}</div>
         <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik)}</div>
         ${t.jenis === 'masuk' ? `<div><span class="lbl">Tanggal Kedatangan: </span>${formatTanggal(t.tanggal)}</div>` : ''}
-        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
+        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
@@ -7340,7 +7340,7 @@ function renderRiwayatOperator() {
         <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier || '-')}</div>
         <div><span class="lbl">Pemilik: </span>${escapeHtml(t.pemilik || '-')}</div>
         ${t.jenis === 'masuk' ? `<div><span class="lbl">Tanggal Kedatangan: </span>${formatTanggal(t.tanggal)}</div>` : ''}
-        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan Barang: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
+        ${t.jenis === 'keluar' ? `<div><span class="lbl">Tanggal Kedatangan: </span>${tanggalKedatanganAsal ? formatTanggal(tanggalKedatanganAsal) : '-'}</div>` : ''}
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
