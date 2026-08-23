@@ -185,6 +185,16 @@ function isoOfDate(d) {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+// Tanggal ISO ("YYYY-MM-DD") dari timestamp createdAt, dalam waktu lokal —
+// dipakai untuk memfilter laporan pada Dashboard & Riwayat berdasarkan
+// tanggal operator BENAR-BENAR menyimpan laporan ke sistem, bukan tanggal
+// kedatangan barang (Masuk) atau tanggal penginputan manual (Keluar) yang
+// bisa saja diisi mundur/beda hari dari kapan laporan itu sungguh dibuat.
+function isoOfCreatedAt(ts) {
+  if (!ts) return null;
+  return isoOfDate(new Date(ts));
+}
+
 // Ubah string tanggal ISO ("YYYY-MM-DD") jadi objek Date lokal (bukan UTC)
 // supaya ExcelJS bisa menaruhnya sebagai sel tanggal asli (bisa di-sort,
 // diformat dd/mm/yyyy), bukan sekadar teks.
@@ -4877,9 +4887,19 @@ function getPreviousPeriodRange(mode, dateISO) {
   return null;
 }
 
+// Dulu memakai entry.tanggal (tanggal kedatangan untuk Masuk, tanggal
+// penginputan untuk Keluar) — tapi itu artinya laporan bisa "hilang" dari
+// Dashboard/Riwayat hari ini kalau operator mengisi tanggal mundur (mis.
+// barang datang beberapa hari lalu, baru diinput hari ini). Sekarang
+// dipakai tanggal operator SUNGGUH menyimpan laporan ke sistem (createdAt),
+// supaya "Pergerakan Barang" & Riwayat pada suatu tanggal selalu
+// mencerminkan aktivitas input operator hari itu — bukan tanggal yang
+// mereka ketik di form.
 function inPeriod(entry, range) {
   if (!range.startISO) return true;
-  return entry.tanggal >= range.startISO && entry.tanggal <= range.endISO;
+  const tglTransaksi = isoOfCreatedAt(entry.createdAt);
+  if (!tglTransaksi) return false;
+  return tglTransaksi >= range.startISO && tglTransaksi <= range.endISO;
 }
 
 // Ada 2 lokasi tombol periode (Harian/Mingguan/Bulanan/Tahunan): satu di
