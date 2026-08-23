@@ -3649,28 +3649,157 @@ function kdsBuildRow(t) {
   `;
 }
 
+// Bangun kombinasi (Kode Barang + Supplier + Pemilik + Lokasi + Tanggal
+// Kedatangan batch) dari daftar transaksi yang sudah difilter, lalu
+// kelompokkan berdasarkan Kode Barang + Pemilik Barang — dipakai saat
+// filter "Nama Barang" diterapkan supaya hasil pencarian tidak berupa
+// baris transaksi mentah, melainkan ringkasan per kombinasi (mirip kartu
+// "Stok Tersedia" yang dipakai operator).
+function kdsBuildGroupedData(filtered) {
+  const comboMap = new Map();
+  filtered.forEach(t => {
+    const tglBatch = tanggalBatchOf(currentEntries, t);
+    const key = `${t.kodeBarang}||${t.supplier}||${t.pemilik}||${t.lokasi}||${tglBatch || ''}`;
+    if (!comboMap.has(key)) {
+      comboMap.set(key, {
+        comboKey: key, kodeBarang: t.kodeBarang, namaBarang: t.namaBarang,
+        supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, tglBatch,
+        qtyPerPallet: null, totalMasuk: 0, totalKeluar: 0,
+      });
+    }
+    const c = comboMap.get(key);
+    if (t.jenis === 'masuk') {
+      c.totalMasuk += (t.jumlah || 0);
+      if (t.qtyPerPallet != null) c.qtyPerPallet = t.qtyPerPallet;
+    } else {
+      c.totalKeluar += (t.jumlah || 0);
+    }
+  });
+
+  // Stok saat ini dihitung dari SELURUH transaksi (currentEntries), bukan
+  // cuma yang lolos filter, supaya angkanya tetap akurat walau filter
+  // tanggal/jenis mempersempit tampilan (sama seperti ringkasan total di
+  // bawah tabel).
+  const combos = Array.from(comboMap.values()).map(c => ({
+    ...c,
+    stokSaatIni: getStokKombinasi(currentEntries, c.kodeBarang, c.supplier, c.pemilik, c.lokasi, c.tglBatch),
+  }));
+
+  const groupsMap = new Map();
+  combos.forEach(c => {
+    const gKey = `${c.kodeBarang}||${c.pemilik}`;
+    if (!groupsMap.has(gKey)) {
+      groupsMap.set(gKey, { kodeBarang: c.kodeBarang, namaBarang: c.namaBarang, pemilik: c.pemilik, combos: [] });
+    }
+    groupsMap.get(gKey).combos.push(c);
+  });
+
+  const groups = Array.from(groupsMap.values());
+  // Urutkan isi tiap grup, lalu urutkan grup itu sendiri, berdasarkan
+  // tanggal kedatangan PALING LAMA lebih dulu (FIFO).
+  groups.forEach(g => g.combos.sort((a, b) => (a.tglBatch || '').localeCompare(b.tglBatch || '')));
+  groups.sort((a, b) => (a.combos[0]?.tglBatch || '').localeCompare(b.combos[0]?.tglBatch || ''));
+  return groups;
+}
+
+function kdsBuildGroupedHtml(groups) {
+  return groups.map(g => `
+    <div class="kds-group">
+      <div class="kds-group-head">
+        <span class="kds-group-kode">Kode: ${escapeHtml(g.kodeBarang || '-')}</span>
+        <span class="kds-group-nama">${escapeHtml(g.namaBarang || '-')}</span>
+        <span class="kds-group-pemilik">Pemilik: ${escapeHtml(g.pemilik || '-')}</span>
+      </div>
+      <div class="kds-table-wrap kds-group-table-wrap">
+        <table class="kds-table kds-group-table">
+          <thead>
+            <tr>
+              <th>Supplier</th>
+              <th>Lokasi</th>
+              <th>Tgl Kedatangan</th>
+              <th>Qty/Pallet</th>
+              <th>Total Masuk</th>
+              <th>Total Keluar</th>
+              <th>Stok Saat Ini</th>
+              <th class="kds-th-aksi">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${g.combos.map(c => `
+              <tr>
+                <td>${escapeHtml(c.supplier || '-')}</td>
+                <td class="mono">${escapeHtml(c.lokasi || '-')}</td>
+                <td>${c.tglBatch ? formatTanggal(c.tglBatch) : '-'}</td>
+                <td class="kds-td-num">${c.qtyPerPallet != null ? Number(c.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
+                <td class="kds-td-num">${(c.totalMasuk || 0).toLocaleString('id-ID')} pcs</td>
+                <td class="kds-td-num">${(c.totalKeluar || 0).toLocaleString('id-ID')} pcs</td>
+                <td class="kds-td-num">${(c.stokSaatIni || 0).toLocaleString('id-ID')} pcs</td>
+                <td class="kds-th-aksi">
+                  <button type="button" class="kds-btn-detail" data-combo-key="${escapeHtml(c.comboKey)}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Detail
+                  </button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `).join('');
+}
+
 function renderKdsResults() {
   const tbody = document.getElementById('kds-table-body');
   const empty = document.getElementById('kds-empty');
   const tableWrap = document.getElementById('kds-table-wrap');
+  const groupedWrap = document.getElementById('kds-grouped-wrap');
+  const groupedNote = document.getElementById('kds-grouped-note');
+  const paginationWrap = document.getElementById('kds-pagination-wrap');
   const countBadge = document.getElementById('kds-result-count');
   if (!tbody) return;
 
-  // Tampilkan SEMUA transaksi (masuk & keluar) sebagai baris individual —
-  // gaya Excel, tanpa digabung/diagregat per kombinasi dulu. Ringkasan
-  // kombinasi tetap bisa dilihat lewat popup "Detail" per baris.
+  // Filter "Nama Barang" (kode barang) diterapkan -> tampilkan hasil dalam
+  // mode dikelompokkan (Kode Barang + Pemilik Barang, FIFO berdasarkan
+  // tanggal kedatangan). Tanpa filter itu, tetap tampilkan gaya Excel:
+  // semua transaksi (masuk & keluar) sebagai baris individual.
+  const groupedMode = !!kdsAppliedFilters.barang;
+
   const allTransactions = kdsGetArrivalRows();
-  const filtered = kdsSortRows(kdsApplyFilters(allTransactions, kdsAppliedFilters), kdsSortMode);
+  const rawFiltered = kdsApplyFilters(allTransactions, kdsAppliedFilters);
+  const filtered = groupedMode ? rawFiltered : kdsSortRows(rawFiltered, kdsSortMode);
 
   countBadge.textContent = `${filtered.length.toLocaleString('id-ID')} hasil`;
+
+  if (kdsSortSelect) {
+    kdsSortSelect.disabled = groupedMode;
+    kdsSortSelect.title = groupedMode ? 'Saat filter Nama Barang aktif, hasil selalu diurutkan berdasarkan tanggal kedatangan paling lama.' : '';
+  }
+  if (groupedNote) groupedNote.hidden = !groupedMode || filtered.length === 0;
 
   if (filtered.length === 0) {
     tbody.innerHTML = '';
     tableWrap.hidden = true;
+    if (groupedWrap) { groupedWrap.hidden = true; groupedWrap.innerHTML = ''; }
     empty.hidden = false;
+    if (paginationWrap) paginationWrap.hidden = true;
+  } else if (groupedMode) {
+    tableWrap.hidden = true;
+    empty.hidden = true;
+    if (paginationWrap) paginationWrap.hidden = true;
+    if (groupedWrap) {
+      groupedWrap.hidden = false;
+      const groups = kdsBuildGroupedData(filtered);
+      groupedWrap.innerHTML = kdsBuildGroupedHtml(groups);
+      groupedWrap.querySelectorAll('[data-combo-key]').forEach(btn => {
+        btn.addEventListener('click', () => openKdsDetailModalForCombo(btn.dataset.comboKey));
+      });
+    }
   } else {
     tableWrap.hidden = false;
+    if (groupedWrap) { groupedWrap.hidden = true; groupedWrap.innerHTML = ''; }
     empty.hidden = true;
+    if (paginationWrap) paginationWrap.hidden = false;
     const totalPages = Math.max(1, Math.ceil(filtered.length / kdsPageSize));
     if (kdsPage > totalPages) kdsPage = totalPages;
     const startIdx = (kdsPage - 1) * kdsPageSize;
