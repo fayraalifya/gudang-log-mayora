@@ -1,9 +1,17 @@
 rules_version = '2';
 // ==========================================================================
-// v3.1 — TANPA CLOUD FUNCTIONS, dengan perbaikan field `ditambahOleh` di
-// rule `update` untuk barangBaru / pemilikBaru / supplierBaru / lokasiBaru.
+// v3.2 — Perbaikan rule `update` pada koleksi `laporan`: sebelumnya hanya
+// mengizinkan perubahan field ['lokasi','jumlah','keterangan','updatedAt'],
+// padahal fitur Edit/Hapus Laporan (Riwayat, admin) di script.js JUGA
+// mengubah field 'editLog' (saat edit) dan 'dihapus'/'dihapusOleh'/
+// 'dihapusAt' (saat soft-delete) — field-field itu ditolak rules lama
+// sehingga Edit & Hapus laporan SELALU gagal dengan
+// "Missing or insufficient permissions", walau tombolnya sudah aktif di
+// front-end. Sekarang rule `update` mengizinkan DUA jalur terpisah (edit
+// ATAU soft-delete), dan keduanya dibatasi khusus admin (isAdmin()) karena
+// tombol Edit/Hapus di Riwayat memang hanya tampil untuk admin.
 //
-// Perbaikan dari versi sebelumnya:
+// Perbaikan dari versi sebelumnya (v3.1):
 // - `update` sekarang pakai isAppUser() (bukan isSignedIn() polos), supaya
 //   konsisten dengan koleksi lain yang butuh role operator/admin.
 // - `affectedKeys().hasOnly([...])` sekarang menyertakan 'ditambahOleh',
@@ -59,14 +67,29 @@ service cloud.firestore {
                     && request.resource.data.tanggal is string
                     && request.resource.data.createdAt is number
                     && request.resource.data.updatedAt is number;
-      allow update: if isAppUser()
-                    && request.resource.data.diff(resource.data).affectedKeys()
-                        .hasOnly(['lokasi', 'jumlah', 'keterangan', 'updatedAt'])
-                    && request.resource.data.lokasi is string
-                    && request.resource.data.jumlah is number
-                    && request.resource.data.jumlah > 0
-                    && request.resource.data.jumlah < 1000000
-                    && request.resource.data.updatedAt is number;
+      allow update: if isAdmin()
+                    && (
+                      (
+                        // ---- EDIT laporan (lokasi/jumlah/keterangan, + jejak editLog) ----
+                        request.resource.data.diff(resource.data).affectedKeys()
+                            .hasOnly(['lokasi', 'jumlah', 'keterangan', 'updatedAt', 'editLog'])
+                        && request.resource.data.lokasi is string
+                        && request.resource.data.jumlah is number
+                        && request.resource.data.jumlah > 0
+                        && request.resource.data.jumlah < 1000000
+                        && request.resource.data.updatedAt is number
+                      )
+                      ||
+                      (
+                        // ---- SOFT DELETE laporan (ditandai dihapus, dokumen tetap ada) ----
+                        request.resource.data.diff(resource.data).affectedKeys()
+                            .hasOnly(['dihapus', 'dihapusOleh', 'dihapusAt'])
+                        && request.resource.data.dihapus is bool
+                        && request.resource.data.dihapusOleh is string
+                        && request.resource.data.dihapusOleh.size() > 0
+                        && request.resource.data.dihapusAt is number
+                      )
+                    );
       allow delete: if isAdmin();
     }
 

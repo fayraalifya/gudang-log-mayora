@@ -7146,7 +7146,7 @@ let riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
 // Tombol Edit/Hapus pada tiap kartu Riwayat Laporan dinonaktifkan dulu atas
 // permintaan — set true lagi kapan pun untuk mengembalikan fiturnya tanpa
 // perlu menulis ulang kodenya (semua logikanya masih utuh di bawah).
-const RIWAYAT_EDIT_HAPUS_AKTIF = false;
+const RIWAYAT_EDIT_HAPUS_AKTIF = true;
 
 function buildTicketCard(t) {
   const isAdjustment = t.tipe === 'penyesuaian';
