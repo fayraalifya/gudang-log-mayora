@@ -1544,8 +1544,11 @@ body.role-operator .katalog-mode-tabs { display: none; }
 .lokasi-map-dot.is-terisi { background: var(--hijau); }
 .lokasi-map-dot.is-kosong { background: var(--kraft); border: 1.5px dashed var(--kraft-muted); }
 .lokasi-map-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  display: grid; grid-template-columns: repeat(7, 1fr);
   gap: 6px; max-height: 400px; overflow-y: auto; padding: 2px;
+}
+@media (max-width: 640px) {
+  .lokasi-map-grid { grid-template-columns: repeat(4, 1fr); }
 }
 .lokasi-map-cell {
   display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
