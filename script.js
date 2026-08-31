@@ -3725,6 +3725,7 @@ function kdsBuildGroupedData(filtered) {
   const combos = Array.from(comboMap.values()).map(c => ({
     ...c,
     stokSaatIni: getStokKombinasi(currentEntries, c.kodeBarang, c.supplier, c.pemilik, c.lokasi, c.tglBatch),
+    sisaPallet: getPalletKombinasi(currentEntries, c.kodeBarang, c.supplier, c.pemilik, c.lokasi, c.tglBatch),
   }));
 
   const groupsMap = new Map();
@@ -3760,6 +3761,7 @@ function kdsBuildGroupedHtml(groups) {
               <th>Lokasi</th>
               <th>Tgl Kedatangan</th>
               <th>Qty/Pallet</th>
+              <th>Jumlah Pallet</th>
               <th>Total Masuk</th>
               <th>Total Keluar</th>
               <th>Stok Saat Ini</th>
@@ -3773,6 +3775,7 @@ function kdsBuildGroupedHtml(groups) {
                 <td class="mono">${escapeHtml(c.lokasi || '-')}</td>
                 <td>${c.tglBatch ? formatTanggal(c.tglBatch) : '-'}</td>
                 <td class="kds-td-num">${c.qtyPerPallet != null ? Number(c.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
+                <td class="kds-td-num">${c.sisaPallet ? roundPalletDisplay(c.sisaPallet) : 0} pallet</td>
                 <td class="kds-td-num">${(c.totalMasuk || 0).toLocaleString('id-ID')} pcs</td>
                 <td class="kds-td-num">${(c.totalKeluar || 0).toLocaleString('id-ID')} pcs</td>
                 <td class="kds-td-num">${(c.stokSaatIni || 0).toLocaleString('id-ID')} pcs</td>
@@ -3875,6 +3878,13 @@ function renderKdsResults() {
   const totalStokSaatIni = Array.from(uniqueCombos.values())
     .reduce((s, { t, tglBatch }) => s + getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tglBatch), 0);
   setText('kds-sum-stok-saat-ini', `${totalStokSaatIni.toLocaleString('id-ID')} pcs`);
+
+  // Jumlah Pallet (Total) — sama seperti Stok Saat Ini (Total) di atas, tapi
+  // dalam satuan pallet (net masuk-keluar per kombinasi unik yang tercatat
+  // punya jumlahPallet).
+  const totalPalletSaatIni = Array.from(uniqueCombos.values())
+    .reduce((s, { t, tglBatch }) => s + getPalletKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tglBatch), 0);
+  setText('kds-sum-pallet-saat-ini', `${roundPalletDisplay(totalPalletSaatIni)} pallet`);
 
   kdsRenderActiveFilters();
 }
@@ -5184,6 +5194,12 @@ function openAllBlokModal() {
     .filter(b => b.total > 0)
     .sort((a, b) => a.blok.localeCompare(b.blok));
 
+  // Dua kolom: kanan Blok A–F, kiri Blok G–L (huruf pertama kode blok
+  // dipakai sebagai pembatas, bukan urutan index, supaya tetap benar
+  // walau ada blok yang datanya kosong/belum tercatat).
+  const blokKiri = blokRanked.filter(b => b.blok.charAt(0) > 'F');   // G–L
+  const blokKanan = blokRanked.filter(b => b.blok.charAt(0) <= 'F'); // A–F
+
   modalBody.innerHTML = `
     <div class="modal-item-head">
       <div class="modal-item-kode">SEMUA BLOK GUDANG</div>
@@ -5191,13 +5207,20 @@ function openAllBlokModal() {
     </div>
     <div class="modal-section">
       ${blokRanked.length === 0 ? '<p class="vis-empty">Belum ada data lokasi/blok tercatat.</p>' : `
-        <div class="bar-list" id="all-blok-list"></div>
+        <div class="modal-section-grid">
+          <div class="bar-list" id="all-blok-list-kiri"></div>
+          <div class="bar-list" id="all-blok-list-kanan"></div>
+        </div>
       `}
     </div>
   `;
   if (blokRanked.length > 0) {
-    const list = modalBody.querySelector('#all-blok-list');
-    blokRanked.forEach(b => {
+    const modalPanel = itemModal.querySelector('.modal-panel');
+    if (modalPanel) modalPanel.classList.add('modal-panel-wide');
+
+    const listKiri = modalBody.querySelector('#all-blok-list-kiri');
+    const listKanan = modalBody.querySelector('#all-blok-list-kanan');
+    const renderBlokRow = (b, list) => {
       // Blok yang sudah penuh/lewat kapasitas SELALU merah — tidak pernah
       // hijau/oranye lagi meski persentasenya diukur di bawah ambang biasa.
       const lvl = (b.isOver || b.pct >= 100) ? 'dash-lvl-tinggi' : (b.pct >= 40 ? 'dash-lvl-sedang' : 'dash-lvl-rendah');
@@ -5217,7 +5240,9 @@ function openAllBlokModal() {
       `;
       row.addEventListener('click', () => openBlokModal(b.blok));
       list.appendChild(row);
-    });
+    };
+    blokKiri.forEach(b => renderBlokRow(b, listKiri));
+    blokKanan.forEach(b => renderBlokRow(b, listKanan));
   }
   itemModal.hidden = false;
 }
@@ -6923,7 +6948,13 @@ itemModal.addEventListener('click', (e) => { if (e.target === itemModal) closeIt
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeItemModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && scanModal && !scanModal.hidden) closeScanModal(); });
 
-function closeItemModal() { itemModal.hidden = true; }
+function closeItemModal() {
+  itemModal.hidden = true;
+  // Reset lebar modal ke default, karena modal ini dipakai bergantian
+  // untuk banyak jenis konten (detail barang, semua blok, dll).
+  const modalPanel = itemModal.querySelector('.modal-panel');
+  if (modalPanel) modalPanel.classList.remove('modal-panel-wide');
+}
 
 function lokasiBreakdown(history) {
   const map = {};
@@ -7479,6 +7510,9 @@ function buildJejakCard(t) {
       <div><span class="lbl">Kode: </span><span class="mono">${escapeHtml(t.kodeBarang)}</span></div>
       <div><span class="lbl">Lokasi saat ini: </span>${escapeHtml(t.lokasi)}</div>
       <div><span class="lbl">Jumlah saat ini: </span>${fmtQty(t.jumlah)} pcs</div>
+      <div><span class="lbl">Supplier: </span>${escapeHtml(t.supplier || '-')}</div>
+      <div><span class="lbl">Pemilik Barang: </span>${escapeHtml(t.pemilik || '-')}</div>
+      <div><span class="lbl">Tanggal Kedatangan: </span>${(() => { const tgl = tanggalBatchOf(currentEntriesRaw, t); return tgl ? formatTanggal(tgl) : '-'; })()}</div>
     </div>
     ${t.dihapus ? `<div class="jejak-dihapus-note">🗑 Dihapus oleh <b>${escapeHtml(t.dihapusOleh || '-')}</b> · ${formatWaktu(t.dihapusAt)}</div>` : ''}
     ${editRows ? `<div class="jejak-log-list">${editRows}</div>` : ''}
