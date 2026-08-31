@@ -5436,8 +5436,22 @@ function renderRingkasan() {
   setText('dash-total-pcs', totalPcs.toLocaleString('id-ID'));
   setText('dash-total-pallet', roundPalletDisplay(totalPalletSaatIni));
   setText('dash-total-jenis', totalJenis.toLocaleString('id-ID'));
-  setText('dash-total-supplier', (MASTER_DATA.supplier || []).length.toLocaleString('id-ID'));
-  setText('dash-total-pemilik', (MASTER_DATA.pemilik || []).length.toLocaleString('id-ID'));
+  // Total Supplier & Total Pemilik Barang harus dihitung dari supplier/
+  // pemilik yang UNIK dan benar-benar dipakai pada barang yang stoknya
+  // masih ada sekarang (bukan seluruh daftar master data supplier/pemilik
+  // yang pernah didaftarkan di sistem — itu bisa jauh lebih banyak dari
+  // yang sedang aktif dipakai, contoh: 81 supplier terdaftar padahal
+  // baru 2 yang benar-benar ada barang masuknya).
+  const supplierAktif = new Set();
+  const pemilikAktif = new Set();
+  stokItems.forEach(it => {
+    if (it.stok > 0) {
+      (it.supplierSet || []).forEach(s => supplierAktif.add(s));
+      (it.pemilikSet || []).forEach(p => pemilikAktif.add(p));
+    }
+  });
+  setText('dash-total-supplier', supplierAktif.size.toLocaleString('id-ID'));
+  setText('dash-total-pemilik', pemilikAktif.size.toLocaleString('id-ID'));
 
   const btnStok = document.getElementById('dash-btn-stok');
   if (btnStok) btnStok.onclick = () => goToKatalog('barang');
