@@ -1,25 +1,25 @@
 rules_version = '2';
 // ==========================================================================
-// v3.2 — Perbaikan rule `update` pada koleksi `laporan`: sebelumnya hanya
-// mengizinkan perubahan field ['lokasi','jumlah','keterangan','updatedAt'],
-// padahal fitur Edit/Hapus Laporan (Riwayat, admin) di script.js JUGA
-// mengubah field 'editLog' (saat edit) dan 'dihapus'/'dihapusOleh'/
-// 'dihapusAt' (saat soft-delete) — field-field itu ditolak rules lama
-// sehingga Edit & Hapus laporan SELALU gagal dengan
-// "Missing or insufficient permissions", walau tombolnya sudah aktif di
-// front-end. Sekarang rule `update` mengizinkan DUA jalur terpisah (edit
-// ATAU soft-delete), dan keduanya dibatasi khusus admin (isAdmin()) karena
-// tombol Edit/Hapus di Riwayat memang hanya tampil untuk admin.
+// v3.3 — Perbaikan rule `update` pada koleksi `laporan`: v3.2 memperbaiki
+// masalah field 'editLog'/'dihapus' tapi whitelist EDIT masih cuma
+// ['lokasi','jumlah','keterangan','updatedAt','editLog'], padahal form Edit
+// Riwayat (admin) di script.js sekarang mengirim update untuk field jauh
+// lebih banyak: namaBarang, kodeBarang, supplier, pemilik, lokasi, tanggal,
+// jumlah, qtyPerPallet, jumlahPallet, keterangan, updatedAt, editLog.
+// Field di luar whitelist lama (namaBarang, kodeBarang, supplier, pemilik,
+// tanggal, qtyPerPallet, jumlahPallet) membuat affectedKeys().hasOnly(...)
+// selalu gagal, sehingga Edit Laporan SELALU ditolak dengan
+// "Missing or insufficient permissions" walau tombolnya aktif di
+// front-end — sementara soft-delete tetap jalan karena jalur itu memang
+// cuma menyentuh 'dihapus'/'dihapusOleh'/'dihapusAt'.
 //
-// Perbaikan dari versi sebelumnya (v3.1):
-// - `update` sekarang pakai isAppUser() (bukan isSignedIn() polos), supaya
-//   konsisten dengan koleksi lain yang butuh role operator/admin.
-// - `affectedKeys().hasOnly([...])` sekarang menyertakan 'ditambahOleh',
-//   sehingga field itu boleh ikut berubah saat update (mis. saat item
-//   "diklaim ulang" oleh operator lain, atau saat proses edit menuliskan
-//   ulang seluruh dokumen termasuk siapa yang menambahkan).
-// - Logika branching berdasarkan hasSize() yang rumit diganti dengan
-//   pengecekan tipe per-field yang lebih jelas dan tidak gampang salah.
+// Perbaikan v3.3:
+// - Whitelist EDIT diperluas mencakup semua field yang benar-benar dikirim
+//   form Edit Riwayat.
+// - qtyPerPallet & jumlahPallet boleh null (field opsional di form).
+// - keterangan pakai request.resource.data.get('keterangan', '') supaya
+//   tidak error kalau dokumen lama belum pernah punya field itu.
+// - Jalur create, soft-delete, dan koleksi lain TIDAK diubah dari v3.2.
 // ==========================================================================
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -70,13 +70,33 @@ service cloud.firestore {
       allow update: if isAdmin()
                     && (
                       (
-                        // ---- EDIT laporan (lokasi/jumlah/keterangan, + jejak editLog) ----
+                        // ---- EDIT laporan (SEMUA field yang bisa diubah lewat form
+                        //      Edit Riwayat di script.js, + jejak editLog) ----
                         request.resource.data.diff(resource.data).affectedKeys()
-                            .hasOnly(['lokasi', 'jumlah', 'keterangan', 'updatedAt', 'editLog'])
+                            .hasOnly([
+                              'namaBarang', 'kodeBarang', 'supplier', 'pemilik',
+                              'lokasi', 'tanggal', 'jumlah', 'qtyPerPallet',
+                              'jumlahPallet', 'keterangan', 'updatedAt', 'editLog'
+                            ])
+                        && request.resource.data.namaBarang is string
+                        && request.resource.data.namaBarang.size() > 0
+                        && request.resource.data.kodeBarang is string
+                        && request.resource.data.kodeBarang.size() > 0
+                        && request.resource.data.supplier is string
+                        && request.resource.data.pemilik is string
                         && request.resource.data.lokasi is string
+                        && request.resource.data.lokasi.size() > 0
+                        && request.resource.data.tanggal is string
+                        && request.resource.data.tanggal.size() > 0
                         && request.resource.data.jumlah is number
                         && request.resource.data.jumlah > 0
                         && request.resource.data.jumlah < 1000000
+                        && (request.resource.data.get('qtyPerPallet', null) == null
+                            || (request.resource.data.qtyPerPallet is number
+                                && request.resource.data.qtyPerPallet > 0))
+                        && (request.resource.data.get('jumlahPallet', null) == null
+                            || request.resource.data.jumlahPallet is number)
+                        && request.resource.data.get('keterangan', '') is string
                         && request.resource.data.updatedAt is number
                       )
                       ||

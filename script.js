@@ -7276,7 +7276,7 @@ function buildTicketCard(t) {
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
-      ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
+      ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)} · <span class="jejak-log-detail">Bagian diubah: ${escapeHtml(ringkasPerubahanEdit(t.editLog[t.editLog.length - 1]))}</span>${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
       ${RIWAYAT_EDIT_HAPUS_AKTIF ? `
       <div class="ticket-edit" hidden>
         <div class="field">
@@ -7480,6 +7480,33 @@ function buildTicketCard(t) {
   return card;
 }
 
+function ringkasPerubahanEdit(e) {
+  if (!e) return '';
+  const perubahan = [];
+  if (e.namaBarangLama !== undefined && e.namaBarangLama !== e.namaBarangBaru) perubahan.push('Nama Barang');
+  if (e.kodeBarangLama !== undefined && e.kodeBarangLama !== e.kodeBarangBaru) perubahan.push('Kode Barang');
+  if (e.supplierLama !== undefined && e.supplierLama !== e.supplierBaru) perubahan.push('Supplier');
+  if (e.pemilikLama !== undefined && e.pemilikLama !== e.pemilikBaru) perubahan.push('Pemilik');
+  if (e.lokasiLama !== e.lokasiBaru) perubahan.push('Lokasi');
+  if (e.tanggalLama !== undefined && e.tanggalLama !== e.tanggalBaru) perubahan.push('Tanggal');
+  if (e.jumlahLama !== e.jumlahBaru) perubahan.push('Jumlah');
+  if (e.qtyPerPalletLama !== undefined && e.qtyPerPalletLama !== e.qtyPerPalletBaru) perubahan.push('Qty/Pallet');
+  return perubahan.length ? perubahan.join(', ') : 'Keterangan';
+}
+
+function ringkasPerubahanDetailEdit(e) {
+  const perubahan = [];
+  if (e.namaBarangLama !== undefined && e.namaBarangLama !== e.namaBarangBaru) perubahan.push(`Nama Barang: ${escapeHtml(e.namaBarangLama)} → ${escapeHtml(e.namaBarangBaru)}`);
+  if (e.kodeBarangLama !== undefined && e.kodeBarangLama !== e.kodeBarangBaru) perubahan.push(`Kode Barang: ${escapeHtml(e.kodeBarangLama)} → ${escapeHtml(e.kodeBarangBaru)}`);
+  if (e.supplierLama !== undefined && e.supplierLama !== e.supplierBaru) perubahan.push(`Supplier: ${escapeHtml(e.supplierLama)} → ${escapeHtml(e.supplierBaru)}`);
+  if (e.pemilikLama !== undefined && e.pemilikLama !== e.pemilikBaru) perubahan.push(`Pemilik: ${escapeHtml(e.pemilikLama)} → ${escapeHtml(e.pemilikBaru)}`);
+  if (e.lokasiLama !== e.lokasiBaru) perubahan.push(`Lokasi: ${escapeHtml(e.lokasiLama)} → ${escapeHtml(e.lokasiBaru)}`);
+  if (e.tanggalLama !== undefined && e.tanggalLama !== e.tanggalBaru) perubahan.push(`Tanggal: ${formatTanggal(e.tanggalLama)} → ${formatTanggal(e.tanggalBaru)}`);
+  if (e.jumlahLama !== e.jumlahBaru) perubahan.push(`Jumlah: ${fmtQty(e.jumlahLama)} → ${fmtQty(e.jumlahBaru)} pcs`);
+  if (e.qtyPerPalletLama !== undefined && e.qtyPerPalletLama !== e.qtyPerPalletBaru) perubahan.push(`Qty/Pallet: ${e.qtyPerPalletLama != null ? fmtQty(e.qtyPerPalletLama) : '-'} → ${e.qtyPerPalletBaru != null ? fmtQty(e.qtyPerPalletBaru) : '-'} pcs`);
+  return perubahan;
+}
+
 let riwayatJejakMode = false;
 
 function updateJejakBadge() {
@@ -7495,15 +7522,7 @@ function buildJejakCard(t) {
   card.className = 'ticket ticket-jejak' + (t.dihapus ? ' ticket-dihapus' : '');
   const editLog = t.editLog || [];
   const editRows = editLog.slice().reverse().map(e => {
-    const perubahan = [];
-    if (e.namaBarangLama !== undefined && e.namaBarangLama !== e.namaBarangBaru) perubahan.push(`Nama Barang: ${escapeHtml(e.namaBarangLama)} → ${escapeHtml(e.namaBarangBaru)}`);
-    if (e.kodeBarangLama !== undefined && e.kodeBarangLama !== e.kodeBarangBaru) perubahan.push(`Kode Barang: ${escapeHtml(e.kodeBarangLama)} → ${escapeHtml(e.kodeBarangBaru)}`);
-    if (e.supplierLama !== undefined && e.supplierLama !== e.supplierBaru) perubahan.push(`Supplier: ${escapeHtml(e.supplierLama)} → ${escapeHtml(e.supplierBaru)}`);
-    if (e.pemilikLama !== undefined && e.pemilikLama !== e.pemilikBaru) perubahan.push(`Pemilik: ${escapeHtml(e.pemilikLama)} → ${escapeHtml(e.pemilikBaru)}`);
-    if (e.lokasiLama !== e.lokasiBaru) perubahan.push(`Lokasi: ${escapeHtml(e.lokasiLama)} → ${escapeHtml(e.lokasiBaru)}`);
-    if (e.tanggalLama !== undefined && e.tanggalLama !== e.tanggalBaru) perubahan.push(`Tanggal: ${formatTanggal(e.tanggalLama)} → ${formatTanggal(e.tanggalBaru)}`);
-    if (e.jumlahLama !== e.jumlahBaru) perubahan.push(`Jumlah: ${fmtQty(e.jumlahLama)} → ${fmtQty(e.jumlahBaru)} pcs`);
-    if (e.qtyPerPalletLama !== undefined && e.qtyPerPalletLama !== e.qtyPerPalletBaru) perubahan.push(`Qty/Pallet: ${e.qtyPerPalletLama != null ? fmtQty(e.qtyPerPalletLama) : '-'} → ${e.qtyPerPalletBaru != null ? fmtQty(e.qtyPerPalletBaru) : '-'} pcs`);
+    const perubahan = ringkasPerubahanDetailEdit(e);
     return `
       <div class="jejak-log-row">
         <span class="jejak-log-oleh">✏️ ${escapeHtml(e.oleh)}</span>
@@ -7686,7 +7705,7 @@ function renderRiwayatOperator() {
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
-      ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)}${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit)` : ''}</div>` : ''}
+      ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)} · <span class="jejak-log-detail">Bagian diubah: ${escapeHtml(ringkasPerubahanEdit(t.editLog[t.editLog.length - 1]))}</span>${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit)` : ''}</div>` : ''}
     `;
     card.querySelector('.link-barang:not(.link-lokasi)').addEventListener('click', () => openItemModal(t.kodeBarang));
     card.querySelector('.link-lokasi').addEventListener('click', () => openLokasiModal(t.lokasi));
