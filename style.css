@@ -1320,6 +1320,14 @@ body.role-operator .katalog-mode-tabs { display: none; }
   transition: background .15s var(--ease), color .15s var(--ease), transform .15s var(--ease);
 }
 .modal-close:hover { background: var(--merah-flag-soft); color: var(--merah-flag); transform: rotate(90deg); }
+.modal-back {
+  position: absolute; top: 14px; left: 14px; width: 30px; height: 30px;
+  border-radius: 8px; background: var(--kraft); font-size: 17px; line-height: 1;
+  color: var(--text-muted); display: flex; align-items: center; justify-content: center;
+  transition: background .15s var(--ease), color .15s var(--ease), transform .15s var(--ease);
+}
+.modal-back[hidden] { display: none; }
+.modal-back:hover { background: var(--navy-pale); color: var(--navy); transform: translateX(-2px); }
 .modal-title {
   font-family: var(--font-display); font-weight: 700; font-size: 19px;
   margin: 0 0 18px; padding-right: 30px; letter-spacing: -0.2px;
@@ -1379,7 +1387,7 @@ body.role-operator .katalog-mode-tabs { display: none; }
   margin-top: 12px; text-align: center; font-size: 13px; color: var(--text-muted);
 }
 
-.modal-item-head { padding-right: 30px; margin-bottom: 16px; }
+.modal-item-head { padding-right: 30px; padding-left: 30px; margin-bottom: 16px; }
 .modal-item-kode { font-size: 11.5px; color: var(--text-muted); margin-bottom: 2px; }
 .modal-item-nama { font-family: var(--font-display); font-weight: 700; font-size: 20px; margin: 0; line-height: 1.2; }
 
@@ -1742,6 +1750,8 @@ body.role-operator .katalog-mode-tabs { display: none; }
   width: 100%; border: 2px solid var(--kraft-line); border-radius: 8px; padding: 9px 11px;
   font-size: 13.5px; font-family: var(--font-body); color: var(--ink-soft); background: var(--kertas);
 }
+.ticket-edit .field input[readonly] { background: var(--kraft); color: var(--text-muted); cursor: not-allowed; }
+.ticket-edit .field .req-mark { color: var(--merah, #d31a20); }
 .ticket-edit-actions {
   grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;
 }

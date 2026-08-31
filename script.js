@@ -3160,6 +3160,7 @@ function syncDatalist(datalistId, values) {
 
 function refreshEditDatalists() {
   syncDatalist('dl-barang-edit', (BARANG_OPTIONS || []).map(b => b.nama));
+  syncDatalist('dl-kode-barang-edit', (BARANG_OPTIONS || []).map(b => b.kode));
   syncDatalist('dl-supplier-edit', SUPPLIER_OPTIONS || []);
   syncDatalist('dl-pemilik-edit', PEMILIK_OPTIONS_MERGED || []);
 }
@@ -5117,6 +5118,7 @@ function buildLokasiOccupancy(entries) {
 // ditandai TERISI (ada stok) / KOSONG (belum ada stok), klik satu rak untuk
 // lihat detail (kalau terisi) atau info singkat (kalau kosong).
 function openBlokModal(blok) {
+  pushModalHistory(() => openBlokModal(blok));
   const blokData = buildLokasiOccupancy(currentEntries);
   const data = blokData.find(b => b.blok === blok);
   if (!data) return;
@@ -5180,6 +5182,7 @@ function openBlokModal(blok) {
    persis dengan kartu dashboard tapi lengkap. Klik satu blok -> buka
    detail rak per blok lewat openBlokModal (peta lokasi terisi/kosong). */
 function openAllBlokModal() {
+  pushModalHistory(() => openAllBlokModal());
   const blokData = buildLokasiOccupancy(currentEntries);
   const blokRanked = blokData
     .map(b => {
@@ -5302,6 +5305,7 @@ function goToKatalog(mode) {
 // Modal ringkas "Top 5 Barang Masuk/Keluar" pada periode terpilih — dipakai
 // tombol "Lihat detail" di kartu Jenis Barang Masuk & Keluar.
 function openTopBarangJenisModal(jenis, range) {
+  pushModalHistory(() => openTopBarangJenisModal(jenis, range));
   const count = {};
   const kodeMap = {};
   currentEntries.forEach(t => {
@@ -6422,6 +6426,7 @@ function renderOperatorDetailInfo(el, a, stats) {
 
 /* ---- Modal detail lokasi ---- */
 function openLokasiModal(lokasi) {
+  pushModalHistory(() => openLokasiModal(lokasi));
   const all = buildLocationStock(currentEntries);
   const data = all.find(l => l.lokasi === lokasi);
   if (!data) return;
@@ -6530,6 +6535,7 @@ function openLokasiModal(lokasi) {
    nama supplier di kolom tersendiri per baris batch — dan batch-batchnya
    diurutkan berdasarkan tanggal kedatangan (paling lama di atas). ---- */
 function openKodePemilikModal(kode, pemilik) {
+  pushModalHistory(() => openKodePemilikModal(kode, pemilik));
   if (!kode) return;
   const combos = buildKodePemilikList(currentEntries);
   const pemilikKey = pemilik || '-';
@@ -6705,6 +6711,7 @@ function openKodePemilikModal(kode, pemilik) {
    batch-batch kedatangan yang kombinasi Barang+Supplier+Pemilik-nya PERSIS
    sama dengan kartu yang diklik. ---- */
 function openComboModal(kode, supplier, pemilik) {
+  pushModalHistory(() => openComboModal(kode, supplier, pemilik));
   if (!kode) return;
   const combos = buildBarangComboList(currentEntries);
   const supplierKey = supplier || '-';
@@ -6865,6 +6872,7 @@ function openComboModal(kode, supplier, pemilik) {
 // katalog yang sedang dibuka (bukan semua transaksi kode barang itu di
 // lokasi tsb, yang bisa saja tercampur dari supplier/pemilik lain).
 function openComboRiwayatView(kode, supplier, pemilik, lokasi, backTo) {
+  pushModalHistory(() => openComboRiwayatView(kode, supplier, pemilik, lokasi, backTo));
   const combos = buildBarangComboList(currentEntries);
   const supplierKey = supplier || '-';
   const pemilikKey = pemilik || '-';
@@ -6916,6 +6924,7 @@ function openComboRiwayatView(kode, supplier, pemilik, lokasi, backTo) {
 
 /* ---- Modal detail supplier / pemilik barang ---- */
 function openAttributeModal(kind, nama) {
+  pushModalHistory(() => openAttributeModal(kind, nama));
   const field = kind === 'supplier' ? 'supplier' : 'pemilik';
   const all = buildAttributeBreakdown(currentEntries, field);
   const data = all.find(d => d.nama === nama);
@@ -6957,13 +6966,52 @@ function openAttributeModal(kind, nama) {
 /* ---- Modal detail barang ---- */
 const itemModal = document.getElementById('item-modal');
 const modalBody = document.getElementById('modal-body');
+const modalBackBtn = document.getElementById('modal-back');
+
+// ---- Riwayat navigasi dalam item-modal ----
+// Modal ini dipakai bergantian untuk banyak jenis konten (detail barang,
+// lokasi, kombinasi, riwayat transaksi, blok, dll), dan dari dalamnya
+// pengguna sering klik lebih dalam lagi (klik-klik bertingkat). Sebelumnya
+// Escape / klik di luar / tombol X langsung menutup semuanya. Sekarang kita
+// simpan riwayat setiap "tampilan" yang dibuka supaya ada panah kembali
+// (dan Escape) yang mundur selangkah demi selangkah, bukan langsung keluar.
+let itemModalStack = [];
+let isModalReplaying = false;
+
+function pushModalHistory(renderFn) {
+  if (isModalReplaying) return;
+  if (itemModal.hidden) {
+    itemModalStack = [renderFn];
+  } else {
+    itemModalStack.push(renderFn);
+  }
+  updateModalBackButton();
+}
+
+function updateModalBackButton() {
+  if (modalBackBtn) modalBackBtn.hidden = itemModalStack.length <= 1;
+}
+
+function goBackModalView() {
+  if (itemModalStack.length <= 1) { closeItemModal(); return; }
+  itemModalStack.pop();
+  const prev = itemModalStack[itemModalStack.length - 1];
+  isModalReplaying = true;
+  prev();
+  isModalReplaying = false;
+  updateModalBackButton();
+}
+
 document.getElementById('modal-close').addEventListener('click', closeItemModal);
-itemModal.addEventListener('click', (e) => { if (e.target === itemModal) closeItemModal(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeItemModal(); });
+if (modalBackBtn) modalBackBtn.addEventListener('click', goBackModalView);
+itemModal.addEventListener('click', (e) => { if (e.target === itemModal) goBackModalView(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !itemModal.hidden) goBackModalView(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && scanModal && !scanModal.hidden) closeScanModal(); });
 
 function closeItemModal() {
   itemModal.hidden = true;
+  itemModalStack = [];
+  updateModalBackButton();
   // Reset lebar modal ke default, karena modal ini dipakai bergantian
   // untuk banyak jenis konten (detail barang, semua blok, dll).
   const modalPanel = itemModal.querySelector('.modal-panel');
@@ -7280,12 +7328,12 @@ function buildTicketCard(t) {
       ${RIWAYAT_EDIT_HAPUS_AKTIF ? `
       <div class="ticket-edit" hidden>
         <div class="field">
-          <label>Nama Barang</label>
-          <input type="text" class="edit-nama-barang" list="dl-barang-edit" value="${escapeHtml(t.namaBarang || '')}" placeholder="Ketik nama barang...">
+          <label>Kode Barang</label>
+          <input type="text" class="edit-kode-barang" list="dl-kode-barang-edit" value="${escapeHtml(t.kodeBarang || '')}" placeholder="Ketik/pilih kode barang...">
         </div>
         <div class="field">
-          <label>Kode Barang</label>
-          <input type="text" class="edit-kode-barang" value="${escapeHtml(t.kodeBarang || '')}" placeholder="Kode barang">
+          <label>Nama Barang</label>
+          <input type="text" class="edit-nama-barang" value="${escapeHtml(t.namaBarang || '')}" placeholder="Otomatis dari Kode Barang" readonly>
         </div>
         <div class="field">
           <label>Supplier</label>
@@ -7316,8 +7364,8 @@ function buildTicketCard(t) {
           <input type="text" class="edit-jumlah-pallet-display" value="${t.jumlahPallet != null ? roundPalletDisplay(t.jumlahPallet) : '-'}" readonly disabled>
         </div>
         <div class="field field-full">
-          <label>Keterangan</label>
-          <input type="text" class="edit-keterangan" value="${escapeHtml(t.keterangan || '')}" placeholder="Contoh: koreksi lokasi hasil stock opname">
+          <label>Keterangan <span class="req-mark">*</span></label>
+          <input type="text" class="edit-keterangan" value="${escapeHtml(t.keterangan || '')}" placeholder="Wajib diisi, contoh: koreksi lokasi hasil stock opname" required>
         </div>
         <div class="ticket-edit-actions">
           <button type="button" class="btn-mini btn-mini-cancel">Batal</button>
@@ -7336,13 +7384,19 @@ function buildTicketCard(t) {
     const editQtyPalletEl = card.querySelector('.edit-qty-pallet');
     const editJumlahPalletDisplayEl = card.querySelector('.edit-jumlah-pallet-display');
 
-    // Kalau Nama Barang diketik/dipilih persis sama dengan salah satu opsi
-    // di data master, otomatis isikan Kode Barang-nya (tetap bisa diubah
-    // manual sesudahnya kalau memang perlu koreksi kode yang tidak baku).
-    editNamaBarangEl.addEventListener('change', () => {
-      const match = (BARANG_OPTIONS || []).find(b => b.nama === editNamaBarangEl.value.trim());
-      if (match) editKodeBarangEl.value = match.kode;
-    });
+    // Kode Barang yang menentukan Nama Barang (bukan sebaliknya) — begitu
+    // Kode Barang diketik/dipilih dan cocok dengan salah satu kode di data
+    // master, Nama Barang otomatis terisi mengikuti kode tersebut. Nama
+    // Barang bersifat baca-saja di form ini supaya operator tidak bisa
+    // mengubah nama tanpa mengubah kodenya (mencegah nama & kode jadi
+    // tidak sinkron).
+    function syncNamaDariKode() {
+      const kode = editKodeBarangEl.value.trim();
+      const match = (BARANG_OPTIONS || []).find(b => b.kode === kode);
+      editNamaBarangEl.value = match ? match.nama : '';
+    }
+    editKodeBarangEl.addEventListener('input', syncNamaDariKode);
+    editKodeBarangEl.addEventListener('change', syncNamaDariKode);
 
     // Hitung ulang tampilan Jumlah Pallet setiap kali Jumlah atau Qty per
     // Pallet diubah — sama seperti hitungJumlahPallet() di form laporan.
@@ -7375,14 +7429,17 @@ function buildTicketCard(t) {
       const qtyPalletRaw = editQtyPalletEl.value.trim();
       const newQtyPerPallet = qtyPalletRaw ? parseInt(qtyPalletRaw, 10) : null;
 
-      if (!newNamaBarang) return showToast('Nama barang tidak boleh kosong.', 'error');
       if (!newKodeBarang) return showToast('Kode barang tidak boleh kosong.', 'error');
+      const barangMasterMatch = (BARANG_OPTIONS || []).find(b => b.kode === newKodeBarang);
+      if (!barangMasterMatch) return showToast(`Kode barang "${newKodeBarang}" tidak ditemukan di data master. Pilih dari daftar saran atau tambahkan dulu di Pengelolaan Barang.`, 'error');
+      if (!newNamaBarang) return showToast('Nama barang tidak boleh kosong.', 'error');
       if (!newSupplier) return showToast('Supplier tidak boleh kosong.', 'error');
       if (!newPemilik) return showToast('Pemilik barang tidak boleh kosong.', 'error');
       if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
       if (!newTanggal) return showToast('Tanggal tidak boleh kosong.', 'error');
       if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
       if (qtyPalletRaw && (!newQtyPerPallet || newQtyPerPallet <= 0)) return showToast('Qty per pallet harus lebih dari 0.', 'error');
+      if (!newKeterangan) return showToast('Keterangan wajib diisi untuk setiap perubahan laporan.', 'error');
 
       const newJumlahPallet = newQtyPerPallet ? Math.round((newJumlah / newQtyPerPallet) * 100) / 100 : null;
 
