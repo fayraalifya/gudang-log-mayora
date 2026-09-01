@@ -156,12 +156,20 @@ function getKombinasiTersedia(entries, kodeBarang) {
     if (!tglBatch) return; // transaksi tanpa tanggal kedatangan yang jelas tidak bisa diikat per batch
     const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tglBatch);
     if (!map.has(key)) {
-      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, tanggalKedatangan: tglBatch, stok: 0, pallet: 0 });
+      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, tanggalKedatangan: tglBatch, stok: 0, pallet: 0, qtyPerPallet: null });
     }
     const c = map.get(key);
     const arah = t.jenis === 'masuk' ? 1 : -1;
     c.stok += arah * t.jumlah;
     if (t.jumlahPallet != null) c.pallet += arah * t.jumlahPallet;
+    // Qty per Pallet adalah atribut BATCH (ditentukan saat barang ini
+    // pertama kali dilaporkan MASUK) — dipakai nanti untuk otomatis
+    // mengisi field "Qty per Pallet" saat operator memilih kombinasi ini
+    // untuk laporan KELUAR, supaya operator tidak perlu mengetik ulang
+    // angka yang seharusnya sudah tetap untuk satu batch yang sama.
+    // Diambil dari transaksi MASUK-nya saja (transaksi KELUAR tidak
+    // menentukan ulang qty per pallet suatu batch).
+    if (t.jenis === 'masuk' && t.qtyPerPallet != null) c.qtyPerPallet = t.qtyPerPallet;
   });
   return [...map.values()].filter(c => c.stok > 0).sort((a, b) => {
     if (a.tanggalKedatangan !== b.tanggalKedatangan) return a.tanggalKedatangan < b.tanggalKedatangan ? -1 : 1;
@@ -3341,6 +3349,13 @@ function setJenis(j) {
   if (typeof selSupplier !== 'undefined') selSupplier.reset();
   if (typeof selPemilik !== 'undefined') selPemilik.reset();
   if (typeof selLokasi !== 'undefined') selLokasi.reset();
+  // Ganti jenis laporan = kombinasi batch yang terkunci (kalau ada) tidak
+  // berlaku lagi, jadi field Qty per Pallet juga dilepas kuncinya & dikosongkan.
+  if (typeof inputQtyPallet !== 'undefined' && inputQtyPallet) {
+    inputQtyPallet.value = '';
+    if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
+    if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
+  }
   if (typeof selBarang !== 'undefined') {
     const barangDipilih = selBarang.getValue();
     refreshKombinasiUI(barangDipilih ? barangDipilih.kode : null);
@@ -3370,6 +3385,13 @@ selBarang = setupSearchableSelect({
     selSupplier.reset();
     selPemilik.reset();
     selLokasi.reset();
+    // Barang diganti = kombinasi batch (kalau ada yang sempat terkunci)
+    // sudah tidak relevan, jadi Qty per Pallet ikut dilepas & dikosongkan.
+    if (typeof inputQtyPallet !== 'undefined' && inputQtyPallet) {
+      inputQtyPallet.value = '';
+      if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
+      if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
+    }
     refreshKombinasiUI(o.kode);
   },
 });
@@ -3682,6 +3704,7 @@ function kdsBuildRow(t) {
         <span class="akun-operator-avatar kds-avatar-sm">${escapeHtml(getInitials(t.operator))}</span>
         ${escapeHtml(t.operator || '-')}
       </td>
+      <td class="kds-td-keterangan">${t.keterangan ? escapeHtml(t.keterangan) : '<span class="muted">-</span>'}</td>
       <td class="kds-th-aksi">
         <button type="button" class="kds-btn-detail" data-combo-key="${escapeHtml(comboKey)}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -3707,13 +3730,19 @@ function kdsBuildGroupedData(filtered) {
       comboMap.set(key, {
         comboKey: key, kodeBarang: t.kodeBarang, namaBarang: t.namaBarang,
         supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, tglBatch,
-        qtyPerPallet: null, totalMasuk: 0, totalKeluar: 0,
+        qtyPerPallet: null, totalMasuk: 0, totalKeluar: 0, keterangan: null,
       });
     }
     const c = comboMap.get(key);
     if (t.jenis === 'masuk') {
       c.totalMasuk += (t.jumlah || 0);
       if (t.qtyPerPallet != null) c.qtyPerPallet = t.qtyPerPallet;
+      // Keterangan yang ditampilkan di tabel ini adalah keterangan yang
+      // operator isi SAAT BARANG MASUK (bukan keterangan transaksi keluar
+      // mana pun) — supaya kolom ini konsisten menampilkan catatan asal
+      // batch ini (mis. kondisi kemasan, titipan, dll.) apa pun jenis
+      // transaksi lain yang tercatat belakangan untuk kombinasi yang sama.
+      if (t.keterangan) c.keterangan = t.keterangan;
     } else {
       c.totalKeluar += (t.jumlah || 0);
     }
@@ -3766,6 +3795,7 @@ function kdsBuildGroupedHtml(groups) {
               <th>Total Masuk</th>
               <th>Total Keluar</th>
               <th>Stok Saat Ini</th>
+              <th>Keterangan</th>
               <th class="kds-th-aksi">Aksi</th>
             </tr>
           </thead>
@@ -3780,6 +3810,7 @@ function kdsBuildGroupedHtml(groups) {
                 <td class="kds-td-num">${(c.totalMasuk || 0).toLocaleString('id-ID')} pcs</td>
                 <td class="kds-td-num">${(c.totalKeluar || 0).toLocaleString('id-ID')} pcs</td>
                 <td class="kds-td-num">${(c.stokSaatIni || 0).toLocaleString('id-ID')} pcs</td>
+                <td class="kds-td-keterangan">${c.keterangan ? escapeHtml(c.keterangan) : '<span class="muted">-</span>'}</td>
                 <td class="kds-th-aksi">
                   <button type="button" class="kds-btn-detail" data-combo-key="${escapeHtml(c.comboKey)}">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -4448,6 +4479,13 @@ function refreshKombinasiUI(kodeBarang) {
       // dan tanpa sadar melaporkan SELURUH sisa stok sebagai keluar padahal
       // yang keluar sebenarnya cuma sebagian.
 
+      // Qty per Pallet BERBEDA — ini atribut tetap milik batch yang sudah
+      // dikunci (sudah ditentukan sejak barang ini dilaporkan MASUK), jadi
+      // begitu kombinasi dipilih, langsung diisi otomatis & dikunci supaya
+      // operator tidak perlu (dan tidak bisa keliru) mengetik ulang angka
+      // yang seharusnya sama persis dengan batch aslinya.
+      setQtyPalletFromKombinasi(c);
+
       list.querySelectorAll('.kombinasi-chip').forEach(b => b.classList.remove('is-selected'));
       btn.classList.add('is-selected');
       showToast(`Kombinasi dipilih (kedatangan ${formatTanggal(c.tanggalKedatangan)}, sisa stok ${Number(c.stok || 0).toLocaleString('id-ID')} pcs). Masukkan jumlah pcs yang keluar, lalu scan barcode lokasi ${c.lokasi} untuk konfirmasi.`, 'info');
@@ -4531,6 +4569,7 @@ const inputTanggal = document.getElementById('input-tanggal');
 const inputJumlah = document.getElementById('input-jumlah');
 const inputQtyPallet = document.getElementById('input-qty-pallet');
 const inputJumlahPallet = document.getElementById('input-jumlah-pallet');
+const inputKeterangan = document.getElementById('input-keterangan');
 const formError = document.getElementById('form-error');
 const form = document.getElementById('form-laporan');
 
@@ -4572,6 +4611,44 @@ function hitungJumlahPallet() {
 }
 inputJumlah.addEventListener('input', hitungJumlahPallet);
 inputQtyPallet.addEventListener('input', hitungJumlahPallet);
+
+// Wrapper .input-icon dari field Qty per Pallet — dipakai untuk kasih efek
+// visual "terkunci/otomatis" (readonly) begitu kombinasi Stok Tersedia
+// dipilih saat laporan BARANG KELUAR.
+const qtyPalletWrap = inputQtyPallet.closest('.input-icon');
+
+// Isi field Qty per Pallet secara otomatis dari kombinasi batch yang baru
+// dipilih operator (BARANG KELUAR), lalu kunci (readonly) supaya nilainya
+// tidak sengaja diubah — qty per pallet adalah atribut tetap satu batch,
+// sudah ditentukan sejak barang tsb dilaporkan MASUK.
+// Kalau batch lama belum pernah tercatat qty per pallet-nya (data lama),
+// field dikosongkan & tetap bisa diisi manual sebagai fallback.
+function setQtyPalletFromKombinasi(c) {
+  const hint = document.getElementById('qty-pallet-hint');
+  if (c && c.qtyPerPallet != null && c.qtyPerPallet > 0) {
+    inputQtyPallet.value = Number(c.qtyPerPallet).toLocaleString('id-ID');
+    inputQtyPallet.readOnly = true;
+    if (qtyPalletWrap) qtyPalletWrap.classList.add('is-locked');
+    if (hint) hint.hidden = false;
+  } else {
+    inputQtyPallet.value = '';
+    inputQtyPallet.readOnly = false;
+    if (qtyPalletWrap) qtyPalletWrap.classList.remove('is-locked');
+    if (hint) hint.hidden = true;
+  }
+  hitungJumlahPallet();
+}
+
+// Lepas kunci field Qty per Pallet & kosongkan — dipanggil setiap kali
+// kombinasi batch yang terkunci dibatalkan (ganti barang, ganti jenis
+// laporan, reset form, dsb.) supaya field kembali bisa diisi manual
+// seperti kondisi laporan BARANG MASUK.
+function resetQtyPalletLock() {
+  inputQtyPallet.readOnly = false;
+  if (qtyPalletWrap) qtyPalletWrap.classList.remove('is-locked');
+  const hint = document.getElementById('qty-pallet-hint');
+  if (hint) hint.hidden = true;
+}
 
 // Helper untuk menampilkan angka jumlah pallet (bisa desimal, mis. hasil
 // bagi jumlah barang / qty per pallet) di kartu Ringkasan. Dibulatkan ke
@@ -4733,7 +4810,9 @@ function resetForm() {
   setSupplierPemilikLocked(false);
   inputJumlah.value = '';
   inputQtyPallet.value = '';
+  resetQtyPalletLock();
   inputJumlahPallet.value = '';
+  inputKeterangan.value = '';
   inputTanggal.value = todayISO();
   setJenis('masuk');
   hideError();
@@ -4766,6 +4845,7 @@ form.addEventListener('submit', async (e) => {
   const qtyPerPallet = qtyPerPalletRaw ? qtyPerPalletParsed : null;
   const jumlahPalletParsed = parseFormattedNumber(inputJumlahPallet.value);
   const jumlahPallet = inputJumlahPallet.value ? jumlahPalletParsed : null;
+  const keterangan = inputKeterangan.value.trim();
 
   if (!operator) return showError('Nama operator wajib diisi.');
   if (!barang) return showError('Pilih nama barang terlebih dahulu.');
@@ -4775,6 +4855,7 @@ form.addEventListener('submit', async (e) => {
   if (!tanggal) return showError(jenis === 'keluar' ? 'Tanggal penginputan wajib diisi.' : 'Tanggal kedatangan wajib diisi.');
   if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
   if (!qtyPerPalletRaw || !qtyPerPallet || qtyPerPallet <= 0) return showError('Qty per pallet wajib diisi dengan angka lebih dari 0.');
+  if (!keterangan) return showError('Keterangan wajib diisi.');
 
   if (jenis === 'keluar') {
     // Wajib sudah pilih satu kombinasi dari kartu "Stok Tersedia" — ini
@@ -4833,7 +4914,7 @@ form.addEventListener('submit', async (e) => {
     const now = Date.now();
     const entryData = {
       jenis, tipe: 'transaksi', operator, kodeBarang: barang.kode, namaBarang: barang.nama,
-      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, keterangan: '', tanggal,
+      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, keterangan, tanggal,
       // Untuk laporan KELUAR, simpan tanggal kedatangan batch yang diambil
       // (dari kombinasi yang dikunci operator lewat "Stok Tersedia") supaya
       // batch ini benar-benar terikat termasuk tanggal kedatangannya, bukan

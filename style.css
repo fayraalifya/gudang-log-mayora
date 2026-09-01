@@ -1104,6 +1104,14 @@ body.role-operator .katalog-mode-tabs { display: none; }
 .kombinasi-box { margin-top: -6px; }
 .kombinasi-hint { font-size: 11.5px; margin: 0 0 8px; line-height: 1.4; }
 .tanggal-hint { font-size: 11px; margin: 6px 0 0; line-height: 1.4; }
+.qty-pallet-hint { font-size: 11px; margin: 6px 0 0; line-height: 1.4; }
+
+/* Field Qty per Pallet terkunci (readonly) — dipakai saat laporan BARANG
+   KELUAR, begitu operator memilih kombinasi dari "Stok Tersedia": nilainya
+   otomatis terisi dari batch tsb dan tidak bisa diketik ulang. */
+.input-icon.is-locked { background: var(--kraft); cursor: not-allowed; }
+.input-icon.is-locked input { color: var(--text-muted); cursor: not-allowed; }
+.input-icon.is-locked svg { opacity: 0.6; }
 .kds-date-hint { font-size: 10.5px; margin: 5px 0 0; line-height: 1.4; }
 .kombinasi-list { display: flex; flex-direction: column; gap: 8px; }
 .kombinasi-chip {
@@ -3031,7 +3039,7 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .kds-sort-label .kds-native-select:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .kds-table-wrap { overflow-x: auto; border: 2px solid var(--kraft-line); border-radius: 12px; margin-bottom: 20px; }
-.kds-table { width: 100%; border-collapse: collapse; min-width: 1040px; }
+.kds-table { width: 100%; border-collapse: collapse; min-width: 1180px; }
 .kds-table thead th {
   text-align: left; font-family: var(--font-display); font-weight: 700; font-size: 10.5px;
   letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-muted);
@@ -3056,6 +3064,7 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .kds-item-kode { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
 
 .kds-td-num { font-family: var(--font-mono); font-weight: 600; color: var(--ink); white-space: nowrap; }
+.kds-td-keterangan { max-width: 220px; white-space: normal; line-height: 1.4; }
 
 .kds-operator { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .kds-avatar-sm { width: 26px; height: 26px; font-size: 11px; }

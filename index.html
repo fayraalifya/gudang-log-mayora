@@ -479,6 +479,7 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
               <input type="text" id="input-qty-pallet" inputmode="numeric" placeholder="0">
             </div>
+            <p class="muted qty-pallet-hint" id="qty-pallet-hint" hidden>Terisi otomatis dari data batch ini saat barang masuk — mengikuti kombinasi "Stok Tersedia" yang dipilih.</p>
           </div>
 
           <div class="field">
@@ -486,6 +487,14 @@
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
               <input type="text" id="input-jumlah-pallet" placeholder="-" readonly disabled>
+            </div>
+          </div>
+
+          <div class="field field-full">
+            <label for="input-keterangan">Keterangan <span class="req">*</span></label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H5.17L4 17.17V4z"/><path d="M8 9h8M8 13h5"/></svg>
+              <input type="text" id="input-keterangan" placeholder="Contoh: barang titipan, kondisi kemasan, dsb." autocomplete="off">
             </div>
           </div>
 
@@ -999,6 +1008,7 @@
                   <th>Jumlah (PCS)</th>
                   <th>Pallet</th>
                   <th>Operator</th>
+                  <th>Keterangan</th>
                   <th class="kds-th-aksi">Aksi</th>
                 </tr>
               </thead>
