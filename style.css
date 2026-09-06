@@ -2021,7 +2021,7 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
    KATALOG PANEL — KELOLA MASTER DATA (BARANG, SUPPLIER, PEMILIK, LOKASI)
 ========================================================================== */
 .katalog-tabs {
-  display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);
+  display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid var(--kraft-line);
   overflow-x: auto; padding-bottom: 0; -webkit-overflow-scrolling: touch;
 }
 .katalog-tab-btn {
@@ -2029,9 +2029,9 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   font-weight: 600; font-size: 14px; cursor: pointer; border-bottom: 3px solid transparent;
   transition: all 200ms ease; white-space: nowrap;
 }
-.katalog-tab-btn:hover { color: var(--text-primary); }
+.katalog-tab-btn:hover { color: var(--ink); }
 .katalog-tab-btn.is-active {
-  color: var(--ink-primary); border-bottom-color: var(--ink-primary);
+  color: var(--navy); border-bottom-color: var(--navy);
 }
 
 .katalog-section { display: none; }
@@ -2055,7 +2055,7 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .katalog-group-toolbar-actions { display: flex; gap: 14px; }
 .btn-link-small {
   background: none; border: none; padding: 0; cursor: pointer;
-  font-size: 12.5px; font-weight: 600; color: var(--accent-color, #2F5496);
+  font-size: 12.5px; font-weight: 600; color: var(--navy);
   text-decoration: underline; text-underline-offset: 2px;
 }
 .btn-link-small:hover { opacity: 0.75; }
@@ -2064,14 +2064,14 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   display: flex; flex-direction: column; gap: 10px;
 }
 .katalog-group {
-  border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden;
-  background: var(--bg-secondary);
+  border: 1px solid var(--kraft-line); border-radius: 10px; overflow: hidden;
+  background: var(--kraft);
 }
 .katalog-group-header {
   width: 100%; display: flex; align-items: center; gap: 10px;
-  padding: 12px 14px; background: var(--bg-tertiary, var(--bg-secondary));
+  padding: 12px 14px; background: var(--kraft);
   border: none; cursor: pointer; text-align: left; font: inherit;
-  color: var(--text-primary);
+  color: var(--ink);
 }
 .katalog-group-header:hover { filter: brightness(0.97); }
 .katalog-group-chevron {
@@ -2084,7 +2084,7 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 }
 .katalog-group-count {
   margin-left: auto; font-size: 12px; font-weight: 600; color: var(--text-muted);
-  background: var(--bg-primary); border: 1px solid var(--border-color);
+  background: var(--kertas); border: 1px solid var(--kraft-line);
   border-radius: 999px; padding: 2px 10px;
 }
 .katalog-group-body {
@@ -2097,14 +2097,14 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
    sama polanya dengan .katalog-group tapi lebih kecil/indented supaya
    kelihatan sebagai level ke-2, bukan level yang sejajar dengan Supplier. */
 .katalog-subgroup {
-  border: 1px solid var(--border-color); border-radius: 9px; overflow: hidden;
+  border: 1px solid var(--kraft-line); border-radius: 9px; overflow: hidden;
   margin-left: 4px;
 }
 .katalog-subgroup-header {
   width: 100%; display: flex; align-items: center; gap: 8px;
-  padding: 9px 12px; background: var(--bg-primary);
+  padding: 9px 12px; background: var(--kertas);
   border: none; cursor: pointer; text-align: left; font: inherit;
-  color: var(--text-primary);
+  color: var(--ink);
 }
 .katalog-subgroup-header:hover { filter: brightness(0.97); }
 .katalog-subgroup-chevron { width: 12px; height: 12px; }
@@ -2115,19 +2115,19 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 
 .katalog-item {
   display: flex; justify-content: space-between; align-items: center;
-  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  background: var(--kraft); border: 1px solid var(--kraft-line);
   border-radius: 8px; padding: 12px 14px; font-size: 14px; gap: 12px;
 }
 .katalog-item-info { flex: 1; }
-.katalog-item-label { font-weight: 600; color: var(--text-primary); }
+.katalog-item-label { font-weight: 600; color: var(--ink); }
 .katalog-item-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 .katalog-item-stok { 
   font-size: 11px; 
-  color: var(--success-color, #388E3C); 
+  color: var(--hijau);
   margin-top: 6px; 
   font-weight: 600;
   padding: 4px 8px;
-  background: var(--success-bg, #E8F5E9);
+  background: var(--hijau-soft);
   border-radius: 4px;
   display: inline-block;
 }
@@ -2139,15 +2139,15 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   font-size: 12px; font-weight: 600; cursor: pointer; transition: 150ms ease;
 }
 .btn-katalog-edit {
-  background: var(--info-bg, #E3F2FD); color: var(--info-color, #1976D2);
+  background: var(--navy-pale); color: var(--navy);
   display: inline-flex; align-items: center; gap: 5px;
 }
-.btn-katalog-edit:hover { background: var(--info-bg-hover, #BBDEFB); }
+.btn-katalog-edit:hover { filter: brightness(0.95); }
 .btn-katalog-delete {
-  background: var(--danger-bg, #FFEBEE); color: var(--danger-color, #D32F2F);
+  background: var(--merah-flag-soft); color: var(--merah-flag);
   display: inline-flex; align-items: center; gap: 5px;
 }
-.btn-katalog-delete:hover { background: var(--danger-bg-hover, #FFCDD2); }
+.btn-katalog-delete:hover { filter: brightness(0.95); }
 
 /* Tabel sederhana (No. + Nama + Aksi) untuk Supplier / Pemilik Barang / Lokasi */
 .katalog-table-simple td.katalog-td-no { color: var(--text-muted); font-weight: 600; width: 1%; white-space: nowrap; }
@@ -2160,23 +2160,23 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 
 /* TABEL DAFTAR KODE BARANG (Pengelolaan Barang) */
 .katalog-table-wrap {
-  border: 1px solid var(--border-color); border-radius: 10px;
-  overflow-x: auto; background: var(--bg-secondary);
+  border: 1px solid var(--kraft-line); border-radius: 10px;
+  overflow-x: auto; background: var(--kraft);
 }
 .katalog-table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 760px; }
 .katalog-table thead th {
   text-align: left; font-size: 12px; font-weight: 700; letter-spacing: 0.01em;
   color: var(--text-muted); text-transform: none; padding: 12px 14px;
-  border-bottom: 1px solid var(--border-color); background: var(--bg-tertiary, var(--bg-secondary));
+  border-bottom: 1px solid var(--kraft-line); background: var(--kraft);
   white-space: nowrap;
 }
 .katalog-table tbody td {
-  padding: 13px 14px; border-bottom: 1px solid var(--border-color);
-  color: var(--text-primary); vertical-align: middle;
+  padding: 13px 14px; border-bottom: 1px solid var(--kraft-line);
+  color: var(--ink); vertical-align: middle;
   max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .katalog-table tbody tr:last-child td { border-bottom: none; }
-.katalog-table tbody tr:hover td { background: var(--bg-tertiary, var(--bg-secondary)); }
+.katalog-table tbody tr:hover td { background: var(--kraft); }
 .katalog-table td.katalog-td-kode { font-weight: 600; white-space: nowrap; }
 .katalog-table td.katalog-td-tanggal { white-space: nowrap; color: var(--text-muted); }
 .katalog-table-edit-col,
@@ -2187,12 +2187,12 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .btn-katalog-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px; border-radius: 7px; cursor: pointer;
-  border: 1px solid var(--border-color); background: var(--bg-primary);
+  border: 1px solid var(--kraft-line); background: var(--kertas);
   color: var(--text-muted); transition: 150ms ease;
 }
-.btn-katalog-icon-edit:hover { background: var(--info-bg, #E3F2FD); color: var(--info-color, #1976D2); border-color: var(--info-color, #1976D2); }
-.btn-katalog-icon-delete { color: var(--danger-color, #D32F2F); }
-.btn-katalog-icon-delete:hover { background: var(--danger-bg, #FFEBEE); border-color: var(--danger-color, #D32F2F); }
+.btn-katalog-icon-edit:hover { background: var(--navy-pale); color: var(--navy); border-color: var(--navy); }
+.btn-katalog-icon-delete { color: var(--merah-flag); }
+.btn-katalog-icon-delete:hover { background: var(--merah-flag-soft); border-color: var(--merah-flag); }
 
 /* PAGINASI TABEL KODE BARANG */
 .katalog-pagination {
@@ -2203,18 +2203,18 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted);
 }
 .katalog-pagination-size select {
-  padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 6px;
-  background: var(--bg-primary); color: var(--text-primary); font-size: 13px; cursor: pointer;
+  padding: 6px 10px; border: 1px solid var(--kraft-line); border-radius: 6px;
+  background: var(--kertas); color: var(--ink); font-size: 13px; cursor: pointer;
 }
 .katalog-pagination-pages { display: flex; align-items: center; gap: 6px; }
 .katalog-page-btn {
   min-width: 34px; height: 34px; padding: 0 8px; border-radius: 7px;
-  border: 1px solid var(--border-color); background: var(--bg-primary);
-  color: var(--text-primary); font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--kraft-line); background: var(--kertas);
+  color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; transition: 150ms ease;
 }
-.katalog-page-btn:hover:not(:disabled) { background: var(--bg-tertiary, var(--bg-secondary)); }
-.katalog-page-btn.is-active { background: var(--ink-primary); border-color: var(--ink-primary); color: #fff; }
+.katalog-page-btn:hover:not(:disabled) { background: var(--kraft); }
+.katalog-page-btn.is-active { background: var(--navy); border-color: var(--navy); color: #fff; }
 .katalog-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .katalog-page-ellipsis { padding: 0 4px; color: var(--text-muted); font-size: 13px; }
 
@@ -2229,21 +2229,21 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   display: flex; flex-direction: column; gap: 6px;
 }
 .form-katalog label {
-  font-size: 13px; font-weight: 600; color: var(--text-primary);
+  font-size: 13px; font-weight: 600; color: var(--ink);
 }
 .form-katalog input[type="text"],
 .form-katalog input[type="email"],
 .form-katalog input[type="tel"],
 .form-katalog textarea {
-  padding: 10px 12px; border: 1px solid var(--border-color);
+  padding: 10px 12px; border: 1px solid var(--kraft-line);
   border-radius: 6px; font-size: 14px; font-family: inherit;
-  background: var(--bg-primary); color: var(--text-primary);
+  background: var(--kertas); color: var(--ink);
   transition: 150ms ease;
 }
 .form-katalog input:focus,
 .form-katalog textarea:focus {
-  outline: none; border-color: var(--ink-primary);
-  background: var(--bg-secondary);
+  outline: none; border-color: var(--navy);
+  background: var(--kraft);
 }
 .form-katalog textarea {
   resize: vertical; min-height: 60px;
@@ -2257,8 +2257,8 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   padding: 10px 20px; border: none; border-radius: 6px;
   font-weight: 600; font-size: 14px; cursor: pointer; transition: 150ms ease;
 }
-.modal-cancel { background: var(--border-color); color: var(--text-primary); }
-.modal-cancel:hover { background: var(--bg-tertiary); }
+.modal-cancel { background: var(--kraft); color: var(--ink); }
+.modal-cancel:hover { background: var(--kraft-line); }
 
 /* MOBILE: adjust katalog items layout */
 @media (max-width: 640px) {
@@ -3193,6 +3193,7 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .kds-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .kds-detail-item span { display: block; font-size: 10.5px; color: var(--text-muted); margin-bottom: 3px; }
 .kds-detail-item strong { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink); font-weight: 700; }
+.kds-detail-item strong.kds-stok-highlight { color: var(--merah); }
 .kds-detail-item strong svg { color: var(--navy); flex-shrink: 0; }
 .kds-detail-note { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
 
