@@ -5672,12 +5672,18 @@ function renderRingkasan() {
   currentEntries.forEach(t => {
     if (!inPeriod(t, range)) return;
     const nama = t.operator || 'Tanpa Nama';
-    if (!opMap[nama]) opMap[nama] = { masuk: 0, keluar: 0 };
-    if (t.jenis === 'masuk') opMap[nama].masuk++; else opMap[nama].keluar++;
+    if (!opMap[nama]) opMap[nama] = { masuk: 0, keluar: 0, palletMasuk: 0, palletKeluar: 0 };
+    if (t.jenis === 'masuk') {
+      opMap[nama].masuk++;
+      if (t.jumlahPallet != null) opMap[nama].palletMasuk += t.jumlahPallet;
+    } else {
+      opMap[nama].keluar++;
+      if (t.jumlahPallet != null) opMap[nama].palletKeluar += t.jumlahPallet;
+    }
   });
   const opRanked = Object.entries(opMap)
-    .map(([nama, v]) => ({ nama, ...v, total: v.masuk + v.keluar }))
-    .sort((a, b) => b.total - a.total)
+    .map(([nama, v]) => ({ nama, ...v, total: v.masuk + v.keluar, totalPallet: v.palletMasuk + v.palletKeluar }))
+    .sort((a, b) => b.totalPallet - a.totalPallet || b.total - a.total)
     .slice(0, 6);
   const opTbody = document.getElementById('dash-operator-tbody');
   const opEmpty = document.getElementById('dash-operator-empty');
@@ -5691,8 +5697,8 @@ function renderRingkasan() {
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td><span class="dash-op-name"><span class="dash-op-avatar" style="background:${dashAvatarColor(o.nama)}">${escapeHtml(dashInisial(o.nama))}</span>${escapeHtml(o.nama)}</span></td>
-          <td class="dash-op-masuk">${o.masuk.toLocaleString('id-ID')}</td>
-          <td class="dash-op-keluar">${o.keluar.toLocaleString('id-ID')}</td>
+          <td class="dash-op-masuk">${o.masuk.toLocaleString('id-ID')}<span class="dash-op-pallet">${roundPalletDisplay(o.palletMasuk)} pallet</span></td>
+          <td class="dash-op-keluar">${o.keluar.toLocaleString('id-ID')}<span class="dash-op-pallet">${roundPalletDisplay(o.palletKeluar)} pallet</span></td>
         `;
         opTbody.appendChild(tr);
       });
