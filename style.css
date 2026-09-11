@@ -3192,6 +3192,25 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .kds-detail-item strong svg { color: var(--navy); flex-shrink: 0; }
 .kds-detail-note { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
 
+.kds-riwayat-filter-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--kertas); border: 2px solid var(--kraft-line); border-radius: 10px;
+  padding: 10px 14px; margin-bottom: 16px;
+}
+.kds-riwayat-filter-row label {
+  font-family: var(--font-display); font-weight: 700; font-size: 11px; letter-spacing: 0.3px;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.kds-riwayat-filter-select {
+  border: 2px solid var(--kraft-line); border-radius: 8px; padding: 7px 10px; font-size: 12.5px;
+  background: var(--kraft); color: var(--ink-soft); font-family: var(--font-body);
+  min-width: 220px; flex: 1; max-width: 320px;
+}
+@media (max-width: 640px) {
+  .kds-riwayat-filter-row { flex-direction: column; align-items: stretch; }
+  .kds-riwayat-filter-select { max-width: none; }
+}
+
 .kds-riwayat-table-wrap { overflow-x: auto; border: 2px solid var(--kraft-line); border-radius: 10px; margin: 4px 0 16px; }
 .kds-riwayat-table { width: 100%; border-collapse: collapse; min-width: 620px; }
 .kds-riwayat-table thead th {

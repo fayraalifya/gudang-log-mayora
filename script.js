@@ -4292,61 +4292,104 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
     return b.localeCompare(a); // batch kedatangan terbaru di atas
   });
 
-  const groupsHtml = batchKeys.map(tglBatch => {
-    const txs = batchMap.get(tglBatch).slice()
-      .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || a.createdAt - b.createdAt);
-    const masukBatch = txs.filter(t => t.jenis === 'masuk').reduce((s, t) => s + (t.jumlah || 0), 0);
-    const keluarBatch = txs.filter(t => t.jenis === 'keluar').reduce((s, t) => s + (t.jumlah || 0), 0);
-    const sisaBatch = masukBatch - keluarBatch;
-    const palletBatch = txs.filter(t => t.jumlahPallet != null)
+  // Opsi filter dropdown "Tanggal Kedatangan" — satu opsi per batch yang
+  // benar-benar ada di riwayat ini, plus "Semua Tanggal" di paling atas.
+  const filterOptionsHtml = ['<option value="__semua__">Semua Tanggal</option>']
+    .concat(batchKeys.map(tglBatch => {
+      const label = tglBatch === '__tanpa-tanggal__' ? 'Tanpa Tanggal Kedatangan' : formatTanggal(tglBatch);
+      return `<option value="${escapeHtml(tglBatch)}">${escapeHtml(label)}</option>`;
+    }))
+    .join('');
+
+  // Render ulang daftar batch + ringkasan sesuai batch tanggal kedatangan
+  // yang dipilih di filter ('__semua__' = tampilkan semua seperti biasa).
+  function renderRiwayatContent(filterTglBatch) {
+    const keysToShow = filterTglBatch === '__semua__'
+      ? batchKeys
+      : batchKeys.filter(k => k === filterTglBatch);
+
+    const groupsHtml = keysToShow.map(tglBatch => {
+      const txs = batchMap.get(tglBatch).slice()
+        .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || a.createdAt - b.createdAt);
+      const masukBatch = txs.filter(t => t.jenis === 'masuk').reduce((s, t) => s + (t.jumlah || 0), 0);
+      const keluarBatch = txs.filter(t => t.jenis === 'keluar').reduce((s, t) => s + (t.jumlah || 0), 0);
+      const sisaBatch = masukBatch - keluarBatch;
+      const palletBatch = txs.filter(t => t.jumlahPallet != null)
+        .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+      const labelTanggal = tglBatch === '__tanpa-tanggal__' ? 'Tanpa Tanggal Kedatangan' : formatTanggal(tglBatch);
+
+      return `
+        <div class="kds-batch-group">
+          <div class="kds-batch-group-head">
+            <span class="kds-batch-group-title">📅 Kedatangan: ${escapeHtml(labelTanggal)}</span>
+            <span class="kds-batch-group-stok">Sisa Stok Batch: <strong class="${sisaBatch <= 0 ? 'kds-stok-highlight' : ''}">${sisaBatch.toLocaleString('id-ID')} pcs</strong></span>
+          </div>
+          <div class="kds-riwayat-table-wrap">
+            <table class="kds-riwayat-table">
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>Jenis</th>
+                  <th>Tanggal</th>
+                  <th>Tanggal &amp; Jam Transaksi</th>
+                  <th>Jumlah PCS</th>
+                  <th>PCS/Pallet</th>
+                  <th>Total Pallet</th>
+                  <th>Operator Input</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${txs.map((t, i) => `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td><span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}</span></td>
+                    <td>${formatTanggal(t.tanggal)}</td>
+                    <td class="mono">${formatWaktu(t.createdAt)}</td>
+                    <td>${(t.jumlah || 0).toLocaleString('id-ID')}</td>
+                    <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
+                    <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
+                    <td>${escapeHtml(t.operator || '-')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="kds-batch-group-foot">
+            <span>Masuk: <strong>${masukBatch.toLocaleString('id-ID')} pcs</strong></span>
+            <span>Keluar: <strong>${keluarBatch.toLocaleString('id-ID')} pcs</strong></span>
+            <span>Pallet: <strong>${roundPalletDisplay(palletBatch)} pallet</strong></span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Ringkasan mengikuti transaksi yang sedang ditampilkan (semua batch,
+    // atau hanya batch tanggal kedatangan yang dipilih di filter).
+    const shownHistory = keysToShow.flatMap(k => batchMap.get(k));
+    const shownPcsMasuk = shownHistory.filter(t => t.jenis === 'masuk').reduce((s, t) => s + (t.jumlah || 0), 0);
+    const shownPcsKeluar = shownHistory.filter(t => t.jenis === 'keluar').reduce((s, t) => s + (t.jumlah || 0), 0);
+    const shownPallet = shownHistory.filter(t => t.jumlahPallet != null)
       .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
-    const labelTanggal = tglBatch === '__tanpa-tanggal__' ? 'Tanpa Tanggal Kedatangan' : formatTanggal(tglBatch);
+
+    const titleLabel = filterTglBatch === '__semua__'
+      ? `Riwayat per Tanggal Kedatangan (${keysToShow.length.toLocaleString('id-ID')} batch, ${shownHistory.length.toLocaleString('id-ID')} transaksi)`
+      : `Riwayat per Tanggal Kedatangan (${shownHistory.length.toLocaleString('id-ID')} transaksi)`;
 
     return `
-      <div class="kds-batch-group">
-        <div class="kds-batch-group-head">
-          <span class="kds-batch-group-title">📅 Kedatangan: ${escapeHtml(labelTanggal)}</span>
-          <span class="kds-batch-group-stok">Sisa Stok Batch: <strong class="${sisaBatch <= 0 ? 'kds-stok-highlight' : ''}">${sisaBatch.toLocaleString('id-ID')} pcs</strong></span>
-        </div>
-        <div class="kds-riwayat-table-wrap">
-          <table class="kds-riwayat-table">
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>Jenis</th>
-                <th>Tanggal</th>
-                <th>Tanggal &amp; Jam Transaksi</th>
-                <th>Jumlah PCS</th>
-                <th>PCS/Pallet</th>
-                <th>Total Pallet</th>
-                <th>Operator Input</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${txs.map((t, i) => `
-                <tr>
-                  <td>${i + 1}</td>
-                  <td><span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}</span></td>
-                  <td>${formatTanggal(t.tanggal)}</td>
-                  <td class="mono">${formatWaktu(t.createdAt)}</td>
-                  <td>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
-                  <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
-                  <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
-                  <td>${escapeHtml(t.operator || '-')}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div class="kds-batch-group-foot">
-          <span>Masuk: <strong>${masukBatch.toLocaleString('id-ID')} pcs</strong></span>
-          <span>Keluar: <strong>${keluarBatch.toLocaleString('id-ID')} pcs</strong></span>
-          <span>Pallet: <strong>${roundPalletDisplay(palletBatch)} pallet</strong></span>
+      <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">${titleLabel}</div>
+      ${keysToShow.length ? groupsHtml : `<div class="empty-state">Tidak ada transaksi untuk tanggal kedatangan ini.</div>`}
+
+      <div class="kds-summary-panel">
+        <div class="kds-summary-grid">
+          <div class="kds-summary-item"><span>Total Transaksi</span><strong>${shownHistory.length.toLocaleString('id-ID')} kali</strong></div>
+          <div class="kds-summary-item"><span>Total PCS Masuk</span><strong>${shownPcsMasuk.toLocaleString('id-ID')} pcs</strong></div>
+          <div class="kds-summary-item"><span>Total PCS Keluar</span><strong>${shownPcsKeluar.toLocaleString('id-ID')} pcs</strong></div>
+          <div class="kds-summary-item"><span>Saldo Pallet</span><strong>${roundPalletDisplay(shownPallet)} pallet</strong></div>
         </div>
       </div>
     `;
-  }).join('');
-  
+  }
+
   kdsRiwayatBody.innerHTML = `
     <div class="kds-modal-head">
       <div class="kds-modal-head-icon">📦</div>
@@ -4359,23 +4402,24 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
       </div>
     </div>
 
-    <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Riwayat per Tanggal Kedatangan (${batchKeys.length.toLocaleString('id-ID')} batch, ${allHistory.length.toLocaleString('id-ID')} transaksi)</div>
-    ${batchKeys.length ? groupsHtml : `<div class="empty-state">Belum ada transaksi.</div>`}
-
-    <div class="kds-summary-panel">
-      <div class="kds-summary-grid">
-        <div class="kds-summary-item"><span>Total Transaksi</span><strong>${allHistory.length.toLocaleString('id-ID')} kali</strong></div>
-        <div class="kds-summary-item"><span>Total PCS Masuk</span><strong>${totalPcsMasuk.toLocaleString('id-ID')} pcs</strong></div>
-        <div class="kds-summary-item"><span>Total PCS Keluar</span><strong>${totalPcsKeluar.toLocaleString('id-ID')} pcs</strong></div>
-        <div class="kds-summary-item"><span>Saldo Pallet</span><strong>${roundPalletDisplay(totalPallet)} pallet</strong></div>
-      </div>
+    <div class="kds-riwayat-filter-row">
+      <label for="kds-riwayat-filter-tanggal">Filter Tanggal Kedatangan</label>
+      <select id="kds-riwayat-filter-tanggal" class="kds-riwayat-filter-select">
+        ${filterOptionsHtml}
+      </select>
     </div>
+
+    <div id="kds-riwayat-content">${renderRiwayatContent('__semua__')}</div>
 
     <div class="modal-actions">
       <button type="button" class="btn-secondary modal-cancel" id="kds-btn-tutup-riwayat">Tutup</button>
     </div>
   `;
   kdsRiwayatBody.querySelector('#kds-btn-tutup-riwayat').addEventListener('click', closeKdsRiwayatModal);
+  kdsRiwayatBody.querySelector('#kds-riwayat-filter-tanggal').addEventListener('change', (e) => {
+    const content = kdsRiwayatBody.querySelector('#kds-riwayat-content');
+    if (content) content.innerHTML = renderRiwayatContent(e.target.value);
+  });
 
   kdsRiwayatModal.hidden = false;
 }
@@ -4427,7 +4471,7 @@ function openKdsRiwayatModal(kodeBarang, supplier, pemilik) {
               <td>${formatTanggal(t.tanggal)}</td>
               <td class="mono">${formatWaktu(t.createdAt)}</td>
               <td class="mono">${escapeHtml(t.lokasi || '-')}</td>
-              <td>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
+              <td>${(t.jumlah || 0).toLocaleString('id-ID')}</td>
               <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
               <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
               <td>${escapeHtml(t.operator || '-')}</td>
