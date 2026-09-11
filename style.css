@@ -190,10 +190,6 @@ body {
   position: absolute; inset: 0;
   background: linear-gradient(160deg, rgba(15,32,56,0.55) 0%, rgba(15,32,56,0.88) 55%, var(--navy) 100%);
 }
-.login-brand::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(560px circle at 15% 85%, rgba(222,159,53,0.16), transparent 60%);
-}
 .login-brand-inner { position: relative; max-width: 400px; z-index: 1; animation: fadeSlideUp .5s var(--ease) backwards; }
 
 /* --- Lambang Mayora (ikon + wordmark), dipakai di panel navy (desktop)

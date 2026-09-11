@@ -4047,14 +4047,17 @@ if (kdsBtnExport) {
       return;
     }
     const aoa = [
-      ['Nama Barang', 'Jenis', 'Kode Barang', 'Supplier', 'Pemilik Barang', 'Jumlah PCS', 'Jumlah Pallet', 'Lokasi', 'Tanggal Kedatangan', 'Tanggal Penginputan', 'Operator Input'],
+      ['Nama Barang', 'Kode Barang', 'Supplier', 'Pemilik', 'Tanggal Kedatangan/Tanggal Keluar', 'Lokasi', 'Jumlah', 'Qty/Pallet', 'Jumlah Pallet'],
       ...rows.map(t => [
-        t.namaBarang || '-', t.jenis === 'masuk' ? 'Masuk' : 'Keluar', t.kodeBarang || '-', t.supplier || '-', t.pemilik || '-',
-        t.jumlah || 0, t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0,
+        t.namaBarang || '-',
+        t.kodeBarang || '-',
+        t.supplier || '-',
+        t.pemilik || '-',
+        formatTanggal(t.tanggal),
         t.lokasi || '-',
-        t.jenis === 'masuk' ? formatTanggal(t.tanggal) : '-',
-        t.jenis === 'keluar' ? formatTanggal(t.tanggal) : '-',
-        t.operator || '-',
+        t.jumlah || 0,
+        t.qtyPerPallet ? Number(t.qtyPerPallet) : 0,
+        t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0,
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -4253,14 +4256,21 @@ function openKdsDetailModal(entryId) {
 
 // PERUBAHAN: Fungsi baru untuk menampilkan riwayat LENGKAP kombinasi (masuk + keluar)
 // dengan parameter lokasi. Dipanggil dari detail modal kombinasi.
+//
+// Sekarang transaksinya di-BREAK/dikelompokkan per BATCH TANGGAL KEDATANGAN
+// (bukan satu tabel gabungan semua tanggal) — supaya jelas terlihat, dari
+// batch kedatangan yang mana barang keluar tersebut sebenarnya diambil.
+// Satu grup = satu batch (kombinasi kode+supplier+pemilik+lokasi+tanggal
+// kedatangan yang sama persis), berisi transaksi MASUK batch itu sendiri
+// beserta semua transaksi KELUAR yang terikat/mengambil dari batch itu
+// (lihat tanggalBatchOf()).
 function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
   if (!kdsRiwayatBody) return;
   
   // Ambil SEMUA transaksi (masuk + keluar) untuk kombinasi ini
   const allHistory = currentEntries
     .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && 
-                  t.pemilik === pemilik && t.lokasi === lokasi)
-    .sort((a, b) => (b.tanggal || '').localeCompare(a.tanggal || '') || b.createdAt - a.createdAt);
+                  t.pemilik === pemilik && t.lokasi === lokasi);
   
   const first = allHistory[0] || currentEntries.find(t => t.kodeBarang === kodeBarang);
   const namaBarang = first ? first.namaBarang : kodeBarang;
@@ -4274,6 +4284,76 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
   const totalPallet = allHistory
     .filter(t => t.jumlahPallet != null)
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+
+  // Kelompokkan transaksi per batch tanggal kedatangan (tanggalBatchOf).
+  // Transaksi tanpa tanggal batch yang jelas (data lama) masuk ke grup
+  // "Tanpa Tanggal Kedatangan" di paling bawah, supaya tidak hilang.
+  const batchMap = new Map();
+  allHistory.forEach(t => {
+    const tglBatch = tanggalBatchOf(currentEntries, t) || '__tanpa-tanggal__';
+    if (!batchMap.has(tglBatch)) batchMap.set(tglBatch, []);
+    batchMap.get(tglBatch).push(t);
+  });
+  const batchKeys = [...batchMap.keys()].sort((a, b) => {
+    if (a === '__tanpa-tanggal__') return 1;
+    if (b === '__tanpa-tanggal__') return -1;
+    return b.localeCompare(a); // batch kedatangan terbaru di atas
+  });
+
+  const groupsHtml = batchKeys.map(tglBatch => {
+    const txs = batchMap.get(tglBatch).slice()
+      .sort((a, b) => (a.tanggal || '').localeCompare(b.tanggal || '') || a.createdAt - b.createdAt);
+    const masukBatch = txs.filter(t => t.jenis === 'masuk').reduce((s, t) => s + (t.jumlah || 0), 0);
+    const keluarBatch = txs.filter(t => t.jenis === 'keluar').reduce((s, t) => s + (t.jumlah || 0), 0);
+    const sisaBatch = masukBatch - keluarBatch;
+    const palletBatch = txs.filter(t => t.jumlahPallet != null)
+      .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+    const labelTanggal = tglBatch === '__tanpa-tanggal__' ? 'Tanpa Tanggal Kedatangan' : formatTanggal(tglBatch);
+
+    return `
+      <div class="kds-batch-group">
+        <div class="kds-batch-group-head">
+          <span class="kds-batch-group-title">📅 Kedatangan: ${escapeHtml(labelTanggal)}</span>
+          <span class="kds-batch-group-stok">Sisa Stok Batch: <strong class="${sisaBatch <= 0 ? 'kds-stok-highlight' : ''}">${sisaBatch.toLocaleString('id-ID')} pcs</strong></span>
+        </div>
+        <div class="kds-riwayat-table-wrap">
+          <table class="kds-riwayat-table">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Jenis</th>
+                <th>Tanggal</th>
+                <th>Tanggal &amp; Jam Transaksi</th>
+                <th>Jumlah PCS</th>
+                <th>PCS/Pallet</th>
+                <th>Total Pallet</th>
+                <th>Operator Input</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${txs.map((t, i) => `
+                <tr>
+                  <td>${i + 1}</td>
+                  <td><span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}</span></td>
+                  <td>${formatTanggal(t.tanggal)}</td>
+                  <td class="mono">${formatWaktu(t.createdAt)}</td>
+                  <td>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
+                  <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
+                  <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
+                  <td>${escapeHtml(t.operator || '-')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="kds-batch-group-foot">
+          <span>Masuk: <strong>${masukBatch.toLocaleString('id-ID')} pcs</strong></span>
+          <span>Keluar: <strong>${keluarBatch.toLocaleString('id-ID')} pcs</strong></span>
+          <span>Pallet: <strong>${roundPalletDisplay(palletBatch)} pallet</strong></span>
+        </div>
+      </div>
+    `;
+  }).join('');
   
   kdsRiwayatBody.innerHTML = `
     <div class="kds-modal-head">
@@ -4287,35 +4367,8 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
       </div>
     </div>
 
-    <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Riwayat Transaksi (${allHistory.length.toLocaleString('id-ID')})</div>
-    <div class="kds-riwayat-table-wrap">
-      <table class="kds-riwayat-table">
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>Jenis</th>
-            <th>Tanggal</th>
-            <th>Jumlah PCS</th>
-            <th>PCS/Pallet</th>
-            <th>Total Pallet</th>
-            <th>Operator Input</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${allHistory.length ? allHistory.map((t, i) => `
-            <tr>
-              <td>${i + 1}</td>
-              <td><span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}</span></td>
-              <td>${formatTanggal(t.tanggal)}</td>
-              <td>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
-              <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
-              <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
-              <td>${escapeHtml(t.operator || '-')}</td>
-            </tr>
-          `).join('') : `<tr><td colspan="7" class="empty-state">Belum ada transaksi.</td></tr>`}
-        </tbody>
-      </table>
-    </div>
+    <div class="kds-detail-section-title" style="border-top:none; padding-top:0;">Riwayat per Tanggal Kedatangan (${batchKeys.length.toLocaleString('id-ID')} batch, ${allHistory.length.toLocaleString('id-ID')} transaksi)</div>
+    ${batchKeys.length ? groupsHtml : `<div class="empty-state">Belum ada transaksi.</div>`}
 
     <div class="kds-summary-panel">
       <div class="kds-summary-grid">
@@ -4367,6 +4420,7 @@ function openKdsRiwayatModal(kodeBarang, supplier, pemilik) {
           <tr>
             <th>No</th>
             <th>Tanggal Kedatangan</th>
+            <th>Tanggal &amp; Jam Transaksi</th>
             <th>Lokasi Rak</th>
             <th>Jumlah PCS</th>
             <th>PCS/Pallet</th>
@@ -4379,13 +4433,14 @@ function openKdsRiwayatModal(kodeBarang, supplier, pemilik) {
             <tr>
               <td>${i + 1}</td>
               <td>${formatTanggal(t.tanggal)}</td>
+              <td class="mono">${formatWaktu(t.createdAt)}</td>
               <td class="mono">${escapeHtml(t.lokasi || '-')}</td>
               <td>${(t.jumlah || 0).toLocaleString('id-ID')} pcs</td>
               <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
               <td>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</td>
               <td>${escapeHtml(t.operator || '-')}</td>
             </tr>
-          `).join('') : `<tr><td colspan="7" class="empty-state">Belum ada riwayat kedatangan.</td></tr>`}
+          `).join('') : `<tr><td colspan="8" class="empty-state">Belum ada riwayat kedatangan.</td></tr>`}
         </tbody>
       </table>
     </div>
