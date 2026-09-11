@@ -1284,6 +1284,9 @@ body.role-operator .katalog-mode-tabs { display: none; }
   border: 2px solid currentColor; transform: rotate(-1deg);
 }
 .badge-masuk { color: var(--hijau); background: var(--hijau-soft); }
+.kds-riwayat-jenis-tgl { margin-top: 4px; font-size: 10.5px; font-weight: 600; color: var(--text-muted); }
+.kds-riwayat-table tbody tr td:nth-child(2) .badge-masuk ~ .kds-riwayat-jenis-tgl { color: var(--hijau); }
+.kds-riwayat-table tbody tr td:nth-child(2) .badge-keluar ~ .kds-riwayat-jenis-tgl { color: var(--oranye); }
 .badge-keluar { color: var(--oranye); background: var(--oranye-soft); }
 .ticket-time { margin-left: auto; font-size: 12px; color: var(--text-muted); }
 .ticket-actions { margin-left: auto; display: flex; gap: 8px; }
@@ -1576,6 +1579,10 @@ body.role-operator .katalog-mode-tabs { display: none; }
   color: var(--text-muted); letter-spacing: 0.3px;
 }
 .lokasi-map-cell.is-terisi .lokasi-map-code { color: var(--hijau); }
+
+.lokasi-map-pallet {
+  font-size: 9.5px; font-weight: 600; color: var(--ink-soft); line-height: 1.2;
+}
 
 .lokasi-map-barang {
   font-size: 10.5px; font-weight: 600; color: var(--ink-soft); line-height: 1.25;

@@ -4323,7 +4323,6 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi, tang
                 <tr>
                   <th>No</th>
                   <th>Jenis</th>
-                  <th>Tanggal</th>
                   <th>Tanggal &amp; Jam Transaksi</th>
                   <th>Jumlah PCS</th>
                   <th>PCS/Pallet</th>
@@ -4335,8 +4334,10 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi, tang
                 ${txs.map((t, i) => `
                   <tr>
                     <td>${i + 1}</td>
-                    <td><span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}</span></td>
-                    <td>${formatTanggal(t.tanggal)}</td>
+                    <td>
+                      <span class="badge-jenis ${t.jenis === 'masuk' ? 'badge-masuk' : 'badge-keluar'}">${t.jenis === 'masuk' ? 'MASUK' : 'KELUAR'}</span>
+                      <div class="kds-riwayat-jenis-tgl">${formatTanggal(t.tanggal)}</div>
+                    </td>
                     <td class="mono">${formatWaktu(t.createdAt)}</td>
                     <td>${(t.jumlah || 0).toLocaleString('id-ID')}</td>
                     <td>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'}</td>
@@ -5319,7 +5320,10 @@ function openBlokModal(blok) {
     cell.title = s.status === 'terisi'
       ? `${s.lokasi} — Terisi (${s.qty.toLocaleString('id-ID')} pcs${s.pallet ? `, ${roundPalletDisplay(s.pallet)} pallet` : ''})`
       : `${s.lokasi} — Kosong`;
-    cell.textContent = shortLabel;
+    cell.innerHTML = `
+      <span class="lokasi-map-code">${escapeHtml(shortLabel)}</span>
+      ${s.status === 'terisi' ? `<span class="lokasi-map-pallet">${s.pallet ? roundPalletDisplay(s.pallet) : 0} pallet</span>` : ''}
+    `;
     cell.addEventListener('click', () => {
       if (s.status === 'terisi') {
         openLokasiModal(s.lokasi);
