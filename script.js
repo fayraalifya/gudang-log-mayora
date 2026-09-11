@@ -4161,7 +4161,7 @@ function openKdsDetailModalForCombo(comboKey) {
   `;
   kdsDetailBody.querySelector('#kds-btn-tutup-detail').addEventListener('click', closeKdsDetailModal);
   kdsDetailBody.querySelector('#kds-btn-lihat-riwayat-combo').addEventListener('click', () => {
-    openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi);
+    openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi, tanggalKedatangan);
   });
 
   kdsDetailModal.hidden = false;
@@ -4256,7 +4256,7 @@ function openKdsDetailModal(entryId) {
 // kedatangan yang sama persis), berisi transaksi MASUK batch itu sendiri
 // beserta semua transaksi KELUAR yang terikat/mengambil dari batch itu
 // (lihat tanggalBatchOf()).
-function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
+function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi, tanggalKedatanganAwal) {
   if (!kdsRiwayatBody) return;
   
   // Ambil SEMUA transaksi (masuk + keluar) untuk kombinasi ini
@@ -4292,14 +4292,7 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
     return b.localeCompare(a); // batch kedatangan terbaru di atas
   });
 
-  // Opsi filter dropdown "Tanggal Kedatangan" — satu opsi per batch yang
-  // benar-benar ada di riwayat ini, plus "Semua Tanggal" di paling atas.
-  const filterOptionsHtml = ['<option value="__semua__">Semua Tanggal</option>']
-    .concat(batchKeys.map(tglBatch => {
-      const label = tglBatch === '__tanpa-tanggal__' ? 'Tanpa Tanggal Kedatangan' : formatTanggal(tglBatch);
-      return `<option value="${escapeHtml(tglBatch)}">${escapeHtml(label)}</option>`;
-    }))
-    .join('');
+
 
   // Render ulang daftar batch + ringkasan sesuai batch tanggal kedatangan
   // yang dipilih di filter ('__semua__' = tampilkan semua seperti biasa).
@@ -4321,8 +4314,8 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
       return `
         <div class="kds-batch-group">
           <div class="kds-batch-group-head">
-            <span class="kds-batch-group-title">📅 Kedatangan: ${escapeHtml(labelTanggal)}</span>
-            <span class="kds-batch-group-stok">Sisa Stok Batch: <strong class="${sisaBatch <= 0 ? 'kds-stok-highlight' : ''}">${sisaBatch.toLocaleString('id-ID')} pcs</strong></span>
+            <span class="kds-batch-group-title">${escapeHtml(labelTanggal)}</span>
+            <span class="kds-batch-group-stok"><strong class="${sisaBatch <= 0 ? 'kds-stok-highlight' : ''}">${sisaBatch.toLocaleString('id-ID')} pcs</strong></span>
           </div>
           <div class="kds-riwayat-table-wrap">
             <table class="kds-riwayat-table">
@@ -4390,6 +4383,14 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
     `;
   }
 
+  // Gunakan tanggal batch yang sedang dilihat user (kalau ada & valid) sebagai
+  // default, supaya modal "Riwayat Lengkap" konsisten dengan batch yang baru
+  // saja diklik dari detail. Kalau tidak ada/nggak cocok, baru fallback ke
+  // batch paling baru dari batchKeys.
+  const defaultTanggal = (tanggalKedatanganAwal && batchKeys.includes(tanggalKedatanganAwal))
+    ? tanggalKedatanganAwal
+    : (batchKeys.length > 0 ? batchKeys[0] : '__semua__');
+
   kdsRiwayatBody.innerHTML = `
     <div class="kds-modal-head">
       <div class="kds-modal-head-icon">📦</div>
@@ -4402,24 +4403,13 @@ function openKdsRiwayatModalForCombo(kodeBarang, supplier, pemilik, lokasi) {
       </div>
     </div>
 
-    <div class="kds-riwayat-filter-row">
-      <label for="kds-riwayat-filter-tanggal">Filter Tanggal Kedatangan</label>
-      <select id="kds-riwayat-filter-tanggal" class="kds-riwayat-filter-select">
-        ${filterOptionsHtml}
-      </select>
-    </div>
-
-    <div id="kds-riwayat-content">${renderRiwayatContent('__semua__')}</div>
+    <div id="kds-riwayat-content">${renderRiwayatContent(defaultTanggal)}</div>
 
     <div class="modal-actions">
       <button type="button" class="btn-secondary modal-cancel" id="kds-btn-tutup-riwayat">Tutup</button>
     </div>
   `;
   kdsRiwayatBody.querySelector('#kds-btn-tutup-riwayat').addEventListener('click', closeKdsRiwayatModal);
-  kdsRiwayatBody.querySelector('#kds-riwayat-filter-tanggal').addEventListener('change', (e) => {
-    const content = kdsRiwayatBody.querySelector('#kds-riwayat-content');
-    if (content) content.innerHTML = renderRiwayatContent(e.target.value);
-  });
 
   kdsRiwayatModal.hidden = false;
 }
