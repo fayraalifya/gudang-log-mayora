@@ -4902,7 +4902,6 @@ form.addEventListener('submit', async (e) => {
   if (!tanggal) return showError(jenis === 'keluar' ? 'Tanggal penginputan wajib diisi.' : 'Tanggal kedatangan wajib diisi.');
   if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
   if (!qtyPerPalletRaw || !qtyPerPallet || qtyPerPallet <= 0) return showError('Qty per pallet wajib diisi dengan angka lebih dari 0.');
-  if (!keterangan) return showError('Keterangan wajib diisi.');
 
   if (jenis === 'keluar') {
     // Wajib sudah pilih satu kombinasi dari kartu "Stok Tersedia" — ini
