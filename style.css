@@ -1940,8 +1940,8 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .mode-tab.is-active { background: var(--merah); color: var(--text-on-dark); }
 /* ==========================================================================
    PERINGATAN STOK — banner di Dashboard, muncul otomatis kalau ada barang
-   kosong/menipis. Warna pakai token yang sudah ada (merah-flag untuk
-   kosong, emas untuk menipis) — konsisten sama bagian lain aplikasi.
+   kosong. Warna pakai token yang sudah ada (merah-flag) — konsisten
+   sama bagian lain aplikasi.
 ========================================================================== */
 .stok-warning {
   background: var(--merah-flag-soft); border: 1px solid var(--merah-flag);
@@ -3130,7 +3130,6 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   padding: 2px 7px; border-radius: 20px; font-weight: 700; margin-top: 2px;
 }
 .kds-stok-badge.tersedia { background: var(--hijau-soft); color: var(--hijau); }
-.kds-stok-badge.menipis { background: var(--oranye-soft); color: var(--oranye); }
 .kds-stok-badge.habis { background: var(--merah-flag-soft); color: var(--merah-flag); }
 
 .kds-active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; min-height: 30px; }

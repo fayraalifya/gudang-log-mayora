@@ -2659,12 +2659,6 @@ window.addEventListener('online', updatePendingSyncUI);
 window.addEventListener('offline', updatePendingSyncUI);
 
 
-// Ambang batas "stok menipis" — barang dengan stok di bawah angka ini
-// (tapi masih di atas 0) dianggap perlu diperhatikan. Barang dengan stok
-// pas 0 selalu dianggap "kosong" apapun ambang batasnya. Gampang diubah
-// kalau nanti mau beda per jenis barang — untuk sekarang satu angka global.
-const AMBANG_STOK_MENIPIS = 20;
-
 function renderStokWarning() {
   if (currentRole() !== 'admin') return;
   const wrap = document.getElementById('stok-warning');
@@ -2675,7 +2669,7 @@ function renderStokWarning() {
   const items = buildStokList(currentEntries);
   const perluPerhatian = items
     .map(it => ({ ...it, stok: it.masuk - it.keluar }))
-    .filter(it => it.stok <= AMBANG_STOK_MENIPIS)
+    .filter(it => it.stok <= AMBANG_STOK_HABIS)
     .sort((a, b) => a.stok - b.stok);
 
   updateAdminNavBadge('katalog', perluPerhatian.length);
@@ -3507,7 +3501,6 @@ function kdsBuildCombinationStats(combo) {
   // Tentukan status stok
   let status = 'tersedia';
   if (stokSaatIni <= AMBANG_STOK_HABIS) status = 'habis';
-  else if (stokSaatIni < AMBANG_STOK_MENIPIS) status = 'menipis';
   
   return {
     ...combo,
@@ -3526,7 +3519,6 @@ function kdsBuildCombinationStats(combo) {
 function kdsStatusLevel(t) {
   const stok = getStokKombinasi(currentEntries, t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tanggalBatchOf(currentEntries, t));
   if (stok <= AMBANG_STOK_HABIS) return 'habis';
-  if (stok < AMBANG_STOK_MENIPIS) return 'menipis';
   return 'tersedia';
 }
 
@@ -3662,11 +3654,11 @@ function kdsRenderPagination(totalPages, totalItems) {
   controls.appendChild(mkBtn('»', kdsPage + 1, { disabled: kdsPage >= totalPages }));
 }
 
-// Label + kelas badge untuk status stok (tersedia/menipis/habis), dipakai
+// Label + kelas badge untuk status stok (tersedia/habis), dipakai
 // bareng oleh kolom "Stok Saat Ini" di tabel Katalog & Stok maupun filter
 // Status Stok, supaya keduanya selalu konsisten satu sama lain.
 function kdsStatusLabel(level) {
-  return level === 'habis' ? 'Habis' : level === 'menipis' ? 'Menipis' : 'Tersedia';
+  return level === 'habis' ? 'Habis' : 'Tersedia';
 }
 
 // Build HTML row dari SATU transaksi individual (masuk ATAU keluar) — gaya
@@ -4148,7 +4140,7 @@ function openKdsDetailModalForCombo(comboKey) {
           <span>Status Stok</span>
           <strong>
             <span class="kds-stok-badge ${stats.status}" style="display:inline-block;">
-              ${stats.status === 'habis' ? 'Habis' : stats.status === 'menipis' ? 'Menipis' : 'Tersedia'}
+              ${stats.status === 'habis' ? 'Habis' : 'Tersedia'}
             </span>
           </strong>
         </div>

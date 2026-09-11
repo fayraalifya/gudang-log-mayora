@@ -594,12 +594,12 @@
       <!-- RINGKASAN -->
       <section id="ringkasan" class="ringkasan">
 
-        <!-- PERINGATAN STOK — muncul kalau ada barang kosong atau menipis,
+        <!-- PERINGATAN STOK — muncul kalau ada barang kosong,
              supaya admin tahu duluan sebelum operator lapor "stok habis". -->
         <div id="stok-warning" class="stok-warning" hidden>
           <div class="stok-warning-head">
             <span class="stok-warning-icon">⚠️</span>
-            <span class="stok-warning-title">Perlu perhatian — <span id="stok-warning-count">0</span> barang stoknya menipis/kosong</span>
+            <span class="stok-warning-title">Perlu perhatian — <span id="stok-warning-count">0</span> barang stoknya kosong</span>
           </div>
           <div class="stok-warning-list" id="stok-warning-list"></div>
         </div>
@@ -936,7 +936,6 @@
               <select id="kds-status-stok" class="kds-native-select">
                 <option value="semua">Semua status</option>
                 <option value="tersedia">Tersedia</option>
-                <option value="menipis">Menipis</option>
                 <option value="habis">Habis</option>
               </select>
             </div>
