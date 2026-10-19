@@ -156,7 +156,7 @@ function getKombinasiTersedia(entries, kodeBarang) {
     if (!tglBatch) return; // transaksi tanpa tanggal kedatangan yang jelas tidak bisa diikat per batch
     const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tglBatch);
     if (!map.has(key)) {
-      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, tanggalKedatangan: tglBatch, stok: 0, pallet: 0, qtyPerPallet: null });
+      map.set(key, { supplier: t.supplier, pemilik: t.pemilik, lokasi: t.lokasi, tanggalKedatangan: tglBatch, stok: 0, pallet: 0, qtyPerPallet: null, qtyPerBox: null });
     }
     const c = map.get(key);
     const arah = t.jenis === 'masuk' ? 1 : -1;
@@ -170,6 +170,7 @@ function getKombinasiTersedia(entries, kodeBarang) {
     // Diambil dari transaksi MASUK-nya saja (transaksi KELUAR tidak
     // menentukan ulang qty per pallet suatu batch).
     if (t.jenis === 'masuk' && t.qtyPerPallet != null) c.qtyPerPallet = t.qtyPerPallet;
+    if (t.jenis === 'masuk' && t.qtyPerBox != null) c.qtyPerBox = t.qtyPerBox;
   });
   return [...map.values()].filter(c => c.stok > 0).sort((a, b) => {
     if (a.tanggalKedatangan !== b.tanggalKedatangan) return a.tanggalKedatangan < b.tanggalKedatangan ? -1 : 1;
@@ -3347,8 +3348,10 @@ function setJenis(j) {
   // berlaku lagi, jadi field Qty per Pallet juga dilepas kuncinya & dikosongkan.
   if (typeof inputQtyPallet !== 'undefined' && inputQtyPallet) {
     inputQtyPallet.value = '';
+    if (typeof inputQtyBox !== 'undefined' && inputQtyBox) inputQtyBox.value = '';
     if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
     if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
+    if (typeof hitungJumlahBox === 'function') hitungJumlahBox();
   }
   if (typeof selBarang !== 'undefined') {
     const barangDipilih = selBarang.getValue();
@@ -3383,8 +3386,10 @@ selBarang = setupSearchableSelect({
     // sudah tidak relevan, jadi Qty per Pallet ikut dilepas & dikosongkan.
     if (typeof inputQtyPallet !== 'undefined' && inputQtyPallet) {
       inputQtyPallet.value = '';
+      if (typeof inputQtyBox !== 'undefined' && inputQtyBox) inputQtyBox.value = '';
       if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
       if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
+      if (typeof hitungJumlahBox === 'function') hitungJumlahBox();
     }
     refreshKombinasiUI(o.kode);
   },
@@ -4212,6 +4217,10 @@ function openKdsDetailModal(entryId) {
           <strong>${t.qtyPerPallet ? Number(t.qtyPerPallet).toLocaleString('id-ID') : '-'} pcs/pallet</strong>
         </div>
         <div class="kds-detail-item">
+          <span>PCS per Box/Ikat</span>
+          <strong>${t.qtyPerBox ? Number(t.qtyPerBox).toLocaleString('id-ID') : '-'} pcs/box</strong>
+        </div>
+        <div class="kds-detail-item">
           <span>Total Pallet</span>
           <strong>${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0} pallet</strong>
         </div>
@@ -4651,6 +4660,8 @@ const inputTanggal = document.getElementById('input-tanggal');
 const inputJumlah = document.getElementById('input-jumlah');
 const inputQtyPallet = document.getElementById('input-qty-pallet');
 const inputJumlahPallet = document.getElementById('input-jumlah-pallet');
+const inputQtyBox = document.getElementById('input-qty-box');
+const inputJumlahBox = document.getElementById('input-jumlah-box');
 const inputKeterangan = document.getElementById('input-keterangan');
 const formError = document.getElementById('form-error');
 const form = document.getElementById('form-laporan');
@@ -4677,6 +4688,7 @@ function attachThousandsFormatting(input) {
 }
 attachThousandsFormatting(inputJumlah);
 attachThousandsFormatting(inputQtyPallet);
+attachThousandsFormatting(inputQtyBox);
 
 function hitungJumlahPallet() {
   const jumlah = parseFormattedNumber(inputJumlah.value);
@@ -4693,6 +4705,20 @@ function hitungJumlahPallet() {
 }
 inputJumlah.addEventListener('input', hitungJumlahPallet);
 inputQtyPallet.addEventListener('input', hitungJumlahPallet);
+
+// Jumlah Box/Ikat = Jumlah Barang (pcs) / Qty per Box/Ikat (pcs), otomatis.
+function hitungJumlahBox() {
+  const jumlah = parseFormattedNumber(inputJumlah.value);
+  const qtyBox = parseFormattedNumber(inputQtyBox.value);
+  if (!jumlah || !qtyBox || qtyBox <= 0) {
+    inputJumlahBox.value = '';
+    return;
+  }
+  const dibulatkan = Math.round((jumlah / qtyBox) * 100) / 100;
+  inputJumlahBox.value = dibulatkan.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+}
+inputJumlah.addEventListener('input', hitungJumlahBox);
+inputQtyBox.addEventListener('input', hitungJumlahBox);
 
 // Wrapper .input-icon dari field Qty per Pallet — dipakai untuk kasih efek
 // visual "terkunci/otomatis" (readonly) begitu kombinasi Stok Tersedia
@@ -4719,6 +4745,23 @@ function setQtyPalletFromKombinasi(c) {
     if (hint) hint.hidden = true;
   }
   hitungJumlahPallet();
+
+  // Qty per Box/Ikat — sama seperti Qty per Pallet, ikut terisi & terkunci
+  // dari batch kalau batch tsb sudah punya datanya.
+  const boxWrap = inputQtyBox.closest('.input-icon');
+  const boxHint = document.getElementById('qty-box-hint');
+  if (c && c.qtyPerBox != null && c.qtyPerBox > 0) {
+    inputQtyBox.value = Number(c.qtyPerBox).toLocaleString('id-ID');
+    inputQtyBox.readOnly = true;
+    if (boxWrap) boxWrap.classList.add('is-locked');
+    if (boxHint) boxHint.hidden = false;
+  } else {
+    inputQtyBox.value = '';
+    inputQtyBox.readOnly = false;
+    if (boxWrap) boxWrap.classList.remove('is-locked');
+    if (boxHint) boxHint.hidden = true;
+  }
+  hitungJumlahBox();
 }
 
 // Lepas kunci field Qty per Pallet & kosongkan — dipanggil setiap kali
@@ -4730,6 +4773,11 @@ function resetQtyPalletLock() {
   if (qtyPalletWrap) qtyPalletWrap.classList.remove('is-locked');
   const hint = document.getElementById('qty-pallet-hint');
   if (hint) hint.hidden = true;
+  inputQtyBox.readOnly = false;
+  const boxWrap = inputQtyBox.closest('.input-icon');
+  if (boxWrap) boxWrap.classList.remove('is-locked');
+  const boxHint = document.getElementById('qty-box-hint');
+  if (boxHint) boxHint.hidden = true;
 }
 
 // Helper untuk menampilkan angka jumlah pallet (bisa desimal, mis. hasil
@@ -4892,8 +4940,10 @@ function resetForm() {
   setSupplierPemilikLocked(false);
   inputJumlah.value = '';
   inputQtyPallet.value = '';
+  inputQtyBox.value = '';
   resetQtyPalletLock();
   inputJumlahPallet.value = '';
+  inputJumlahBox.value = '';
   inputKeterangan.value = '';
   inputTanggal.value = todayISO();
   setJenis('masuk');
@@ -4927,6 +4977,9 @@ form.addEventListener('submit', async (e) => {
   const qtyPerPallet = qtyPerPalletRaw ? qtyPerPalletParsed : null;
   const jumlahPalletParsed = parseFormattedNumber(inputJumlahPallet.value);
   const jumlahPallet = inputJumlahPallet.value ? jumlahPalletParsed : null;
+  const qtyPerBoxRaw = inputQtyBox.value.trim();
+  const qtyPerBox = qtyPerBoxRaw ? parseFormattedNumber(qtyPerBoxRaw) : null;
+  const jumlahBox = inputJumlahBox.value ? parseFormattedNumber(inputJumlahBox.value) : null;
   const keterangan = inputKeterangan.value.trim();
 
   if (!operator) return showError('Nama operator wajib diisi.');
@@ -4937,6 +4990,8 @@ form.addEventListener('submit', async (e) => {
   if (!tanggal) return showError(jenis === 'keluar' ? 'Tanggal penginputan wajib diisi.' : 'Tanggal kedatangan wajib diisi.');
   if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
   if (!qtyPerPalletRaw || !qtyPerPallet || qtyPerPallet <= 0) return showError('Qty per pallet wajib diisi dengan angka lebih dari 0.');
+  // Qty per Box/Ikat opsional, tapi kalau diisi harus angka > 0
+  if (qtyPerBoxRaw && (!qtyPerBox || qtyPerBox <= 0)) return showError('Qty per Box/Ikat harus berupa angka lebih dari 0.');
 
   if (jenis === 'keluar') {
     // Wajib sudah pilih satu kombinasi dari kartu "Stok Tersedia" — ini
@@ -4995,7 +5050,7 @@ form.addEventListener('submit', async (e) => {
     const now = Date.now();
     const entryData = {
       jenis, tipe: 'transaksi', operator, kodeBarang: barang.kode, namaBarang: barang.nama,
-      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, keterangan, tanggal,
+      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, qtyPerBox, jumlahBox, keterangan, tanggal,
       // Untuk laporan KELUAR, simpan tanggal kedatangan batch yang diambil
       // (dari kombinasi yang dikunci operator lewat "Stok Tersedia") supaya
       // batch ini benar-benar terikat termasuk tanggal kedatangannya, bukan
@@ -7113,6 +7168,8 @@ function openComboRiwayatView(kode, supplier, pemilik, lokasi, backTo) {
           <div class="riwayat-tx-grid">
             <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
             ${t.qtyPerPallet ? `<div><span class="lbl">PCS per Pallet</span><span>${t.qtyPerPallet.toLocaleString('id-ID')}</span></div>` : ''}
+            ${t.qtyPerBox ? `<div><span class="lbl">PCS per Box/Ikat</span><span>${t.qtyPerBox.toLocaleString('id-ID')}</span></div>` : ''}
+            ${t.jumlahBox ? `<div><span class="lbl">Total Box/Ikat</span><span>${Number(t.jumlahBox).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span></div>` : ''}
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
@@ -7455,6 +7512,8 @@ function openRiwayatTransaksiView(kode, lokasi) {
           <div class="riwayat-tx-grid">
             <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
             ${t.qtyPerPallet ? `<div><span class="lbl">PCS per Pallet</span><span>${t.qtyPerPallet.toLocaleString('id-ID')}</span></div>` : ''}
+            ${t.qtyPerBox ? `<div><span class="lbl">PCS per Box/Ikat</span><span>${t.qtyPerBox.toLocaleString('id-ID')}</span></div>` : ''}
+            ${t.jumlahBox ? `<div><span class="lbl">Total Box/Ikat</span><span>${Number(t.jumlahBox).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span></div>` : ''}
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
@@ -7530,6 +7589,7 @@ function buildTicketCard(t) {
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
+        ${t.qtyPerBox != null ? `<div><span class="lbl">Qty/Box/Ikat: </span>${fmtQty(t.qtyPerBox)} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
@@ -7968,6 +8028,7 @@ function renderRiwayatOperator() {
         <div class="ticket-lokasi-view"><span class="lbl">Lokasi: </span><button type="button" class="link-barang link-lokasi">${escapeHtml(t.lokasi)}</button></div>
         <div class="ticket-jumlah-view"><span class="lbl">Jumlah: </span>${fmtQty(t.jumlah)} pcs</div>
         ${t.qtyPerPallet != null ? `<div><span class="lbl">Qty/Pallet: </span>${fmtQty(t.qtyPerPallet)} pcs</div>` : ''}
+        ${t.qtyPerBox != null ? `<div><span class="lbl">Qty/Box/Ikat: </span>${fmtQty(t.qtyPerBox)} pcs</div>` : ''}
         ${t.jumlahPallet != null ? `<div><span class="lbl">Jumlah Pallet: </span>${fmtQty(t.jumlahPallet)}</div>` : ''}
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
