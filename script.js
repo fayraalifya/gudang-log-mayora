@@ -3771,11 +3771,18 @@ function kdsBuildGroupedData(filtered) {
 }
 
 function kdsBuildGroupedHtml(groups) {
-  return groups.map(g => `
+  return groups.map(g => {
+  // Total per kode barang (semua baris hasil filter di grup ini) — memakai
+  // angka yang sama dengan kolom "Jumlah Pallet" & "Stok Saat Ini" di tabel.
+  const totalPallet = g.combos.reduce((sum, c) => sum + (c.sisaPallet || 0), 0);
+  const totalStok = g.combos.reduce((sum, c) => sum + (c.stokSaatIni || 0), 0);
+  return `
     <div class="kds-group">
       <div class="kds-group-head">
         <span class="kds-group-kode">Kode: ${escapeHtml(g.kodeBarang || '-')}</span>
         <span class="kds-group-nama">${escapeHtml(g.namaBarang || '-')}</span>
+        <span class="kds-group-total" title="Total Jumlah Pallet kode barang ini">Total Pallet: <strong>${totalPallet ? roundPalletDisplay(totalPallet) : 0} pallet</strong></span>
+        <span class="kds-group-total" title="Total Stok Saat Ini kode barang ini">Total Stok Saat Ini: <strong>${totalStok.toLocaleString('id-ID')} pcs</strong></span>
         <span class="kds-group-pemilik">Pemilik: ${escapeHtml(g.pemilik || '-')}</span>
       </div>
       <div class="kds-table-wrap kds-group-table-wrap">
@@ -3818,7 +3825,8 @@ function kdsBuildGroupedHtml(groups) {
         </table>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function renderKdsResults() {
