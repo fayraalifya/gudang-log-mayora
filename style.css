@@ -1563,8 +1563,11 @@ body.role-operator .katalog-mode-tabs { display: none; }
   gap: 6px; max-height: 400px; overflow-y: auto; padding: 2px;
 }
 @media (max-width: 640px) {
-  .lokasi-map-grid { grid-template-columns: repeat(4, 1fr); }
+  .lokasi-map-grid:not(.is-rack-layout) { grid-template-columns: repeat(4, 1fr); }
 }
+/* Susunan rak: kolom = lorong, baris = tingkat (07 atas -> 01 bawah) */
+.lokasi-map-grid.is-rack-layout { overflow-x: auto; }
+.lokasi-map-cell.is-none { visibility: hidden; border: none; min-height: 48px; }
 .lokasi-map-cell {
   display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
   border-radius: 8px; padding: 7px 8px; text-align: left;

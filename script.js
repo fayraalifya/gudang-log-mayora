@@ -5310,18 +5310,17 @@ function openBlokModal(blok) {
     </div>
   `;
   const grid = modalBody.querySelector('#lokasi-map-grid');
-  data.slots.forEach(s => {
+
+  // Buat satu sel peta (dipakai di susunan baru maupun fallback)
+  const buatSel = (s, labelPendek) => {
     const cell = document.createElement('button');
     cell.type = 'button';
     cell.className = `lokasi-map-cell is-${s.status}`;
-    // Tampilkan bagian kode lokasi setelah huruf blok saja (lebih ringkas
-    // di dalam grid kecil), tapi title tetap kode lengkap.
-    const shortLabel = s.lokasi.replace(new RegExp('^' + data.blok + '[-_./\\s]?'), '') || s.lokasi;
     cell.title = s.status === 'terisi'
       ? `${s.lokasi} — Terisi (${s.qty.toLocaleString('id-ID')} pcs${s.pallet ? `, ${roundPalletDisplay(s.pallet)} pallet` : ''})`
       : `${s.lokasi} — Kosong`;
     cell.innerHTML = `
-      <span class="lokasi-map-code">${escapeHtml(shortLabel)}</span>
+      <span class="lokasi-map-code">${escapeHtml(labelPendek)}</span>
       ${s.status === 'terisi' ? `<span class="lokasi-map-pallet">${s.pallet ? roundPalletDisplay(s.pallet) : 0} pallet</span>` : ''}
     `;
     cell.addEventListener('click', () => {
@@ -5331,8 +5330,47 @@ function openBlokModal(blok) {
         showToast(`Lokasi ${s.lokasi} masih kosong — belum ada stok tercatat.`, 'info');
       }
     });
-    grid.appendChild(cell);
+    return cell;
+  };
+
+  // Susunan: KOLOM = lorong (A-01, A-02, A-03, ...) kiri -> kanan,
+  // BARIS = tingkat dari paling atas (07) turun ke paling bawah (01).
+  // Format kode lokasi: BLOK-LORONG-TINGKAT (mis. A-02-05).
+  const parsed = data.slots.map(s => {
+    const m = String(s.lokasi).trim().match(/^([A-Za-z0-9]+)[-_./\s]+(\d+)[-_./\s]+(\d+)$/);
+    return m ? { s, lorong: parseInt(m[2], 10), tingkat: parseInt(m[3], 10) } : null;
   });
+  const semuaValid = parsed.length > 0 && parsed.every(Boolean);
+
+  if (semuaValid) {
+    const lorongList = [...new Set(parsed.map(p => p.lorong))].sort((a, b) => a - b);
+    const maxTingkat = Math.max(...parsed.map(p => p.tingkat));
+    const pad2 = n => String(n).padStart(2, '0');
+    const peta = new Map(parsed.map(p => [`${p.lorong}-${p.tingkat}`, p.s]));
+
+    grid.classList.add('is-rack-layout');
+    grid.style.gridTemplateColumns = `repeat(${lorongList.length}, minmax(86px, 1fr))`;
+
+    for (let t = maxTingkat; t >= 1; t--) {
+      lorongList.forEach(l => {
+        const s = peta.get(`${l}-${t}`);
+        if (s) {
+          grid.appendChild(buatSel(s, `${data.blok}-${pad2(l)}-${pad2(t)}`));
+        } else {
+          const kosong = document.createElement('div');
+          kosong.className = 'lokasi-map-cell is-none';
+          kosong.setAttribute('aria-hidden', 'true');
+          grid.appendChild(kosong);
+        }
+      });
+    }
+  } else {
+    // Fallback: format kode tidak standar -> tampilkan urut biasa
+    data.slots.forEach(s => {
+      const shortLabel = s.lokasi.replace(new RegExp('^' + data.blok + '[-_./\\s]?'), '') || s.lokasi;
+      grid.appendChild(buatSel(s, shortLabel));
+    });
+  }
   itemModal.hidden = false;
 }
 
