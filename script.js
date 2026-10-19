@@ -3351,7 +3351,6 @@ function setJenis(j) {
     if (typeof inputQtyBox !== 'undefined' && inputQtyBox) inputQtyBox.value = '';
     if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
     if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
-    if (typeof hitungJumlahBox === 'function') hitungJumlahBox();
   }
   if (typeof selBarang !== 'undefined') {
     const barangDipilih = selBarang.getValue();
@@ -3389,7 +3388,6 @@ selBarang = setupSearchableSelect({
       if (typeof inputQtyBox !== 'undefined' && inputQtyBox) inputQtyBox.value = '';
       if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
       if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
-      if (typeof hitungJumlahBox === 'function') hitungJumlahBox();
     }
     refreshKombinasiUI(o.kode);
   },
@@ -4661,7 +4659,6 @@ const inputJumlah = document.getElementById('input-jumlah');
 const inputQtyPallet = document.getElementById('input-qty-pallet');
 const inputJumlahPallet = document.getElementById('input-jumlah-pallet');
 const inputQtyBox = document.getElementById('input-qty-box');
-const inputJumlahBox = document.getElementById('input-jumlah-box');
 const inputKeterangan = document.getElementById('input-keterangan');
 const formError = document.getElementById('form-error');
 const form = document.getElementById('form-laporan');
@@ -4706,19 +4703,6 @@ function hitungJumlahPallet() {
 inputJumlah.addEventListener('input', hitungJumlahPallet);
 inputQtyPallet.addEventListener('input', hitungJumlahPallet);
 
-// Jumlah Box/Ikat = Jumlah Barang (pcs) / Qty per Box/Ikat (pcs), otomatis.
-function hitungJumlahBox() {
-  const jumlah = parseFormattedNumber(inputJumlah.value);
-  const qtyBox = parseFormattedNumber(inputQtyBox.value);
-  if (!jumlah || !qtyBox || qtyBox <= 0) {
-    inputJumlahBox.value = '';
-    return;
-  }
-  const dibulatkan = Math.round((jumlah / qtyBox) * 100) / 100;
-  inputJumlahBox.value = dibulatkan.toLocaleString('id-ID', { maximumFractionDigits: 2 });
-}
-inputJumlah.addEventListener('input', hitungJumlahBox);
-inputQtyBox.addEventListener('input', hitungJumlahBox);
 
 // Wrapper .input-icon dari field Qty per Pallet — dipakai untuk kasih efek
 // visual "terkunci/otomatis" (readonly) begitu kombinasi Stok Tersedia
@@ -4761,7 +4745,6 @@ function setQtyPalletFromKombinasi(c) {
     if (boxWrap) boxWrap.classList.remove('is-locked');
     if (boxHint) boxHint.hidden = true;
   }
-  hitungJumlahBox();
 }
 
 // Lepas kunci field Qty per Pallet & kosongkan — dipanggil setiap kali
@@ -4943,7 +4926,6 @@ function resetForm() {
   inputQtyBox.value = '';
   resetQtyPalletLock();
   inputJumlahPallet.value = '';
-  inputJumlahBox.value = '';
   inputKeterangan.value = '';
   inputTanggal.value = todayISO();
   setJenis('masuk');
@@ -4979,7 +4961,6 @@ form.addEventListener('submit', async (e) => {
   const jumlahPallet = inputJumlahPallet.value ? jumlahPalletParsed : null;
   const qtyPerBoxRaw = inputQtyBox.value.trim();
   const qtyPerBox = qtyPerBoxRaw ? parseFormattedNumber(qtyPerBoxRaw) : null;
-  const jumlahBox = inputJumlahBox.value ? parseFormattedNumber(inputJumlahBox.value) : null;
   const keterangan = inputKeterangan.value.trim();
 
   if (!operator) return showError('Nama operator wajib diisi.');
@@ -5050,7 +5031,7 @@ form.addEventListener('submit', async (e) => {
     const now = Date.now();
     const entryData = {
       jenis, tipe: 'transaksi', operator, kodeBarang: barang.kode, namaBarang: barang.nama,
-      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, qtyPerBox, jumlahBox, keterangan, tanggal,
+      supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, qtyPerBox, keterangan, tanggal,
       // Untuk laporan KELUAR, simpan tanggal kedatangan batch yang diambil
       // (dari kombinasi yang dikunci operator lewat "Stok Tersedia") supaya
       // batch ini benar-benar terikat termasuk tanggal kedatangannya, bukan
@@ -7169,7 +7150,6 @@ function openComboRiwayatView(kode, supplier, pemilik, lokasi, backTo) {
             <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
             ${t.qtyPerPallet ? `<div><span class="lbl">PCS per Pallet</span><span>${t.qtyPerPallet.toLocaleString('id-ID')}</span></div>` : ''}
             ${t.qtyPerBox ? `<div><span class="lbl">PCS per Box/Ikat</span><span>${t.qtyPerBox.toLocaleString('id-ID')}</span></div>` : ''}
-            ${t.jumlahBox ? `<div><span class="lbl">Total Box/Ikat</span><span>${Number(t.jumlahBox).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span></div>` : ''}
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
@@ -7513,7 +7493,6 @@ function openRiwayatTransaksiView(kode, lokasi) {
             <div><span class="lbl">Jumlah PCS</span><span>${t.jumlah.toLocaleString('id-ID')} pcs</span></div>
             ${t.qtyPerPallet ? `<div><span class="lbl">PCS per Pallet</span><span>${t.qtyPerPallet.toLocaleString('id-ID')}</span></div>` : ''}
             ${t.qtyPerBox ? `<div><span class="lbl">PCS per Box/Ikat</span><span>${t.qtyPerBox.toLocaleString('id-ID')}</span></div>` : ''}
-            ${t.jumlahBox ? `<div><span class="lbl">Total Box/Ikat</span><span>${Number(t.jumlahBox).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span></div>` : ''}
             ${t.jumlahPallet ? `<div><span class="lbl">Total Pallet</span><span>${roundPalletDisplay(t.jumlahPallet)}</span></div>` : ''}
             ${t.jenis === 'masuk' ? `<div><span class="lbl">Supplier</span><span>${escapeHtml(t.supplier || '-')}</span></div>` : ''}
             <div><span class="lbl">Kode Pemilik</span><span>${escapeHtml(t.pemilik || '-')}</span></div>
