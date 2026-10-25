@@ -2113,10 +2113,15 @@ let firestoreReady = false;
 let periodMode = 'harian';
 let periodDate = todayISO();
 
-const MONTH_HEADERS = ['Tanggal Kedatangan', 'Tanggal Penginputan', 'Jenis', 'Tipe', 'Nama Operator', 'Kode Barang', 'Nama Barang', 'Supplier', 'Pemilik Barang', 'Lokasi', 'Jumlah (pcs)', 'Qty per Pallet (pcs)', 'Jumlah Pallet', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
-const MONTH_COL_WIDTHS = [16, 18, 9, 13, 18, 14, 34, 22, 14, 10, 12, 16, 12, 28, 22, 22, 14];
-const STOK_HEADERS = ['Kode Barang', 'Nama Barang', 'Lokasi Terpakai', 'Total Masuk', 'Total Keluar', 'Stok Saat Ini', 'Tgl Terakhir Masuk', 'Jml Terakhir Masuk', 'Tgl Terakhir Keluar', 'Jml Terakhir Keluar', 'Terakhir Diperbarui'];
-const STOK_COL_WIDTHS = [14, 34, 26, 12, 12, 12, 16, 14, 16, 14, 22];
+// Sheet bulanan: 13 kolom pertama SAMA dengan sheet "Ringkasan Stok" (lihat
+// STOK_HEADERS), lalu kolom khas transaksi di sebelah kanannya.
+const MONTH_HEADERS = ['No', 'Kode Barang', 'Nama Barang', 'Supplier', 'Plant', 'Tanggal Kedatangan', 'Lokasi', 'Qty / Box', 'Qty / Pallet', 'Jumlah Awal', 'Jumlah Pengeluaran', 'Jumlah Stock', 'Jumlah Pallet', 'Tanggal Penginputan', 'Jenis', 'Tipe', 'Nama Operator', 'Jumlah Transaksi (pcs)', 'Pallet Transaksi', 'Keterangan', 'Waktu Input', 'Waktu Diubah', 'ID'];
+const MONTH_COL_WIDTHS = [6, 14, 34, 26, 9, 20, 11, 11, 13, 14, 20, 14, 14, 18, 9, 13, 18, 18, 14, 28, 22, 22, 14];
+// Struktur sheet "Ringkasan Stok" (juga dipakai export Katalog): SATU BARIS =
+// SATU BATCH kedatangan (kode barang + supplier + plant + lokasi + tanggal
+// kedatangan yang sama). "Plant" = kode Pemilik Barang (1109, 1111, dst).
+const STOK_HEADERS = ['No', 'Kode Barang', 'Nama Barang', 'Supplier', 'Plant', 'Tanggal Kedatangan', 'Lokasi', 'Qty / Box', 'Qty / Pallet', 'Jumlah Awal', 'Jumlah Pengeluaran', 'Jumlah Stock', 'Jumlah Pallet'];
+const STOK_COL_WIDTHS = [6, 14, 34, 26, 9, 20, 11, 11, 13, 14, 20, 14, 14];
 
 /* ---- Tema warna untuk file Excel yang diunduh (disamakan dengan palet
    warna aplikasi: navy utk header, hijau/oranye/emas utk badge Jenis/Tipe) ---- */
@@ -2373,27 +2378,77 @@ function buildLocationStock(entries) {
   return result;
 }
 
+// Saldo BERJALAN per batch untuk setiap transaksi. Batch = kode barang +
+// supplier + plant + lokasi + tanggal kedatangan (sama dengan sheet Ringkasan
+// Stok). Hasilnya Map: id transaksi -> { awal, keluar, pallet, qtyPerBox,
+// qtyPerPallet } = posisi batch SETELAH transaksi itu (diurutkan menurut waktu
+// input). Jadi di baris transaksi terakhir sebuah batch, angkanya sama dengan
+// baris batch itu di Ringkasan Stok. Dihitung dari SEMUA transaksi (bukan
+// cuma bulan itu), supaya saldo yang terbawa dari bulan sebelumnya ikut.
+function buildRunningBatchInfo(entries) {
+  const attr = new Map(); // atribut batch dari transaksi MASUK terbaru
+  entries.forEach(t => {
+    if (t.jenis !== 'masuk') return;
+    const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tanggalBatchOf(entries, t));
+    const cur = attr.get(key);
+    if (!cur || (t.createdAt || 0) >= cur.at) {
+      attr.set(key, {
+        at: t.createdAt || 0,
+        qtyPerBox: t.qtyPerBox != null ? t.qtyPerBox : (cur ? cur.qtyPerBox : null),
+        qtyPerPallet: t.qtyPerPallet != null ? t.qtyPerPallet : (cur ? cur.qtyPerPallet : null),
+      });
+    }
+  });
+  const state = new Map();
+  const info = new Map();
+  [...entries].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach(t => {
+    const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tanggalBatchOf(entries, t));
+    if (!state.has(key)) state.set(key, { awal: 0, keluar: 0, pallet: 0 });
+    const st = state.get(key);
+    if (t.jenis === 'masuk') st.awal += t.jumlah; else st.keluar += t.jumlah;
+    if (t.jumlahPallet != null) st.pallet += (t.jenis === 'masuk' ? 1 : -1) * t.jumlahPallet;
+    const at = attr.get(key) || {};
+    info.set(t.id, {
+      awal: st.awal, keluar: st.keluar, pallet: st.pallet,
+      qtyPerBox: at.qtyPerBox != null ? at.qtyPerBox : (t.qtyPerBox != null ? t.qtyPerBox : null),
+      qtyPerPallet: at.qtyPerPallet != null ? at.qtyPerPallet : (t.qtyPerPallet != null ? t.qtyPerPallet : null),
+    });
+  });
+  return info;
+}
+
 // Menambahkan sheet transaksi 1 bulan ke workbook ExcelJS, sudah dengan
-// styling rapi: header berwarna, kolom angka & tanggal terformat asli,
-// badge Jenis/Tipe berwarna, border, zebra, freeze header, dan autofilter.
-function addMonthSheet(workbook, sheetName, entries) {
+// styling rapi. 13 kolom pertama sama dengan Ringkasan Stok (Jumlah Awal /
+// Pengeluaran / Stock / Pallet = saldo batch setelah transaksi itu), diikuti
+// kolom khas transaksi (jenis, operator, keterangan, dst.).
+function addMonthSheet(workbook, sheetName, entries, batchInfo) {
+  const info = batchInfo || buildRunningBatchInfo(entries);
   const ws = workbook.addWorksheet(sheetName, { views: [{ showGridLines: false }] });
   ws.columns = MONTH_HEADERS.map((h, i) => ({ header: h, width: MONTH_COL_WIDTHS[i] }));
 
-  entries.forEach(t => {
+  entries.forEach((t, i) => {
+    const rowNum = i + 2;
+    const b = info.get(t.id) || { awal: 0, keluar: 0, pallet: 0, qtyPerBox: null, qtyPerPallet: null };
+    const tglKedatangan = tanggalBatchOf(entries, t) || (t.jenis === 'masuk' ? t.tanggal : null);
     ws.addRow([
-      t.jenis === 'masuk' ? (isoDateToLocalDate(t.tanggal) || t.tanggal) : null,
+      i + 1,
+      t.kodeBarang || '',
+      t.namaBarang || '',
+      t.supplier || '',
+      t.pemilik || '',
+      tglKedatangan ? (isoDateToLocalDate(tglKedatangan) || tglKedatangan) : null,
+      t.lokasi || '',
+      b.qtyPerBox,
+      b.qtyPerPallet,
+      b.awal,
+      b.keluar,
+      { formula: `J${rowNum}-K${rowNum}`, result: b.awal - b.keluar },
+      Math.round(b.pallet * 100) / 100,
       t.jenis === 'keluar' ? (isoDateToLocalDate(t.tanggal) || t.tanggal) : null,
       t.jenis === 'masuk' ? 'MASUK' : 'KELUAR',
       t.tipe === 'penyesuaian' ? 'PENYESUAIAN' : 'TRANSAKSI',
       t.operator,
-      t.kodeBarang,
-      t.namaBarang,
-      t.supplier,
-      t.pemilik,
-      t.lokasi,
       t.jumlah,
-      t.qtyPerPallet != null ? t.qtyPerPallet : null,
       t.jumlahPallet != null ? t.jumlahPallet : null,
       t.keterangan || '',
       new Date(t.createdAt),
@@ -2405,64 +2460,107 @@ function addMonthSheet(workbook, sheetName, entries) {
   const lastRow = entries.length + 1;
   for (let r = 2; r <= lastRow; r++) {
     const row = ws.getRow(r);
-    row.getCell(1).numFmt = 'dd/mm/yyyy';
-    row.getCell(2).numFmt = 'dd/mm/yyyy';
-    row.getCell(11).numFmt = '#,##0';
-    row.getCell(12).numFmt = '#,##0';
-    row.getCell(13).numFmt = '#,##0';
-    row.getCell(15).numFmt = 'dd/mm/yyyy hh:mm';
-    row.getCell(16).numFmt = 'dd/mm/yyyy hh:mm';
-    row.getCell(11).alignment = { horizontal: 'right' };
-    row.getCell(12).alignment = { horizontal: 'right' };
-    row.getCell(13).alignment = { horizontal: 'right' };
     const t = entries[r - 2];
-    colorizeBadgeCell(row.getCell(3), t.jenis === 'masuk' ? 'masuk' : 'keluar');
-    if (t.tipe === 'penyesuaian') colorizeBadgeCell(row.getCell(4), 'penyesuaian');
-    else { row.getCell(4).alignment = { horizontal: 'center' }; row.getCell(4).font = { color: { argb: EXCEL_THEME.abu }, size: 10.5 }; }
+    [1, 5, 6, 7, 14].forEach(c => { row.getCell(c).alignment = { horizontal: 'center' }; });
+    row.getCell(6).numFmt = 'dd/mm/yyyy';
+    row.getCell(14).numFmt = 'dd/mm/yyyy';
+    [8, 9, 10, 11, 12, 18].forEach(c => { row.getCell(c).numFmt = '#,##0'; row.getCell(c).alignment = { horizontal: 'right' }; });
+    [13, 19].forEach(c => { row.getCell(c).numFmt = '#,##0.##'; row.getCell(c).alignment = { horizontal: 'right' }; });
+    row.getCell(21).numFmt = 'dd/mm/yyyy hh:mm';
+    row.getCell(22).numFmt = 'dd/mm/yyyy hh:mm';
+    const stok = row.getCell(12).result != null ? row.getCell(12).result : 0;
+    row.getCell(12).font = { bold: true, color: { argb: stok < 0 ? EXCEL_THEME.merah : stok > 0 ? EXCEL_THEME.hijau : EXCEL_THEME.abu } };
+    colorizeBadgeCell(row.getCell(15), t.jenis === 'masuk' ? 'masuk' : 'keluar');
+    if (t.tipe === 'penyesuaian') colorizeBadgeCell(row.getCell(16), 'penyesuaian');
+    else { row.getCell(16).alignment = { horizontal: 'center' }; row.getCell(16).font = { color: { argb: EXCEL_THEME.abu }, size: 10.5 }; }
   }
 
   styleExcelSheet(ws, { lastCol: MONTH_HEADERS.length, firstDataRow: 2, lastDataRow: lastRow });
   return ws;
 }
 
-// Menambahkan sheet "Ringkasan Stok" ke workbook ExcelJS: stok saat ini
-// diberi warna (hijau jika positif, merah jika minus) supaya selisih stok
-// langsung kelihatan tanpa perlu buka aplikasi.
-function addStokSheet(workbook, sheetName, entries) {
-  const items = buildStokList(entries);
+// Susun daftar BATCH untuk sheet stok: satu baris per kombinasi kode barang +
+// supplier + plant (pemilik) + lokasi + tanggal kedatangan. Logika batch-nya
+// sama persis dengan yang dipakai layar Keluar (tanggalBatchOf / comboKey),
+// jadi angka di Excel selalu sama dengan stok di aplikasi.
+//   Jumlah Awal        = total pcs MASUK pada batch itu
+//   Jumlah Pengeluaran = total pcs KELUAR yang diambil dari batch itu
+//   Jumlah Stock       = Awal - Pengeluaran
+//   Jumlah Pallet      = sisa pallet (pallet masuk - pallet keluar)
+function buildBatchStokRows(entries) {
+  const map = new Map();
+  entries.forEach(t => {
+    const tgl = tanggalBatchOf(entries, t);
+    const key = comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tgl);
+    if (!map.has(key)) {
+      map.set(key, {
+        key, kode: t.kodeBarang, nama: t.namaBarang, supplier: t.supplier, plant: t.pemilik,
+        tanggal: tgl, lokasi: t.lokasi, qtyPerBox: null, qtyPerPallet: null,
+        awal: 0, keluar: 0, pallet: 0, lastMasukAt: 0,
+      });
+    }
+    const r = map.get(key);
+    const arah = t.jenis === 'masuk' ? 1 : -1;
+    if (t.jenis === 'masuk') {
+      r.awal += t.jumlah;
+      // Qty/Box & Qty/Pallet adalah atribut batch: ambil dari transaksi MASUK terbaru.
+      if ((t.createdAt || 0) >= r.lastMasukAt) {
+        r.lastMasukAt = t.createdAt || 0;
+        if (t.qtyPerBox != null) r.qtyPerBox = t.qtyPerBox;
+        if (t.qtyPerPallet != null) r.qtyPerPallet = t.qtyPerPallet;
+      }
+    } else {
+      r.keluar += t.jumlah;
+    }
+    if (t.jumlahPallet != null) r.pallet += arah * t.jumlahPallet;
+  });
+  return [...map.values()].sort((a, b) => {
+    if ((a.tanggal || '') !== (b.tanggal || '')) return (a.tanggal || '') < (b.tanggal || '') ? -1 : 1;
+    return (a.nama || '').localeCompare(b.nama || '') || (a.lokasi || '').localeCompare(b.lokasi || '');
+  });
+}
+
+// Menambahkan sheet stok (struktur seperti STOK_HEADERS) ke workbook ExcelJS.
+// `rows` opsional: kalau tidak diberikan, dihitung dari seluruh `entries`.
+function addStokSheet(workbook, sheetName, entries, rows) {
+  const items = rows || buildBatchStokRows(entries);
   const ws = workbook.addWorksheet(sheetName, { views: [{ showGridLines: false }] });
   ws.columns = STOK_HEADERS.map((h, i) => ({ header: h, width: STOK_COL_WIDTHS[i] }));
 
-  items.forEach(it => {
-    // Tanggal & jumlah terakhir masuk/keluar ditaruh di kolom TERPISAH
-    // (bukan digabung jadi satu teks "2026-01-05 (12500 pcs)") supaya
-    // Excel bisa memformat tanggal dan angkanya sendiri-sendiri — jadi
-    // gampang dibaca, gampang di-sort, dan angka besar otomatis dapat
-    // pemisah ribuan alih-alih ditulis mentah di dalam teks.
+  items.forEach((it, i) => {
+    const rowNum = i + 2;
+    const stok = it.awal - it.keluar;
     ws.addRow([
-      it.kode,
-      it.nama,
-      Array.from(it.lokasi).join(', '),
-      it.masuk,
+      i + 1,
+      it.kode || '',
+      it.nama || '',
+      it.supplier || '',
+      it.plant || '',
+      it.tanggal ? isoToExcelDate(it.tanggal) : null,
+      it.lokasi || '',
+      it.qtyPerBox != null ? it.qtyPerBox : null,
+      it.qtyPerPallet != null ? it.qtyPerPallet : null,
+      it.awal,
       it.keluar,
-      it.masuk - it.keluar,
-      it.lastMasuk ? isoToExcelDate(it.lastMasuk.tanggal) : null,
-      it.lastMasuk ? it.lastMasuk.jumlah : null,
-      it.lastKeluar ? isoToExcelDate(it.lastKeluar.tanggal) : null,
-      it.lastKeluar ? it.lastKeluar.jumlah : null,
-      it.updated ? new Date(it.updated) : '-',
+      // Rumus asli supaya kalau Jumlah Awal / Pengeluaran diedit di Excel, stok ikut berubah.
+      { formula: `J${rowNum}-K${rowNum}`, result: stok },
+      Math.round(it.pallet * 100) / 100,
     ]);
   });
 
   const lastRow = items.length + 1;
   for (let r = 2; r <= lastRow; r++) {
     const row = ws.getRow(r);
-    [4, 5, 6, 8, 10].forEach(c => { row.getCell(c).numFmt = '#,##0'; row.getCell(c).alignment = { horizontal: 'right' }; });
-    [7, 9].forEach(c => { if (row.getCell(c).value instanceof Date) { row.getCell(c).numFmt = 'dd/mm/yyyy'; row.getCell(c).alignment = { horizontal: 'right' }; } });
-    if (row.getCell(11).value instanceof Date) row.getCell(11).numFmt = 'dd/mm/yyyy hh:mm';
-    const stokCell = row.getCell(6);
-    const stok = items[r - 2].masuk - items[r - 2].keluar;
-    stokCell.font = { bold: true, color: { argb: stok < 0 ? EXCEL_THEME.merah : stok > 0 ? EXCEL_THEME.hijau : EXCEL_THEME.abu } };
+    row.getCell(1).alignment = { horizontal: 'center' };
+    row.getCell(5).alignment = { horizontal: 'center' };
+    row.getCell(6).numFmt = 'dd/mm/yyyy';
+    row.getCell(6).alignment = { horizontal: 'center' };
+    row.getCell(7).alignment = { horizontal: 'center' };
+    [8, 9, 10, 11, 12].forEach(c => { row.getCell(c).numFmt = '#,##0'; row.getCell(c).alignment = { horizontal: 'right' }; });
+    row.getCell(13).numFmt = '#,##0.##';
+    row.getCell(13).alignment = { horizontal: 'right' };
+    const stok = items[r - 2].awal - items[r - 2].keluar;
+    row.getCell(12).font = { bold: true, color: { argb: stok < 0 ? EXCEL_THEME.merah : stok > 0 ? EXCEL_THEME.hijau : EXCEL_THEME.abu } };
   }
 
   styleExcelSheet(ws, { lastCol: STOK_HEADERS.length, firstDataRow: 2, lastDataRow: lastRow });
@@ -2478,10 +2576,12 @@ async function downloadExcelWorkbook(workbook, filename) {
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // Jangan langsung dicabut: sebagian browser (terutama HP / browser dalam
+  // aplikasi) belum selesai memulai unduhan kalau URL-nya langsung dihapus.
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 10000);
 }
 
 /* ---- UI Connection Status ---- */
@@ -4043,30 +4143,27 @@ if (kdsPageSizeSelect) {
 
 const kdsBtnExport = document.getElementById('kds-btn-export');
 if (kdsBtnExport) {
-  kdsBtnExport.addEventListener('click', () => {
-    const rows = kdsSortRows(kdsApplyFilters(kdsGetArrivalRows(), kdsAppliedFilters), kdsSortMode);
-    if (rows.length === 0) {
+  kdsBtnExport.addEventListener('click', async () => {
+    // Transaksi yang lolos filter menentukan BATCH mana yang diunduh; angka
+    // Awal/Pengeluaran/Stock tiap batch tetap dihitung dari SEMUA transaksi
+    // batch itu, supaya totalnya benar (tidak terpotong filter tanggal).
+    const filtered = kdsSortRows(kdsApplyFilters(kdsGetArrivalRows(), kdsAppliedFilters), kdsSortMode);
+    if (filtered.length === 0) {
       showToast('Tidak ada data untuk diunduh.', 'error');
       return;
     }
-    const aoa = [
-      ['Nama Barang', 'Kode Barang', 'Supplier', 'Pemilik', 'Tanggal Kedatangan/Tanggal Keluar', 'Lokasi', 'Jumlah', 'Qty/Pallet', 'Jumlah Pallet'],
-      ...rows.map(t => [
-        t.namaBarang || '-',
-        t.kodeBarang || '-',
-        t.supplier || '-',
-        t.pemilik || '-',
-        formatTanggal(t.tanggal),
-        t.lokasi || '-',
-        t.jumlah || 0,
-        t.qtyPerPallet ? Number(t.qtyPerPallet) : 0,
-        t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : 0,
-      ]),
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Katalog & Stok');
-    XLSX.writeFile(wb, `katalog-stok-${todayISO()}.xlsx`);
+    const keys = new Set(filtered.map(t => comboKey(t.kodeBarang, t.supplier, t.pemilik, t.lokasi, tanggalBatchOf(currentEntries, t))));
+    const rows = buildBatchStokRows(currentEntries).filter(r => keys.has(r.key));
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Sistem Gudang';
+      workbook.created = new Date();
+      addStokSheet(workbook, 'Katalog & Stok', currentEntries, rows);
+      await downloadExcelWorkbook(workbook, `katalog-stok-${todayISO()}.xlsx`);
+    } catch (err) {
+      console.error('Gagal membuat file Excel:', err);
+      showToast('Gagal membuat file Excel: ' + err.message, 'error');
+    }
   });
 }
 
@@ -8050,6 +8147,7 @@ document.getElementById('btn-export').addEventListener('click', async () => {
     // saat file dibuka.
     addStokSheet(workbook, RINGKASAN_SHEET, currentEntries);
 
+    const batchInfo = buildRunningBatchInfo(currentEntries);
     const groups = {};
     currentEntries.forEach(t => {
       const ym = (t.tanggal && /^\d{4}-\d{2}/.test(t.tanggal)) ? t.tanggal.slice(0, 7) : 'lainnya';
@@ -8058,7 +8156,7 @@ document.getElementById('btn-export').addEventListener('click', async () => {
     Object.keys(groups).sort().forEach(ym => {
       const list = groups[ym].slice().sort((a, b) => (a.tanggal !== b.tanggal ? (a.tanggal < b.tanggal ? -1 : 1) : a.createdAt - b.createdAt));
       const label = ym === 'lainnya' ? 'Lainnya' : `${BULAN_PANJANG[parseInt(ym.split('-')[1], 10) - 1]} ${ym.split('-')[0]}`;
-      addMonthSheet(workbook, safeSheetName(label), list);
+      addMonthSheet(workbook, safeSheetName(label), list, batchInfo);
     });
 
     await downloadExcelWorkbook(workbook, `salinan-laporan-gudang-${todayISO()}.xlsx`);
