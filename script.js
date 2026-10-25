@@ -138,6 +138,27 @@ function getPalletKombinasi(entries, kodeBarang, supplier, pemilik, lokasi, tang
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
 }
 
+// Qty per Box/Ikat untuk satu transaksi. Kalau transaksi itu sendiri tidak
+// menyimpan nilainya (mis. laporan KELUAR lama), ambil dari transaksi MASUK
+// terbaru di batch yang sama (kode + supplier + pemilik + lokasi + tanggal
+// kedatangan). Hasil null kalau memang tidak pernah diisi.
+function qtyPerBoxOf(entries, t) {
+  if (t.qtyPerBox != null && Number(t.qtyPerBox) > 0) return Number(t.qtyPerBox);
+  const tgl = tanggalBatchOf(entries, t);
+  let best = null;
+  entries.forEach(m => {
+    if (m.jenis !== 'masuk' || m.qtyPerBox == null || !(Number(m.qtyPerBox) > 0)) return;
+    if (m.kodeBarang !== t.kodeBarang || m.supplier !== t.supplier || m.pemilik !== t.pemilik || m.lokasi !== t.lokasi) return;
+    if (tanggalBatchOf(entries, m) !== tgl) return;
+    if (!best || (m.createdAt || 0) >= (best.createdAt || 0)) best = m;
+  });
+  return best ? Number(best.qtyPerBox) : null;
+}
+function qtyPerBoxCell(t) {
+  const q = qtyPerBoxOf(currentEntries, t);
+  return q ? q.toLocaleString('id-ID') : '-';
+}
+
 // Daftar semua kombinasi supplier+pemilik+lokasi+TANGGAL KEDATANGAN (+ sisa
 // stok, pallet) yang MASIH ADA STOKNYA untuk satu kode barang. Inilah
 // "kesatuan" yang ditampilkan ke operator saat lapor barang KELUAR, supaya
@@ -6836,6 +6857,7 @@ function openLokasiModal(lokasi) {
           <div class="btc btc-supplier">Supplier</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS/Pallet</div>
+          <div class="btc btc-qtybox">Qty per Box/Ikat</div>
           <div class="btc btc-pallet">Pallet</div>
           <div class="btc btc-operator">Operator</div>
           <div class="btc btc-aksi-head">Aksi</div>
@@ -6849,6 +6871,7 @@ function openLokasiModal(lokasi) {
               <div class="btc btc-supplier">${escapeHtml(t.supplier || '-')}</div>
               <div class="btc btc-jumlah">${t.sisaPcs.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-qtybox">${qtyPerBoxCell(t)}</div>
               <div class="btc btc-pallet">${t.sisaPallet ? roundPalletDisplay(t.sisaPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-kode-aksi="${escapeHtml(t.kodeBarang || t.namaBarang || '')}" data-supplier-aksi="${escapeHtml(t.supplier || '')}" data-pemilik-aksi="${escapeHtml(t.pemilik || '')}" aria-label="Lihat detail barang" title="Detail Barang">
@@ -6969,6 +6992,7 @@ function openKodePemilikModal(kode, pemilik) {
           <div class="btc btc-tanggal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-qtybox">Qty per Box/Ikat</div>
           <div class="btc btc-pallet">Total Pallet</div>
           <div class="btc btc-operator">Operator Input</div>
           <div class="btc btc-aksi-head">Aksi</div>
@@ -6981,6 +7005,7 @@ function openKodePemilikModal(kode, pemilik) {
               <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
               <div class="btc btc-jumlah">${t.sisaPcs.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-qtybox">${qtyPerBoxCell(t)}</div>
               <div class="btc btc-pallet">${t.sisaPallet ? roundPalletDisplay(t.sisaPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-batch-lokasi="${escapeHtml(t.lokasi || '')}" data-batch-supplier="${escapeHtml(t.supplier || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
@@ -7003,6 +7028,7 @@ function openKodePemilikModal(kode, pemilik) {
           <div class="btc btc-tanggal-asal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-qtybox">Qty per Box/Ikat</div>
           <div class="btc btc-pallet">Total Pallet</div>
           <div class="btc btc-operator">Operator Input</div>
           <div class="btc btc-aksi-head">Aksi</div>
@@ -7016,6 +7042,7 @@ function openKodePemilikModal(kode, pemilik) {
               <div class="btc btc-tanggal-asal">${formatTanggal(tanggalBatchOf(currentEntries, t))}</div>
               <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-qtybox">${qtyPerBoxCell(t)}</div>
               <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-batch-lokasi-keluar="${escapeHtml(t.lokasi || '')}" data-batch-supplier-keluar="${escapeHtml(t.supplier || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
@@ -7134,6 +7161,7 @@ function openComboModal(kode, supplier, pemilik) {
           <div class="btc btc-tanggal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-qtybox">Qty per Box/Ikat</div>
           <div class="btc btc-pallet">Total Pallet</div>
           <div class="btc btc-operator">Operator Input</div>
           <div class="btc btc-aksi-head">Aksi</div>
@@ -7145,6 +7173,7 @@ function openComboModal(kode, supplier, pemilik) {
               <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
               <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-qtybox">${qtyPerBoxCell(t)}</div>
               <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-batch-lokasi="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
@@ -7166,6 +7195,7 @@ function openComboModal(kode, supplier, pemilik) {
           <div class="btc btc-tanggal-asal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-qtybox">Qty per Box/Ikat</div>
           <div class="btc btc-pallet">Total Pallet</div>
           <div class="btc btc-operator">Operator Input</div>
           <div class="btc btc-aksi-head">Aksi</div>
@@ -7178,6 +7208,7 @@ function openComboModal(kode, supplier, pemilik) {
               <div class="btc btc-tanggal-asal">${formatTanggal(tanggalBatchOf(currentEntries, t))}</div>
               <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-qtybox">${qtyPerBoxCell(t)}</div>
               <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-batch-lokasi-keluar="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
@@ -7478,6 +7509,7 @@ function openItemModal(kode, namaFallback) {
           <div class="btc btc-tanggal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-qtybox">Qty per Box/Ikat</div>
           <div class="btc btc-pallet">Total Pallet</div>
           <div class="btc btc-operator">Operator Input</div>
           <div class="btc btc-aksi-head">Aksi</div>
@@ -7489,6 +7521,7 @@ function openItemModal(kode, namaFallback) {
               <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
               <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-qtybox">${qtyPerBoxCell(t)}</div>
               <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-batch-lokasi="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
@@ -7510,6 +7543,7 @@ function openItemModal(kode, namaFallback) {
           <div class="btc btc-tanggal-asal">Tanggal Kedatangan</div>
           <div class="btc btc-jumlah">Jumlah PCS</div>
           <div class="btc btc-pcspal">PCS per Pallet</div>
+          <div class="btc btc-qtybox">Qty per Box/Ikat</div>
           <div class="btc btc-pallet">Total Pallet</div>
           <div class="btc btc-operator">Operator Input</div>
           <div class="btc btc-aksi-head">Aksi</div>
@@ -7522,6 +7556,7 @@ function openItemModal(kode, namaFallback) {
               <div class="btc btc-tanggal-asal">${formatTanggal(tanggalBatchOf(currentEntries, t))}</div>
               <div class="btc btc-jumlah">${t.jumlah.toLocaleString('id-ID')} pcs</div>
               <div class="btc btc-pcspal">${t.qtyPerPallet ? t.qtyPerPallet.toLocaleString('id-ID') : '-'}</div>
+              <div class="btc btc-qtybox">${qtyPerBoxCell(t)}</div>
               <div class="btc btc-pallet">${t.jumlahPallet ? roundPalletDisplay(t.jumlahPallet) : '-'}</div>
               <div class="btc btc-operator">${escapeHtml(t.operator || '-')}</div>
               <button type="button" class="btc-aksi" data-batch-lokasi-keluar="${escapeHtml(t.lokasi || '')}" aria-label="Lihat riwayat transaksi" title="Riwayat Transaksi">
