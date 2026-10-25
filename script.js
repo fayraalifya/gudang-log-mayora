@@ -1754,22 +1754,56 @@ async function registerViaClientSDK(role, { nama, idKaryawan, password, kodeAkse
   const nik = normalizeNikKey(idKaryawan);
 
   let cred;
+  // true kalau akun Auth-nya SUDAH ada tapi profil Firestore-nya tidak ada
+  // (akun "yatim"), lalu dipulihkan lewat sign-in dengan kata sandi yang sama.
+  let recovered = false;
   try {
     cred = await fb.createUserWithEmailAndPassword(fb.auth, email, password);
   } catch (err) {
     if (err && err.code === 'auth/email-already-in-use') {
-      const e = new Error(
-        role === 'admin' ? 'NIK ini sudah terdaftar sebagai admin.' : 'NIK ini sudah terdaftar.'
-      );
-      e.code = 'already-exists';
-      throw e;
-    }
-    if (err && err.code === 'auth/weak-password') {
+      // "NIK sudah terdaftar" di sini artinya akun ada di Firebase
+      // AUTHENTICATION — BUKAN berarti ada dokumennya di Firestore. Akun Auth
+      // bisa tertinggal tanpa profil kalau: (a) admin pernah "menghapus akun"
+      // (itu cuma soft-delete dokumen Firestore, akun Auth-nya tetap ada),
+      // atau (b) percobaan daftar sebelumnya gagal di tengah jalan dan
+      // rollback-nya juga gagal. Kita coba pulihkan: kalau kata sandi yang
+      // diketik cocok DAN profilnya memang tidak ada, lanjutkan pendaftaran
+      // memakai akun Auth yang sudah ada itu.
+      const dupErr = (msg) => {
+        const e = new Error(msg);
+        e.code = 'already-exists';
+        return e;
+      };
+      try {
+        cred = await fb.signInWithEmailAndPassword(fb.auth, email, password);
+      } catch (signErr) {
+        throw dupErr(
+          role === 'admin' ? 'NIK ini sudah terdaftar sebagai admin.' : 'NIK ini sudah terdaftar.'
+        );
+      }
+      let hasProfile = false;
+      try {
+        const snap = await fb.getDoc(fb.doc(fb.db, role, cred.user.uid));
+        hasProfile = snap.exists();
+      } catch (readErr) {
+        // permission-denied di sini = akun belum punya profil (rules baru
+        // mengizinkan baca hanya untuk akun yang profilnya sudah terdaftar).
+        hasProfile = false;
+      }
+      if (hasProfile) {
+        try { await fb.signOut(fb.auth); } catch (e0) { /* abaikan */ }
+        throw dupErr(
+          role === 'admin' ? 'NIK ini sudah terdaftar sebagai admin.' : 'NIK ini sudah terdaftar.'
+        );
+      }
+      recovered = true;
+    } else if (err && err.code === 'auth/weak-password') {
       const e = new Error('Kata sandi terlalu lemah, minimal 6 karakter.');
       e.code = 'invalid-argument';
       throw e;
+    } else {
+      throw err;
     }
-    throw err;
   }
 
   const uid = cred.user.uid;
@@ -1779,11 +1813,19 @@ async function registerViaClientSDK(role, { nama, idKaryawan, password, kodeAkse
     // Rule-nya yang menolak kalau kodeAkses salah — kalau ini gagal,
     // dilempar ke catch di bawah (rollback: hapus user Auth yang baru
     // dibuat supaya tidak nyangkut jadi akun "yatim").
-    await fb.setDoc(fb.doc(fb.db, 'registrationGate', uid), {
-      role,
-      kodeAkses,
-      createdAt: Date.now(),
-    });
+    try {
+      await fb.setDoc(fb.doc(fb.db, 'registrationGate', uid), {
+        role,
+        kodeAkses,
+        createdAt: Date.now(),
+      });
+    } catch (gateErr) {
+      // Pada akun yang dipulihkan, dokumen gate bisa SUDAH ada dari
+      // percobaan sebelumnya (rules melarang menimpa). Biarkan lanjut ke
+      // langkah 2; kalau memang kode salah & gate belum ada, langkah 2 juga
+      // akan ditolak rules.
+      if (!recovered) throw gateErr;
+    }
 
     // Langkah 2: tulis profil publik. Rule di operator/{uid} & admin/{uid}
     // mensyaratkan exists(registrationGate/{uid}) dari langkah 1 di atas.
@@ -1797,7 +1839,12 @@ async function registerViaClientSDK(role, { nama, idKaryawan, password, kodeAkse
     });
   } catch (err) {
     console.error('Gagal menulis profil, rollback akun Auth:', err);
-    try { await fb.deleteUser(cred.user); } catch (e2) { console.warn('Rollback gagal:', e2); }
+    // Akun yang dipulihkan sudah ada sebelumnya — jangan dihapus, cukup keluar.
+    if (recovered) {
+      try { await fb.signOut(fb.auth); } catch (e2) { console.warn('Sign-out gagal:', e2); }
+    } else {
+      try { await fb.deleteUser(cred.user); } catch (e2) { console.warn('Rollback gagal:', e2); }
+    }
     if (err && err.code === 'permission-denied') {
       const e = new Error(
         role === 'admin' ? 'Kode Akses Pendaftaran Admin salah.' : 'Kode Akses Pendaftaran salah.'
