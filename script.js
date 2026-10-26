@@ -3517,8 +3517,13 @@ function setJenis(j) {
   if (typeof inputQtyPallet !== 'undefined' && inputQtyPallet) {
     inputQtyPallet.value = '';
     if (typeof inputQtyBox !== 'undefined' && inputQtyBox) inputQtyBox.value = '';
+    inputJumlah.value = '';
+    inputPalletFull.value = '';
+    inputQtyBoxPallet.value = '';
+    inputRecehBox.value = '';
+    inputRecehPcs.value = '';
     if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
-    if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
+    if (typeof applyJenisFormMode === 'function') applyJenisFormMode();
   }
   if (typeof selBarang !== 'undefined') {
     const barangDipilih = selBarang.getValue();
@@ -3554,8 +3559,12 @@ selBarang = setupSearchableSelect({
     if (typeof inputQtyPallet !== 'undefined' && inputQtyPallet) {
       inputQtyPallet.value = '';
       if (typeof inputQtyBox !== 'undefined' && inputQtyBox) inputQtyBox.value = '';
+      inputPalletFull.value = '';
+      inputQtyBoxPallet.value = '';
+      inputRecehBox.value = '';
+      inputRecehPcs.value = '';
       if (typeof resetQtyPalletLock === 'function') resetQtyPalletLock();
-      if (typeof hitungJumlahPallet === 'function') hitungJumlahPallet();
+      if (typeof applyJenisFormMode === 'function') applyJenisFormMode();
     }
     refreshKombinasiUI(o.kode);
   },
@@ -4832,6 +4841,10 @@ const inputJumlah = document.getElementById('input-jumlah');
 const inputQtyPallet = document.getElementById('input-qty-pallet');
 const inputJumlahPallet = document.getElementById('input-jumlah-pallet');
 const inputQtyBox = document.getElementById('input-qty-box');
+const inputPalletFull = document.getElementById('input-pallet-full');
+const inputQtyBoxPallet = document.getElementById('input-qty-box-pallet');
+const inputRecehBox = document.getElementById('input-receh-box');
+const inputRecehPcs = document.getElementById('input-receh-pcs');
 const inputKeterangan = document.getElementById('input-keterangan');
 const formError = document.getElementById('form-error');
 const form = document.getElementById('form-laporan');
@@ -4859,6 +4872,10 @@ function attachThousandsFormatting(input) {
 attachThousandsFormatting(inputJumlah);
 attachThousandsFormatting(inputQtyPallet);
 attachThousandsFormatting(inputQtyBox);
+attachThousandsFormatting(inputPalletFull);
+attachThousandsFormatting(inputQtyBoxPallet);
+attachThousandsFormatting(inputRecehBox);
+attachThousandsFormatting(inputRecehPcs);
 
 function hitungJumlahPallet() {
   const jumlah = parseFormattedNumber(inputJumlah.value);
@@ -4875,6 +4892,71 @@ function hitungJumlahPallet() {
 }
 inputJumlah.addEventListener('input', hitungJumlahPallet);
 inputQtyPallet.addEventListener('input', hitungJumlahPallet);
+
+/* ==========================================================================
+   BARANG MASUK — input operator: @, Jumlah Pallet Full, Qty/Pallet (Box/Ikat),
+   Receh (Box/Ikat), Receh (Pcs). Hasil hitung otomatis:
+     Qty / Pallet (Pcs) = @ x Qty / Pallet (Box/Ikat)
+     Total Qty (Pcs)    = (Qty/Pallet(Pcs) x Pallet Full) + (@ x Receh Box/Ikat) + Receh Pcs
+     Jumlah Pallet      = Total Qty / Qty per Pallet (Pcs)
+   BARANG KELUAR — operator hanya mengisi Jumlah Qty (Pcs); Qty per Pallet
+   terisi otomatis dari batch, Jumlah Pallet = Jumlah Qty / Qty per Pallet.
+========================================================================== */
+function numOrZero(input) {
+  const n = parseFormattedNumber(input.value);
+  return Number.isFinite(n) ? n : 0;
+}
+function hitungMasuk() {
+  const at = numOrZero(inputQtyBox);
+  const palletFull = numOrZero(inputPalletFull);
+  const qtyBoxPerPallet = numOrZero(inputQtyBoxPallet);
+  const recehBox = numOrZero(inputRecehBox);
+  const recehPcs = numOrZero(inputRecehPcs);
+
+  const qtyPerPalletPcs = at * qtyBoxPerPallet;
+  const total = (qtyPerPalletPcs * palletFull) + (at * recehBox) + recehPcs;
+
+  inputQtyPallet.value = qtyPerPalletPcs > 0 ? qtyPerPalletPcs.toLocaleString('id-ID') : '';
+  inputJumlah.value = total > 0 ? total.toLocaleString('id-ID') : '';
+  hitungJumlahPallet();
+}
+[inputQtyBox, inputPalletFull, inputQtyBoxPallet, inputRecehBox, inputRecehPcs].forEach((el) => {
+  el.addEventListener('input', () => { if (jenis === 'masuk') hitungMasuk(); });
+});
+
+// Atur tampilan form sesuai jenis laporan (dipanggil dari setJenis).
+function applyJenisFormMode() {
+  const masuk = jenis === 'masuk';
+  ['f-at', 'f-pallet-full', 'f-qty-box-pallet', 'f-receh-box', 'f-receh-pcs'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !masuk;
+  });
+  const fJumlah = document.getElementById('f-jumlah');
+  const fQtyPallet = document.getElementById('f-qty-pallet');
+  const fJumlahPallet = document.getElementById('f-jumlah-pallet');
+  // MASUK: ... Qty/Pallet (Pcs) -> Total Qty -> Jumlah Pallet
+  // KELUAR: Jumlah Qty (input) -> Qty per Pallet -> Jumlah Pallet
+  if (fJumlah && fQtyPallet && fJumlahPallet) {
+    if (masuk) fJumlahPallet.parentNode.insertBefore(fJumlah, fJumlahPallet);
+    else fQtyPallet.parentNode.insertBefore(fJumlah, fQtyPallet);
+  }
+  document.getElementById('label-qty-pallet-text').textContent = masuk ? 'Qty / Pallet (Pcs) — otomatis' : 'Qty per Pallet (Pcs)';
+  document.getElementById('label-jumlah-text').textContent = masuk ? 'Total Qty (Pcs) — otomatis' : 'Jumlah Qty (Pcs)';
+  document.getElementById('req-qty-pallet').hidden = masuk;
+  document.getElementById('req-jumlah').hidden = masuk;
+
+  // Hasil hitung dikunci (readonly) saat MASUK; Jumlah Qty bebas diketik saat KELUAR.
+  inputJumlah.readOnly = masuk;
+  const jumlahWrap = inputJumlah.closest('.input-icon');
+  if (jumlahWrap) jumlahWrap.classList.toggle('is-locked', masuk);
+  if (masuk) {
+    inputQtyPallet.readOnly = true;
+    if (qtyPalletWrap) qtyPalletWrap.classList.add('is-locked');
+    hitungMasuk();
+  } else {
+    hitungJumlahPallet();
+  }
+}
 
 
 // Wrapper .input-icon dari field Qty per Pallet — dipakai untuk kasih efek
@@ -4934,6 +5016,11 @@ function resetQtyPalletLock() {
   if (boxWrap) boxWrap.classList.remove('is-locked');
   const boxHint = document.getElementById('qty-box-hint');
   if (boxHint) boxHint.hidden = true;
+  // Saat MASUK, Qty / Pallet (Pcs) adalah hasil hitung -> tetap terkunci.
+  if (typeof jenis !== 'undefined' && jenis === 'masuk') {
+    inputQtyPallet.readOnly = true;
+    if (qtyPalletWrap) qtyPalletWrap.classList.add('is-locked');
+  }
 }
 
 // Helper untuk menampilkan angka jumlah pallet (bisa desimal, mis. hasil
@@ -5084,6 +5171,8 @@ function hideError() {
   formError.textContent = '';
 }
 
+applyJenisFormMode();
+
 function resetForm() {
   selBarang.reset();
   selSupplier.reset();
@@ -5097,6 +5186,10 @@ function resetForm() {
   inputJumlah.value = '';
   inputQtyPallet.value = '';
   inputQtyBox.value = '';
+  inputPalletFull.value = '';
+  inputQtyBoxPallet.value = '';
+  inputRecehBox.value = '';
+  inputRecehPcs.value = '';
   resetQtyPalletLock();
   inputJumlahPallet.value = '';
   inputKeterangan.value = '';
@@ -5135,6 +5228,11 @@ form.addEventListener('submit', async (e) => {
   const qtyPerBoxRaw = inputQtyBox.value.trim();
   const qtyPerBox = qtyPerBoxRaw ? parseFormattedNumber(qtyPerBoxRaw) : null;
   const keterangan = inputKeterangan.value.trim();
+  // Input rincian khusus BARANG MASUK
+  const palletFull = numOrZero(inputPalletFull);
+  const qtyBoxPerPallet = numOrZero(inputQtyBoxPallet);
+  const recehBox = numOrZero(inputRecehBox);
+  const recehPcs = numOrZero(inputRecehPcs);
 
   if (!operator) return showError('Nama operator wajib diisi.');
   if (!barang) return showError('Pilih nama barang terlebih dahulu.');
@@ -5142,7 +5240,12 @@ form.addEventListener('submit', async (e) => {
   if (!pemilik) return showError('Pilih pemilik barang (pabrik) terlebih dahulu.');
   if (!lokasi) return showError('Scan barcode lokasi penyimpanan terlebih dahulu.');
   if (!tanggal) return showError(jenis === 'keluar' ? 'Tanggal penginputan wajib diisi.' : 'Tanggal kedatangan wajib diisi.');
-  if (!jumlah || jumlah <= 0) return showError('Jumlah barang harus berupa angka lebih dari 0.');
+  if (jenis === 'masuk') {
+    if (!qtyPerBox || qtyPerBox <= 0) return showError('Kolom @ (Qty per Box/Ikat) wajib diisi dengan angka lebih dari 0.');
+    if (!qtyBoxPerPallet || qtyBoxPerPallet <= 0) return showError('Qty / Pallet (Box/Ikat) wajib diisi dengan angka lebih dari 0.');
+  }
+  if (!jumlah || jumlah <= 0) return showError(jenis === 'masuk' ? 'Total Qty (Pcs) harus lebih dari 0. Isi Jumlah Pallet Full dan/atau Receh.' : 'Jumlah Qty (Pcs) harus berupa angka lebih dari 0.');
+  if (jumlah >= 1000000) return showError('Jumlah melebihi batas 1.000.000 pcs per laporan. Periksa kembali angka yang dimasukkan.');
   if (!qtyPerPalletRaw || !qtyPerPallet || qtyPerPallet <= 0) return showError('Qty per pallet wajib diisi dengan angka lebih dari 0.');
   // Qty per Box/Ikat opsional, tapi kalau diisi harus angka > 0
   if (qtyPerBoxRaw && (!qtyPerBox || qtyPerBox <= 0)) return showError('Qty per Box/Ikat harus berupa angka lebih dari 0.');
@@ -5205,6 +5308,8 @@ form.addEventListener('submit', async (e) => {
     const entryData = {
       jenis, tipe: 'transaksi', operator, kodeBarang: barang.kode, namaBarang: barang.nama,
       supplier, pemilik, lokasi, jumlah, qtyPerPallet, jumlahPallet, qtyPerBox, keterangan, tanggal,
+      // Rincian input barang MASUK (jumlah = Total Qty hasil hitung)
+      ...(jenis === 'masuk' ? { palletFull, qtyBoxPerPallet, recehBox, recehPcs } : {}),
       // Untuk laporan KELUAR, simpan tanggal kedatangan batch yang diambil
       // (dari kombinasi yang dikunci operator lewat "Stok Tersedia") supaya
       // batch ini benar-benar terikat termasuk tanggal kedatangannya, bukan
@@ -6898,7 +7003,7 @@ function openLokasiModal(lokasi) {
       <p class="modal-history-hint muted">Diurutkan dari kedatangan paling baru. Klik salah satu baris untuk lihat Detail Barangnya.</p>
       <div class="batch-table batch-table-lokasi">
         <div class="batch-table-row batch-table-head">
-          <div class="btc btc-nama">Barang</div>
+          <div class="btc btc-nama">Kode Barang</div>
           <div class="btc btc-pemilik">Pemilik</div>
           <div class="btc btc-tanggal">Tanggal Kedatangan</div>
           <div class="btc btc-supplier">Supplier</div>
@@ -6912,7 +7017,7 @@ function openLokasiModal(lokasi) {
         <div class="batch-table-body">
           ${batchRows.length ? batchRows.map(t => `
             <div class="batch-table-row" data-kode="${escapeHtml(t.kodeBarang || t.namaBarang || '')}" data-supplier="${escapeHtml(t.supplier || '')}" data-pemilik="${escapeHtml(t.pemilik || '')}">
-              <div class="btc btc-nama" title="${escapeHtml(t.namaBarang || '-')}">${escapeHtml(t.namaBarang || '-')}</div>
+              <div class="btc btc-nama" title="${escapeHtml(t.namaBarang || '-')}">${escapeHtml(t.kodeBarang || '-')}</div>
               <div class="btc btc-pemilik">${escapeHtml(t.pemilik || '-')}</div>
               <div class="btc btc-tanggal">${formatTanggal(t.tanggal)}</div>
               <div class="btc btc-supplier">${escapeHtml(t.supplier || '-')}</div>

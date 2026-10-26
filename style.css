@@ -970,7 +970,21 @@ body.role-operator .katalog-mode-tabs { display: none; }
   display: grid; grid-template-columns: 1fr 1.15fr 1fr 0.9fr 0.8fr 0.8fr 0.9fr 0.5fr;
   align-items: center; gap: 6px; padding: 8px 8px; border-radius: 8px; font-size: 11.5px;
 }
-.batch-table-lokasi .batch-table-row { grid-template-columns: 1.3fr 0.8fr 1fr 1fr 0.9fr 0.7fr 0.8fr 0.7fr 0.8fr 0.5fr; }
+/* Tabel modal lokasi: lebar tiap kolom ditentukan (px) supaya semua isi terbaca
+   penuh & rapi. Kalau modal lebih sempit dari total lebar kolom, tabel bisa
+   digeser ke samping. Teks panjang (supplier, operator, tanggal) turun ke
+   baris berikutnya — bukan dipotong "...". */
+.batch-table-lokasi { overflow-x: auto; }
+.batch-table-lokasi .batch-table-row {
+  grid-template-columns: 118px 56px 78px 104px 84px 62px 66px 54px 86px 40px;
+  min-width: 780px; column-gap: 8px;
+}
+.batch-table-lokasi .btc { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.3; }
+.batch-table-lokasi .btc-nama,
+.batch-table-lokasi .btc-jumlah,
+.batch-table-lokasi .btc-pcspal,
+.batch-table-lokasi .btc-pallet { white-space: nowrap; overflow-wrap: normal; }
+.batch-table-lokasi .batch-table-head .btc { font-size: 10.5px; }
 .batch-table-keluar .batch-table-row { grid-template-columns: 1fr 1.05fr 1.15fr 1fr 0.9fr 0.8fr 0.8fr 0.9fr 0.5fr; }
 .batch-table-kp .batch-table-row { grid-template-columns: 1fr 0.95fr 1fr 0.9fr 0.8fr 0.8fr 0.7fr 0.9fr 0.5fr; }
 .batch-table-kp.batch-table-keluar .batch-table-row { grid-template-columns: 0.9fr 0.85fr 0.95fr 1.05fr 0.85fr 0.75fr 0.8fr 0.7fr 0.85fr 0.5fr; }
@@ -995,7 +1009,7 @@ body.role-operator .katalog-mode-tabs { display: none; }
 .btc-aksi:hover { background: var(--navy-pale); }
 @media (max-width: 620px) {
   .batch-table { overflow-x: auto; }
-  .batch-table-row, .batch-table-lokasi .batch-table-row { min-width: 700px; }
+  .batch-table-row { min-width: 700px; }
   .batch-table-keluar .batch-table-row { min-width: 800px; }
   .batch-table-kp .batch-table-row { min-width: 800px; }
   .batch-table-kp.batch-table-keluar .batch-table-row { min-width: 900px; }

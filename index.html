@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20260809">
-<link rel="manifest" href="manifest.json?v=20260809">
+<link rel="stylesheet" href="style.css?v=20261026c">
+<link rel="manifest" href="manifest.json?v=20261026c">
 <meta name="theme-color" content="#0F2038">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -465,38 +465,70 @@
             <p class="muted tanggal-hint" id="tanggal-hint" hidden>Tanggal form ini dilaporkan/diinput — <strong>bukan</strong> tanggal barang pertama kali datang (lihat "📅 Datang" di kartu Stok Tersedia di atas untuk tanggal kedatangan aslinya).</p>
           </div>
 
-          <div class="field">
-            <label for="input-jumlah">Jumlah Barang (pcs) <span class="req">*</span></label>
+          <div class="field" id="f-at">
+            <label for="input-qty-box">@ — Qty per Box/Ikat (pcs) <span class="req">*</span></label>
             <div class="input-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
-              <input type="text" id="input-jumlah" inputmode="numeric" placeholder="0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
+              <input type="text" id="input-qty-box" inputmode="numeric" placeholder="0" autocomplete="off">
+            </div>
+            <p class="muted qty-pallet-hint" id="qty-box-hint" hidden>Terisi otomatis dari data batch ini saat barang masuk — mengikuti kombinasi "Stok Tersedia" yang dipilih.</p>
+          </div>
+
+          <div class="field" id="f-pallet-full">
+            <label for="input-pallet-full">Jumlah Pallet Full</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
+              <input type="text" id="input-pallet-full" inputmode="numeric" placeholder="0" autocomplete="off">
             </div>
           </div>
 
-          <div class="field">
-            <label for="input-qty-pallet">Qty per Pallet (pcs) <span class="req">*</span></label>
+          <div class="field" id="f-qty-box-pallet">
+            <label for="input-qty-box-pallet">Qty / Pallet (Box/Ikat) <span class="req">*</span></label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
+              <input type="text" id="input-qty-box-pallet" inputmode="numeric" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field" id="f-receh-box">
+            <label for="input-receh-box">Receh (Box/Ikat)</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
+              <input type="text" id="input-receh-box" inputmode="numeric" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field" id="f-receh-pcs">
+            <label for="input-receh-pcs">Receh (Pcs)</label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
+              <input type="text" id="input-receh-pcs" inputmode="numeric" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field" id="f-qty-pallet">
+            <label for="input-qty-pallet"><span id="label-qty-pallet-text">Qty / Pallet (Pcs) — otomatis</span> <span class="req" id="req-qty-pallet" hidden>*</span></label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
-              <input type="text" id="input-qty-pallet" inputmode="numeric" placeholder="0">
+              <input type="text" id="input-qty-pallet" inputmode="numeric" placeholder="0" autocomplete="off">
             </div>
             <p class="muted qty-pallet-hint" id="qty-pallet-hint" hidden>Terisi otomatis dari data batch ini saat barang masuk — mengikuti kombinasi "Stok Tersedia" yang dipilih.</p>
           </div>
 
-          <div class="field">
+          <div class="field" id="f-jumlah">
+            <label for="input-jumlah"><span id="label-jumlah-text">Total Qty (Pcs) — otomatis</span> <span class="req" id="req-jumlah" hidden>*</span></label>
+            <div class="input-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg>
+              <input type="text" id="input-jumlah" inputmode="numeric" placeholder="0" autocomplete="off">
+            </div>
+          </div>
+
+          <div class="field" id="f-jumlah-pallet">
             <label for="input-jumlah-pallet">Jumlah Pallet (otomatis)</label>
             <div class="input-icon">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/></svg>
               <input type="text" id="input-jumlah-pallet" placeholder="-" readonly disabled>
             </div>
-          </div>
-
-          <div class="field">
-            <label for="input-qty-box">Qty per Box/Ikat (pcs)</label>
-            <div class="input-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>
-              <input type="text" id="input-qty-box" inputmode="numeric" placeholder="0">
-            </div>
-            <p class="muted qty-pallet-hint" id="qty-box-hint" hidden>Terisi otomatis dari data batch ini saat barang masuk — mengikuti kombinasi "Stok Tersedia" yang dipilih.</p>
           </div>
 
           <div class="field field-full">
@@ -1515,8 +1547,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script src="data.js?v=20260809"></script>
-  <script type="module" src="firebase-config.js?v=20260809"></script>
-  <script src="script.js?v=20260809"></script>
+  <script src="data.js?v=20261026c"></script>
+  <script type="module" src="firebase-config.js?v=20261026c"></script>
+  <script src="script.js?v=20261026c"></script>
 </body>
 </html>
