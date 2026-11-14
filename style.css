@@ -3314,3 +3314,8 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 }
 .ticket-edit .kode-box { margin: 0; }
 .ticket-edit .lokasi-input-row { min-height: 46px; }
+
+
+/* Lokasi Penyimpanan operator — daftar Blok (sama dengan tampilan admin) */
+.lokasi-blok-list { gap: 10px; margin-bottom: 0; flex: none; }
+.lokasi-blok-list .dash-blok-row:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }

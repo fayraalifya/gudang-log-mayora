@@ -6278,9 +6278,7 @@ function renderKatalogBarangSplit() {
       )
     : combos;
 
-  const allLokasi = buildLocationStock(currentEntries);
   const lq = katalogSplitLokasiQuery.trim().toLowerCase();
-  const filteredLokasi = lq ? allLokasi.filter(l => l.lokasi.toLowerCase().includes(lq)) : allLokasi;
 
   // Reset ke halaman 1 tiap kali kata kuncinya berubah, supaya operator
   // tidak "nyangkut" di halaman 3 pas hasil pencariannya cuma 1 halaman.
@@ -6355,71 +6353,47 @@ function renderKatalogBarangSplit() {
     `;
   })() : '';
 
-  // Bar kapasitas & badge status ditambahkan sebagai INFO TAMBAHAN di
-  // bawah baris yang sudah ada (lokasi/total pallet/aksi tetap sama persis
-  // seperti sebelumnya) — pakai helper getBatasLokasiPallet() yang sudah
-  // ada & sebelumnya cuma dipakai di modal detail lokasi. Lokasi tanpa
-  // batas terdaftar (lorong di luar A-L) tetap tampil apa adanya, tanpa bar.
-  //
-  // Ikon kotak per baris dipakai sebagai inline SVG (bukan webfont ikon
-  // eksternal, mengikuti pola inline SVG yang sudah dipakai di seluruh
-  // aplikasi ini) supaya warnanya bisa mengikuti status kapasitas.
-  const lokasiRowsHtml = filteredLokasi.length ? filteredLokasi.map(l => {
-    // PENTING: roundPalletDisplay() mengembalikan STRING terformat locale
-    // id-ID (mis. "33.440,21" — titik ribuan, koma desimal). String itu
-    // TIDAK BOLEH dipakai untuk perhitungan (Number("33.440,21") = NaN).
-    // Jadi nilai numerik mentah (palletNum) dan teks tampilan (palletDisplay)
-    // dipisah: yang satu buat hitung persen, yang satu buat ditulis di layar.
-    const palletNum = Number(l.totalPallet) || 0;
-    const palletDisplay = l.totalPallet ? roundPalletDisplay(l.totalPallet) : '0';
-    const lokasiText = String(l.lokasi || '').trim().replace(/\s+/g, ' ');
-    // "Area X" = huruf blok pertama dari kode lokasi (mis. "B-16-01" -> "Area B"),
-    // dipakai sebagai sub-label kecil di bawah kode lokasi lengkap.
-    const areaLetter = (lokasiText.match(/^([A-Za-z]+)/) || [])[1];
-    const batas = getBatasLokasiPallet(l.lokasi);
-    // Angka pallet ditulis sebagai satu baris "terpakai / batas pallet" —
-    // dibungkus title="" supaya kalau angkanya sangat panjang (dan terpotong
-    // dengan ellipsis oleh CSS), operator tetap bisa lihat angka lengkapnya
-    // lewat hover/tap-hold, tanpa baris jadi melebar dua baris di layar.
-    const palletFigure = `${palletDisplay}${batas ? ` / ${batas.toLocaleString('id-ID')}` : ''} pallet`;
-    let statusClass = 'ltr-cap-none', statusLabel = 'Tanpa batas terdaftar', pct = null;
-    if (batas) {
-      pct = Math.min(100, Math.max(0, Math.round((palletNum / batas) * 100)));
-      // Ambang "Hampir penuh" sengaja diturunkan ke 50% (bukan 70%) supaya
-      // operator dapat sinyal lebih awal sebelum rak benar-benar mepet.
-      statusClass = 'ltr-cap-ok'; statusLabel = 'Tersedia';
-      if (pct >= 100) { statusClass = 'ltr-cap-full'; statusLabel = 'Penuh'; }
-      else if (pct >= 50) { statusClass = 'ltr-cap-warn'; statusLabel = 'Hampir penuh'; }
-    }
-    const barFillWidth = pct == null ? 0 : pct;
-    // Ikon kotak sama untuk semua status — warnanya sudah dibedakan lewat
-    // .ltr-icon-box (ikuti pola inline SVG yang sudah dipakai di seluruh
-    // aplikasi ini, bukan webfont ikon eksternal yang belum dimuat).
-    const boxIconSvg = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>`;
+  // Panel Lokasi Penyimpanan operator memakai tampilan yang SAMA dengan admin
+  // ("Semua Blok" di dashboard admin): satu baris per Blok (A–L) dengan bar
+  // persentase kapasitas & jumlah pallet. Klik satu blok -> peta lokasi blok
+  // (rak terisi/kosong), lalu klik rak untuk detail barangnya.
+  const blokRanked = buildLokasiOccupancy(currentEntries)
+    .map(b => {
+      const total = b.terisi + b.kosong;
+      const batasBlok = getBatasPalletBlok(b.blok);
+      const isOver = batasBlok ? b.totalPallet > batasBlok : false;
+      const pct = batasBlok
+        ? Math.round((b.totalPallet / batasBlok) * 100)
+        : (total > 0 ? Math.round((b.terisi / total) * 100) : 0);
+      return { ...b, total, batasBlok, isOver, pct };
+    })
+    .filter(b => b.total > 0)
+    .sort((a, b) => a.blok.localeCompare(b.blok));
+  const totalSlotLokasi = blokRanked.reduce((n, b) => n + b.total, 0);
+  const filteredBlok = lq
+    ? blokRanked.filter(b => b.blok.toLowerCase().includes(lq) || `blok ${b.blok}`.toLowerCase().includes(lq) || b.slots.some(sl => String(sl.lokasi).toLowerCase().includes(lq)))
+    : blokRanked;
+  const lokasiRowsHtml = filteredBlok.length ? filteredBlok.map(b => {
+    // Blok yang sudah penuh/lewat kapasitas SELALU merah (sama seperti admin).
+    const lvl = (b.isOver || b.pct >= 100) ? 'dash-lvl-tinggi' : (b.pct >= 40 ? 'dash-lvl-sedang' : 'dash-lvl-rendah');
     return `
-      <div class="lokasi-table-row ${statusClass}" data-lokasi="${escapeHtml(l.lokasi)}" role="button" tabindex="0">
-        <div class="ltr-card-head">
-          <div class="ltr-icon-box ${statusClass}">${boxIconSvg}</div>
-          <div class="ltr-name-block">
-            <div class="ltr-lokasi mono" title="${escapeHtml(lokasiText)}">${escapeHtml(lokasiText)}</div>
-            ${areaLetter ? `<div class="ltr-area">Area ${escapeHtml(areaLetter)}</div>` : ''}
-          </div>
-          <button type="button" class="ltr-aksi" data-lokasi-aksi="${escapeHtml(l.lokasi)}" aria-label="Lihat detail lokasi ${escapeHtml(l.lokasi)}" title="Lihat detail lokasi">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
-          </button>
+      <div class="dash-blok-row${b.isOver ? ' is-over' : ''}" data-blok="${escapeHtml(b.blok)}" role="button" tabindex="0">
+        <div class="dash-blok-top">
+          <span class="dash-blok-name">Blok ${escapeHtml(b.blok)} <span class="muted">(${b.terisi}/${b.total} terisi)</span></span>
+          <span class="dash-blok-pct">${b.pct}%</span>
         </div>
-        <div class="ltr-pallet-row">
-          <span class="ltr-pallet" title="${escapeHtml(palletFigure)}">${palletFigure}</span>
-          <span class="ltr-capacity-pill ${statusClass}">${statusLabel}${pct != null ? ` ${pct}%` : ''}</span>
+        <div class="dash-blok-track"><div class="dash-blok-fill ${lvl}" style="width:${Math.max(Math.min(b.pct, 100), b.terisi > 0 ? 4 : 0)}%"></div></div>
+        <div class="dash-blok-pallet-info muted" style="font-size:12px; margin-top:4px;">
+          ${roundPalletDisplay(b.totalPallet)}${b.batasBlok ? ` / ${b.batasBlok.toLocaleString('id-ID')}` : ''} pallet
         </div>
-        <div class="ltr-capacity-bar"><div class="ltr-capacity-fill ${statusClass}" style="width:${barFillWidth}%"></div></div>
+        ${b.isOver ? `<div class="bar-row-warning">⚠️ Kapasitas terlampaui (batas ${b.batasBlok.toLocaleString('id-ID')} pallet)</div>` : ''}
       </div>
     `;
-  }).join('') : `<div class="empty-state">Tidak ada lokasi yang cocok dengan pencarian.</div>`;
-  const lokasiLegendHtml = filteredLokasi.length ? `
+  }).join('') : `<div class="empty-state">Tidak ada lokasi atau blok yang cocok dengan pencarian.</div>`;
+  const lokasiLegendHtml = filteredBlok.length ? `
     <div class="ltr-legend">
-      <span class="ltr-legend-item"><i class="ltr-legend-dot ltr-cap-ok"></i>Tersedia (&lt;50%)</span>
-      <span class="ltr-legend-item"><i class="ltr-legend-dot ltr-cap-warn"></i>Hampir penuh (50–99%)</span>
+      <span class="ltr-legend-item"><i class="ltr-legend-dot ltr-cap-ok"></i>Longgar (&lt;40%)</span>
+      <span class="ltr-legend-item"><i class="ltr-legend-dot ltr-cap-warn"></i>Sedang (40–99%)</span>
       <span class="ltr-legend-item"><i class="ltr-legend-dot ltr-cap-full"></i>Penuh (100%)</span>
     </div>
   ` : '';
@@ -6446,9 +6420,9 @@ function renderKatalogBarangSplit() {
           <input type="text" id="katalog-split-lokasi-search" placeholder="Cari lokasi..." value="${escapeHtml(katalogSplitLokasiQuery)}">
         </div>
       </div>
-      <div class="ltr-count-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V10l9-6 9 6v11"/><path d="M9 21v-6h6v6"/></svg>Total ${allLokasi.length} lokasi</div>
+      <div class="ltr-count-badge"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V10l9-6 9 6v11"/><path d="M9 21v-6h6v6"/></svg>Total ${totalSlotLokasi} lokasi · ${blokRanked.length} blok</div>
       <div class="lokasi-table">
-        <div class="lokasi-table-body">${lokasiRowsHtml}</div>
+        <div class="lokasi-table-body dash-blok-list lokasi-blok-list">${lokasiRowsHtml}</div>
       </div>
       ${lokasiLegendHtml}
     </div>
@@ -6466,17 +6440,11 @@ function renderKatalogBarangSplit() {
       renderKatalogBarangSplit();
     });
   });
-  katalogList.querySelectorAll('.lokasi-table-row:not(.lokasi-table-head)').forEach(row => {
-    row.addEventListener('click', (e) => {
-      if (e.target.closest('.ltr-aksi')) return;
-      openLokasiModal(row.dataset.lokasi);
-    });
+  katalogList.querySelectorAll('.dash-blok-row[data-blok]').forEach(row => {
+    row.addEventListener('click', () => openBlokModal(row.dataset.blok));
     row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLokasiModal(row.dataset.lokasi); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBlokModal(row.dataset.blok); }
     });
-  });
-  katalogList.querySelectorAll('.ltr-aksi').forEach(btn => {
-    btn.addEventListener('click', (e) => { e.stopPropagation(); openLokasiModal(btn.dataset.lokasiAksi); });
   });
 
   const focusEnd = (el) => { if (el) { el.focus(); const v = el.value; el.setSelectionRange(v.length, v.length); } };
