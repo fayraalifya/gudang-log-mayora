@@ -5627,6 +5627,7 @@ function openBlokModal(blok) {
         <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-terisi"></i>Terisi</span>
         <span class="lokasi-map-legend-item"><i class="lokasi-map-dot is-kosong"></i>Kosong</span>
       </div>
+      <div class="lokasi-map-hint" id="lokasi-map-hint" hidden>Baris = lorong, kolom = tingkat. Angka = jumlah pallet. Ketuk kotak untuk detail.</div>
       <div class="lokasi-map-grid" id="lokasi-map-grid"></div>
     </div>
   `;
@@ -5669,26 +5670,77 @@ function openBlokModal(blok) {
     const pad2 = n => String(n).padStart(2, '0');
     const peta = new Map(parsed.map(p => [`${p.lorong}-${p.tingkat}`, p.s]));
 
-    // Susunan: KOLOM = lorong (kiri -> kanan), BARIS = tingkat (07 atas -> 01 bawah).
-    // Semua kolom dibagi rata selebar modal (modal dilebarkan lewat CSS), jadi
-    // seluruh peta terlihat dalam satu layar tanpa geser horizontal/vertikal.
-    grid.classList.add('is-rack-layout');
-    grid.style.setProperty('--cols', lorongList.length);
-    grid.style.gridTemplateColumns = `repeat(${lorongList.length}, minmax(0, 1fr))`;
+    const hint = modalBody.querySelector('#lokasi-map-hint');
 
-    for (let t = maxTingkat; t >= 1; t--) {
+    // TAMPILAN LAYAR LEBAR: KOLOM = lorong (kiri -> kanan), BARIS = tingkat
+    // (07 atas -> 01 bawah). Semua kolom dibagi rata selebar modal.
+    const gambarDesktop = () => {
+      grid.classList.add('is-rack-layout');
+      grid.style.setProperty('--cols', lorongList.length);
+      grid.style.gridTemplateColumns = `repeat(${lorongList.length}, minmax(0, 1fr))`;
+      for (let t = maxTingkat; t >= 1; t--) {
+        lorongList.forEach(l => {
+          const s = peta.get(`${l}-${t}`);
+          if (s) {
+            grid.appendChild(buatSel(s, `${data.blok}-${pad2(l)}-${pad2(t)}`));
+          } else {
+            const kosong = document.createElement('div');
+            kosong.className = 'lokasi-map-cell is-none';
+            kosong.setAttribute('aria-hidden', 'true');
+            grid.appendChild(kosong);
+          }
+        });
+      }
+    };
+
+    // TAMPILAN HP: dibalik — BARIS = lorong (E-01, E-02, ...), KOLOM = tingkat
+    // (T01 -> T07, urut dari bawah ke atas). Kolom paling banyak = jumlah tingkat (±7), jadi muat di
+    // lebar layar HP; lorong yang banyak cukup digulir ke bawah bersama modal.
+    // Sel hanya menampilkan angka pallet (kode lengkap ada di baris/kolom).
+    const gambarHP = () => {
+      grid.classList.add('is-rack-mobile');
+      grid.style.gridTemplateColumns = `auto repeat(${maxTingkat}, minmax(0, 1fr))`;
+      const head = (txt, cls) => {
+        const el = document.createElement('div');
+        el.className = `lokasi-map-head ${cls}`;
+        el.textContent = txt;
+        return el;
+      };
+      grid.appendChild(head('', 'is-corner'));
+      for (let t = 1; t <= maxTingkat; t++) grid.appendChild(head(`T${pad2(t)}`, 'is-col'));
       lorongList.forEach(l => {
-        const s = peta.get(`${l}-${t}`);
-        if (s) {
-          grid.appendChild(buatSel(s, `${data.blok}-${pad2(l)}-${pad2(t)}`));
-        } else {
-          const kosong = document.createElement('div');
-          kosong.className = 'lokasi-map-cell is-none';
-          kosong.setAttribute('aria-hidden', 'true');
-          grid.appendChild(kosong);
+        grid.appendChild(head(`${data.blok}-${pad2(l)}`, 'is-row'));
+        for (let t = 1; t <= maxTingkat; t++) {
+          const s = peta.get(`${l}-${t}`);
+          if (s) {
+            const cell = buatSel(s, `${data.blok}-${pad2(l)}-${pad2(t)}`);
+            cell.classList.add('is-compact');
+            cell.innerHTML = s.status === 'terisi'
+              ? `<span class="lokasi-map-num">${s.pallet ? roundPalletDisplay(s.pallet) : 0}</span>`
+              : '<span class="lokasi-map-num is-empty">–</span>';
+            grid.appendChild(cell);
+          } else {
+            const kosong = document.createElement('div');
+            kosong.className = 'lokasi-map-cell is-none';
+            kosong.setAttribute('aria-hidden', 'true');
+            grid.appendChild(kosong);
+          }
         }
       });
-    }
+    };
+
+    // Pilih tampilan sesuai lebar layar; otomatis berganti kalau layar diputar/diubah ukurannya.
+    const mql = window.matchMedia(`(max-width: ${lorongList.length * 62 + 60}px)`);
+    const gambar = () => {
+      if (!grid.isConnected) { mql.removeEventListener('change', gambar); return; }
+      grid.innerHTML = '';
+      grid.className = 'lokasi-map-grid';
+      grid.style.cssText = '';
+      if (hint) hint.hidden = !mql.matches;
+      if (mql.matches) gambarHP(); else gambarDesktop();
+    };
+    mql.addEventListener('change', gambar);
+    gambar();
   } else {
     // Fallback: format kode tidak standar -> tampilkan urut biasa
     data.slots.forEach(s => {

@@ -3319,3 +3319,38 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 /* Lokasi Penyimpanan operator — daftar Blok (sama dengan tampilan admin) */
 .lokasi-blok-list { gap: 10px; margin-bottom: 0; flex: none; }
 .lokasi-blok-list .dash-blok-row:focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+
+
+/* Peta lokasi blok — versi HP (baris = lorong, kolom = tingkat) */
+.lokasi-map-hint { font-size: 11px; color: var(--text-muted); margin: 0 0 8px; line-height: 1.4; }
+.lokasi-map-grid.is-rack-mobile { max-height: none; overflow: visible; gap: 4px; padding: 0; }
+.lokasi-map-head {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center; letter-spacing: 0.2px;
+}
+.lokasi-map-head.is-row { justify-content: flex-start; padding-right: 6px; color: var(--ink-soft); }
+.lokasi-map-head.is-col, .lokasi-map-head.is-corner {
+  position: sticky; top: -2px; z-index: 2; background: var(--kertas); padding: 5px 0;
+}
+.lokasi-map-cell.is-compact {
+  min-width: 0; min-height: 36px; padding: 4px 1px; align-items: center; justify-content: center;
+  text-align: center; overflow: hidden; border-radius: 6px;
+}
+.lokasi-map-cell.is-compact:hover { transform: none; }
+.lokasi-map-cell.is-compact:active { filter: brightness(0.94); }
+.lokasi-map-num {
+  font-family: var(--font-mono); font-weight: 700; color: var(--hijau); white-space: nowrap; line-height: 1;
+  font-size: clamp(8.5px, 2.7vw, 12px); letter-spacing: -0.2px;
+}
+.lokasi-map-num.is-empty { color: var(--kraft-muted); font-weight: 500; }
+
+@media (max-width: 640px) {
+  .modal-overlay { padding: 12px 8px; }
+  .modal-panel:has(.lokasi-map-grid) { padding: 16px 12px; border-radius: 14px; }
+  .modal-panel:has(.lokasi-map-grid) .modal-item-head { padding-left: 0; padding-right: 36px; margin-bottom: 12px; }
+  .modal-panel:has(.lokasi-map-grid) .modal-stat-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+  .modal-panel:has(.lokasi-map-grid) .modal-stat { padding: 10px 6px; }
+  .modal-panel:has(.lokasi-map-grid) .modal-stat strong { font-size: 18px; }
+  .modal-panel:has(.lokasi-map-grid) .modal-stat:nth-child(4) { grid-column: 1 / -1; }
+  .lokasi-map-legend { margin-bottom: 8px; }
+}
