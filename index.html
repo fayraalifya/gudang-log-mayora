@@ -635,16 +635,6 @@
       <!-- RINGKASAN -->
       <section id="ringkasan" class="ringkasan">
 
-        <!-- PERINGATAN STOK — muncul kalau ada barang kosong,
-             supaya admin tahu duluan sebelum operator lapor "stok habis". -->
-        <div id="stok-warning" class="stok-warning" hidden>
-          <div class="stok-warning-head">
-            <span class="stok-warning-icon">⚠️</span>
-            <span class="stok-warning-title">Perlu perhatian — <span id="stok-warning-count">0</span> barang stoknya kosong</span>
-          </div>
-          <div class="stok-warning-list" id="stok-warning-list"></div>
-        </div>
-
         <!-- PERGERAKAN BARANG — 6 metrik aktivitas pada periode terpilih,
              masing-masing dengan tren dibanding periode sebelumnya. -->
         <div class="dash-card dash-move-card">
@@ -1370,6 +1360,33 @@
           </div>
         </div>
         <p class="riwayat-hint" id="riwayat-hint">Menampilkan laporan sesuai periode yang dipilih di atas.</p>
+        <!-- Filter khusus mode Jejak (tampil hanya saat tombol Jejak aktif) -->
+        <div class="jejak-filters" id="jejak-filters" hidden>
+          <label class="jejak-filter"><span>Status</span>
+            <select id="jejak-filter-status">
+              <option value="semua">Semua</option>
+              <option value="diedit">Diedit saja</option>
+              <option value="dihapus">Dihapus saja</option>
+            </select>
+          </label>
+          <label class="jejak-filter"><span>Jenis</span>
+            <select id="jejak-filter-jenis">
+              <option value="semua">Semua</option>
+              <option value="masuk">Barang Masuk</option>
+              <option value="keluar">Barang Keluar</option>
+            </select>
+          </label>
+          <label class="jejak-filter"><span>Diubah oleh</span>
+            <select id="jejak-filter-oleh"><option value="">Semua</option></select>
+          </label>
+          <label class="jejak-filter"><span>Dari tanggal</span>
+            <input type="date" id="jejak-filter-dari">
+          </label>
+          <label class="jejak-filter"><span>Sampai tanggal</span>
+            <input type="date" id="jejak-filter-sampai">
+          </label>
+          <button type="button" id="jejak-filter-reset" class="btn-secondary jejak-filter-reset">Reset filter</button>
+        </div>
         <div id="riwayat-empty" class="empty-state">Belum ada laporan yang dicatat.</div>
         <div id="riwayat-list" class="riwayat-list"></div>
       </section>

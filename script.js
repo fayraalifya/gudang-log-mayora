@@ -2830,18 +2830,20 @@ window.addEventListener('offline', updatePendingSyncUI);
 
 function renderStokWarning() {
   if (currentRole() !== 'admin') return;
-  const wrap = document.getElementById('stok-warning');
-  const listEl = document.getElementById('stok-warning-list');
-  const countEl = document.getElementById('stok-warning-count');
-  if (!wrap || !listEl || !countEl) return;
-
   const items = buildStokList(currentEntries);
   const perluPerhatian = items
     .map(it => ({ ...it, stok: it.masuk - it.keluar }))
     .filter(it => it.stok <= AMBANG_STOK_HABIS)
     .sort((a, b) => a.stok - b.stok);
 
+  // Badge angka di tab "Katalog & Stok" tetap diperbarui
   updateAdminNavBadge('katalog', perluPerhatian.length);
+
+  // Kotak peringatan "Perlu perhatian" di Dashboard sudah dihilangkan
+  const wrap = document.getElementById('stok-warning');
+  const listEl = document.getElementById('stok-warning-list');
+  const countEl = document.getElementById('stok-warning-count');
+  if (!wrap || !listEl || !countEl) return;
 
   if (perluPerhatian.length === 0) {
     wrap.hidden = true;
@@ -5048,6 +5050,8 @@ const scanErrorBox = document.getElementById('scan-error');
 // baris ~40 (dari MASTER_DATA.lokasi yang sama). Deklarasi kedua yang
 // dulu ada di sini menyebabkan SyntaxError yang mematikan seluruh script.
 let html5QrScanner = null;
+// Kalau diisi, hasil scan dikirim ke target ini (mis. form Edit Laporan), bukan ke form input utama.
+let scanTarget = null;
 let scanBusy = false;
 
 function normalizeLokasiCode(text) {
@@ -5094,6 +5098,7 @@ async function stopScanner() {
 async function openScanModal() {
   if (typeof Html5Qrcode === 'undefined') {
     showToast('Fitur scan belum siap dimuat. Periksa koneksi internet lalu coba lagi.', 'error');
+    scanTarget = null;
     return;
   }
   scanModal.hidden = false;
@@ -5127,6 +5132,7 @@ async function openScanModal() {
 async function closeScanModal() {
   await stopScanner();
   scanModal.hidden = true;
+  scanTarget = null;
 }
 
 async function onScanSuccess(decodedText) {
@@ -5140,13 +5146,14 @@ async function onScanSuccess(decodedText) {
     // mana operator bisa memilih kombinasi Gudang 1 tapi scan barcode
     // Gudang 2 — yang akan membuat laporan keluar dengan kombinasi yang
     // sebenarnya tidak pernah tercatat masuk.
-    if (jenis === 'keluar' && kombinasiTerkunci && matched !== kombinasiTerkunci.lokasi) {
+    if (!scanTarget && jenis === 'keluar' && kombinasiTerkunci && matched !== kombinasiTerkunci.lokasi) {
       scanErrorBox.hidden = false;
       scanErrorBox.textContent = `Barcode ini adalah lokasi "${matched}", tapi kombinasi yang dipilih ada di lokasi "${kombinasiTerkunci.lokasi}". Scan barcode lokasi ${kombinasiTerkunci.lokasi}, atau pilih ulang kombinasi yang sesuai lokasi ini.`;
       return;
     }
     scanBusy = true;
-    selLokasi.setValue(matched);
+    const targetScan = scanTarget || selLokasi;
+    targetScan.setValue(matched);
     await closeScanModal();
     showToast(`Lokasi berhasil di-scan: ${matched}`);
   } else {
@@ -5155,7 +5162,7 @@ async function onScanSuccess(decodedText) {
   }
 }
 
-if (btnScanLokasi) btnScanLokasi.addEventListener('click', openScanModal);
+if (btnScanLokasi) btnScanLokasi.addEventListener('click', () => { scanTarget = null; openScanModal(); });
 if (scanModalClose) scanModalClose.addEventListener('click', closeScanModal);
 if (scanModal) scanModal.addEventListener('click', (e) => { if (e.target === scanModal) closeScanModal(); });
 
@@ -5662,8 +5669,12 @@ function openBlokModal(blok) {
     const pad2 = n => String(n).padStart(2, '0');
     const peta = new Map(parsed.map(p => [`${p.lorong}-${p.tingkat}`, p.s]));
 
+    // Susunan: KOLOM = lorong (kiri -> kanan), BARIS = tingkat (07 atas -> 01 bawah).
+    // Semua kolom dibagi rata selebar modal (modal dilebarkan lewat CSS), jadi
+    // seluruh peta terlihat dalam satu layar tanpa geser horizontal/vertikal.
     grid.classList.add('is-rack-layout');
-    grid.style.gridTemplateColumns = `repeat(${lorongList.length}, minmax(86px, 1fr))`;
+    grid.style.setProperty('--cols', lorongList.length);
+    grid.style.gridTemplateColumns = `repeat(${lorongList.length}, minmax(0, 1fr))`;
 
     for (let t = maxTingkat; t >= 1; t--) {
       lorongList.forEach(l => {
@@ -7820,6 +7831,27 @@ let riwayatVisibleCount = RIWAYAT_PAGE_SIZE;
 // perlu menulis ulang kodenya (semua logikanya masih utuh di bawah).
 const RIWAYAT_EDIT_HAPUS_AKTIF = true;
 
+// Ikon form Edit Laporan — sama dengan ikon di form input laporan.
+let editFormSeq = 0;
+const EDIT_ICON = (() => {
+  const svg = (d, extra = '') => `<svg ${extra} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${d}</svg>`;
+  return {
+    chevron: '<svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>',
+    barang: svg('<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/>'),
+    supplier: svg('<path d="M10 17h4V5H2v12h3"/><path d="M14 9h4l4 4v4h-3"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/>'),
+    pemilik: svg('<path d="M2 20h20"/><path d="M4 20V10l6-4v14"/><path d="M14 20V4l6 4v12"/><path d="M8 12h.01"/><path d="M8 16h.01"/>'),
+    pin: svg('<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>'),
+    scan: svg('<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/>'),
+    scanFrame: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/></svg>',
+    calendar: svg('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'),
+    at: svg('<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>'),
+    pallet: svg('<rect x="3" y="7" width="18" height="10" rx="1"/><path d="M3 11h18M7 17v2M17 17v2"/>'),
+    box: svg('<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/>'),
+    receh: svg('<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>'),
+    note: svg('<path d="M4 4h16v12H5.17L4 17.17V4z"/><path d="M8 9h8M8 13h5"/>'),
+  };
+})();
+
 function buildTicketCard(t) {
   const isAdjustment = t.tipe === 'penyesuaian';
   // Untuk laporan KELUAR, t.tanggal adalah tanggal PENGINPUTAN — bukan
@@ -7865,200 +7897,302 @@ function buildTicketCard(t) {
       </div>
       ${t.keterangan ? `<div class="ticket-note"><b>Keterangan:</b> ${escapeHtml(t.keterangan)}</div>` : ''}
       ${(t.editLog && t.editLog.length > 0) ? `<div class="ticket-note ticket-edited-note">✏️ Terakhir diedit oleh <b>${escapeHtml(t.editLog[t.editLog.length - 1].oleh)}</b> · ${formatWaktu(t.editLog[t.editLog.length - 1].waktu)} · <span class="jejak-log-detail">Bagian diubah: ${escapeHtml(ringkasPerubahanEdit(t.editLog[t.editLog.length - 1]))}</span>${t.editLog.length > 1 ? ` (${t.editLog.length}× diedit — lihat "Jejak Edit/Hapus" untuk detail)` : ''}</div>` : ''}
-      ${RIWAYAT_EDIT_HAPUS_AKTIF ? `
-      <div class="ticket-edit" hidden>
-        <div class="field">
-          <label>Kode Barang</label>
-          <input type="text" class="edit-kode-barang" list="dl-kode-barang-edit" value="${escapeHtml(t.kodeBarang || '')}" placeholder="Ketik/pilih kode barang...">
-        </div>
-        <div class="field">
-          <label>Nama Barang</label>
-          <input type="text" class="edit-nama-barang" value="${escapeHtml(t.namaBarang || '')}" placeholder="Otomatis dari Kode Barang" readonly>
-        </div>
-        <div class="field">
-          <label>Supplier</label>
-          <input type="text" class="edit-supplier" list="dl-supplier-edit" value="${escapeHtml(t.supplier || '')}" placeholder="Ketik supplier...">
-        </div>
-        <div class="field">
-          <label>Pemilik Barang</label>
-          <input type="text" class="edit-pemilik" list="dl-pemilik-edit" value="${escapeHtml(t.pemilik || '')}" placeholder="Ketik pemilik barang...">
-        </div>
-        <div class="field">
-          <label>Lokasi</label>
-          <input type="text" class="edit-lokasi" list="dl-lokasi" value="${escapeHtml(t.lokasi)}">
-        </div>
-        <div class="field">
-          <label>${t.jenis === 'keluar' ? 'Tanggal Penginputan' : 'Tanggal Kedatangan'}</label>
-          <input type="date" class="edit-tanggal" value="${escapeHtml(t.tanggal || '')}">
-        </div>
-        <div class="field">
-          <label>Jumlah (pcs)</label>
-          <input type="number" class="edit-jumlah" min="1" value="${t.jumlah}">
-        </div>
-        <div class="field">
-          <label>Qty per Pallet (pcs)</label>
-          <input type="number" class="edit-qty-pallet" min="1" value="${t.qtyPerPallet != null ? t.qtyPerPallet : ''}" placeholder="Opsional">
-        </div>
-        <div class="field">
-          <label>Jumlah Pallet (otomatis)</label>
-          <input type="text" class="edit-jumlah-pallet-display" value="${t.jumlahPallet != null ? roundPalletDisplay(t.jumlahPallet) : '-'}" readonly disabled>
-        </div>
-        <div class="field field-full">
-          <label>Keterangan <span class="req-mark">*</span></label>
-          <input type="text" class="edit-keterangan" value="${escapeHtml(t.keterangan || '')}" placeholder="Wajib diisi, contoh: koreksi lokasi hasil stock opname" required>
-        </div>
-        <div class="ticket-edit-actions">
-          <button type="button" class="btn-mini btn-mini-cancel">Batal</button>
-          <button type="button" class="btn-mini btn-mini-save">Simpan Perubahan</button>
-        </div>
-      </div>` : ''}
+      ${RIWAYAT_EDIT_HAPUS_AKTIF ? '<div class="ticket-edit" hidden></div>' : ''}
     `;
   card.querySelector('.link-barang:not(.link-lokasi)').addEventListener('click', () => openItemModal(t.kodeBarang));
   card.querySelector('.link-lokasi').addEventListener('click', () => openLokasiModal(t.lokasi));
 
   if (RIWAYAT_EDIT_HAPUS_AKTIF) {
     const editPanel = card.querySelector('.ticket-edit');
-    const editNamaBarangEl = card.querySelector('.edit-nama-barang');
-    const editKodeBarangEl = card.querySelector('.edit-kode-barang');
-    const editJumlahEl = card.querySelector('.edit-jumlah');
-    const editQtyPalletEl = card.querySelector('.edit-qty-pallet');
-    const editJumlahPalletDisplayEl = card.querySelector('.edit-jumlah-pallet-display');
+    let editSiap = false;
 
-    // Kode Barang yang menentukan Nama Barang (bukan sebaliknya) — begitu
-    // Kode Barang diketik/dipilih dan cocok dengan salah satu kode di data
-    // master, Nama Barang otomatis terisi mengikuti kode tersebut. Nama
-    // Barang bersifat baca-saja di form ini supaya operator tidak bisa
-    // mengubah nama tanpa mengubah kodenya (mencegah nama & kode jadi
-    // tidak sinkron).
-    function syncNamaDariKode() {
-      const kode = editKodeBarangEl.value.trim();
-      const match = (BARANG_OPTIONS || []).find(b => b.kode === kode);
-      editNamaBarangEl.value = match ? match.nama : '';
-    }
-    editKodeBarangEl.addEventListener('input', syncNamaDariKode);
-    editKodeBarangEl.addEventListener('change', syncNamaDariKode);
+    // Form edit dibangun SAAT PERTAMA DIBUKA (bukan saat kartu dirender) supaya
+    // daftar riwayat yang panjang tetap ringan. Tampilan & perilakunya sama
+    // dengan form input laporan: dropdown Nama Barang/Supplier/Pemilik, lokasi
+    // lewat Scan, dan kolom hitung otomatis sesuai jenis MASUK / KELUAR.
+    function siapkanFormEdit() {
+      const uid = ++editFormSeq;
+      const masuk = t.jenis === 'masuk';
+      const nf = n => (n == null || !Number.isFinite(Number(n))) ? '' : Number(n).toLocaleString('id-ID');
 
-    // Hitung ulang tampilan Jumlah Pallet setiap kali Jumlah atau Qty per
-    // Pallet diubah — sama seperti hitungJumlahPallet() di form laporan.
-    function recalcJumlahPalletEdit() {
-      const jumlah = parseInt(editJumlahEl.value, 10);
-      const qtyPallet = parseInt(editQtyPalletEl.value, 10);
-      if (!jumlah || !qtyPallet || qtyPallet <= 0) {
-        editJumlahPalletDisplayEl.value = '-';
-        return;
+      // Rincian barang MASUK (@, pallet full, receh). Data lama yang belum
+      // menyimpan rincian ini dihitung mundur dari qty/pallet & jumlah.
+      let at = t.qtyPerBox, pf = t.palletFull, qbp = t.qtyBoxPerPallet, rb = t.recehBox, rp = t.recehPcs;
+      if (masuk && pf == null && at > 0 && t.qtyPerPallet > 0 && Number.isInteger(t.qtyPerPallet / at)) {
+        qbp = t.qtyPerPallet / at;
+        pf = Math.floor(t.jumlah / t.qtyPerPallet);
+        const sisa = t.jumlah - pf * t.qtyPerPallet;
+        rb = Math.floor(sisa / at);
+        rp = sisa - rb * at;
       }
-      editJumlahPalletDisplayEl.value = roundPalletDisplay(jumlah / qtyPallet);
-    }
-    editJumlahEl.addEventListener('input', recalcJumlahPalletEdit);
-    editQtyPalletEl.addEventListener('input', recalcJumlahPalletEdit);
 
-    card.querySelector('.btn-edit').addEventListener('click', () => {
-      editPanel.hidden = !editPanel.hidden;
-    });
-    card.querySelector('.btn-mini-cancel').addEventListener('click', () => { editPanel.hidden = true; });
-    card.querySelector('.btn-mini-save').addEventListener('click', async () => {
-      if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
-      const newNamaBarang = editNamaBarangEl.value.trim();
-      const newKodeBarang = editKodeBarangEl.value.trim();
-      const newSupplier = card.querySelector('.edit-supplier').value.trim();
-      const newPemilik = card.querySelector('.edit-pemilik').value.trim();
-      const newLokasi = card.querySelector('.edit-lokasi').value.trim();
-      const newTanggal = card.querySelector('.edit-tanggal').value;
-      const newJumlah = parseInt(editJumlahEl.value, 10);
-      const newKeterangan = card.querySelector('.edit-keterangan').value.trim();
-      const qtyPalletRaw = editQtyPalletEl.value.trim();
-      const newQtyPerPallet = qtyPalletRaw ? parseInt(qtyPalletRaw, 10) : null;
+      const selField = (key, label, icon, ph, full) => `
+        <div class="field${full ? ' field-full' : ''}">
+          <label>${label} <span class="req">*</span></label>
+          <div class="searchable" id="ed${uid}-${key}">
+            <button type="button" class="select-btn" id="ed${uid}-${key}-btn">
+              ${icon}
+              <span class="select-value" id="ed${uid}-${key}-value" data-placeholder="${ph}">${ph}</span>
+              ${EDIT_ICON.chevron}
+            </button>
+            <div class="dropdown-panel" id="ed${uid}-${key}-panel" hidden>
+              <div class="search-box"><input type="text" id="ed${uid}-${key}-search" placeholder="Ketik untuk mencari..."></div>
+              <div class="options-list" id="ed${uid}-${key}-list"></div>
+            </div>
+          </div>
+        </div>`;
+      const inpField = (cls, label, icon, val, opts = {}) => `
+        <div class="field${opts.full ? ' field-full' : ''}">
+          <label>${label}${opts.req ? ' <span class="req">*</span>' : ''}</label>
+          <div class="input-icon${opts.locked ? ' is-locked' : ''}">
+            ${icon}
+            <input type="${opts.type || 'text'}" class="${cls}" ${opts.type === 'date' ? '' : 'inputmode="' + (opts.numeric === false ? 'text' : 'numeric') + '"'} autocomplete="off" value="${escapeHtml(val)}" placeholder="${opts.ph ?? '0'}"${opts.readonly ? ' readonly' : ''}${opts.disabled ? ' disabled' : ''}>
+          </div>
+        </div>`;
 
-      if (!newKodeBarang) return showToast('Kode barang tidak boleh kosong.', 'error');
-      const barangMasterMatch = (BARANG_OPTIONS || []).find(b => b.kode === newKodeBarang);
-      if (!barangMasterMatch) return showToast(`Kode barang "${newKodeBarang}" tidak ditemukan di data master. Pilih dari daftar saran atau tambahkan dulu di Pengelolaan Barang.`, 'error');
-      if (!newNamaBarang) return showToast('Nama barang tidak boleh kosong.', 'error');
-      if (!newSupplier) return showToast('Supplier tidak boleh kosong.', 'error');
-      if (!newPemilik) return showToast('Pemilik barang tidak boleh kosong.', 'error');
-      if (!newLokasi) return showToast('Lokasi tidak boleh kosong.', 'error');
-      if (!newTanggal) return showToast('Tanggal tidak boleh kosong.', 'error');
-      if (!newJumlah || newJumlah <= 0) return showToast('Jumlah harus lebih dari 0.', 'error');
-      if (qtyPalletRaw && (!newQtyPerPallet || newQtyPerPallet <= 0)) return showToast('Qty per pallet harus lebih dari 0.', 'error');
-      if (!newKeterangan) return showToast('Keterangan wajib diisi untuk setiap perubahan laporan.', 'error');
+      editPanel.innerHTML = `
+        ${selField('barang', 'Nama Barang', EDIT_ICON.barang, 'Pilih barang...', true)}
+        <div class="field field-full kode-box">
+          ${EDIT_ICON.scanFrame}
+          <span class="kode-label">KODE BARANG</span>
+          <span class="kode-value ed-kode-value">${escapeHtml(t.kodeBarang || '-')}</span>
+        </div>
+        ${selField('supplier', 'Supplier', EDIT_ICON.supplier, 'Pilih supplier...')}
+        ${selField('pemilik', 'Pemilik Barang (Pabrik)', EDIT_ICON.pemilik, 'Pilih pemilik barang...')}
+        <div class="field">
+          <label>Lokasi Penyimpanan <span class="req">*</span></label>
+          <div class="lokasi-input-row">
+            <div class="lokasi-scan-box">
+              ${EDIT_ICON.pin}
+              <span class="select-value ed-lokasi-value has-value">${escapeHtml(t.lokasi || 'Belum di-scan...')}</span>
+            </div>
+            <button type="button" class="btn-scan ed-btn-scan" title="Scan barcode lokasi">
+              ${EDIT_ICON.scan}<span>Scan</span>
+            </button>
+          </div>
+        </div>
+        ${inpField('ed-tanggal', masuk ? 'Tanggal Kedatangan' : 'Tanggal Penginputan', EDIT_ICON.calendar, t.tanggal || '', { type: 'date', req: true })}
+        ${masuk ? `
+          ${inpField('ed-at', '@ — Qty per Box/Ikat (pcs)', EDIT_ICON.at, nf(at))}
+          ${inpField('ed-pallet-full', 'Jumlah Pallet Full', EDIT_ICON.pallet, nf(pf))}
+          ${inpField('ed-qty-box-pallet', 'Qty / Pallet (Box/Ikat)', EDIT_ICON.box, nf(qbp))}
+          ${inpField('ed-receh-box', 'Receh (Box/Ikat)', EDIT_ICON.box, nf(rb))}
+          ${inpField('ed-receh-pcs', 'Receh (Pcs)', EDIT_ICON.receh, nf(rp))}
+          ${inpField('ed-qty-pallet', 'Qty / Pallet (Pcs) — otomatis', EDIT_ICON.pallet, nf(t.qtyPerPallet), { locked: true, readonly: true })}
+          ${inpField('ed-jumlah', 'Total Qty (Pcs) — otomatis', EDIT_ICON.receh, nf(t.jumlah), { locked: true, readonly: true })}
+        ` : `
+          ${inpField('ed-jumlah', 'Jumlah Qty (Pcs)', EDIT_ICON.receh, nf(t.jumlah), { req: true })}
+          ${inpField('ed-qty-pallet', 'Qty per Pallet (Pcs)', EDIT_ICON.pallet, nf(t.qtyPerPallet), { req: t.qtyPerPallet != null })}
+        `}
+        ${inpField('ed-jumlah-pallet', 'Jumlah Pallet (otomatis)', EDIT_ICON.pallet, t.jumlahPallet != null ? roundPalletDisplay(t.jumlahPallet) : '-', { readonly: true, disabled: true, locked: true, ph: '-' })}
+        ${inpField('ed-keterangan', 'Keterangan', EDIT_ICON.note, t.keterangan || '', { full: true, req: true, numeric: false, ph: 'Wajib diisi, contoh: koreksi lokasi hasil stock opname' })}
+        <div class="ticket-edit-actions">
+          <button type="button" class="btn-mini btn-mini-cancel">Batal</button>
+          <button type="button" class="btn-mini btn-mini-save">Simpan Perubahan</button>
+        </div>
+      `;
 
-      const newJumlahPallet = newQtyPerPallet ? Math.round((newJumlah / newQtyPerPallet) * 100) / 100 : null;
-
-      // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
-      // lalu pastikan stok pada kombinasi kode+lokasi LAMA maupun BARU
-      // (kalau ada yang berubah) tidak jadi minus akibat perubahan ini.
-      const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
-      const entriBaru = {
-        ...t,
-        namaBarang: newNamaBarang, kodeBarang: newKodeBarang,
-        supplier: newSupplier, pemilik: newPemilik,
-        lokasi: newLokasi, tanggal: newTanggal, jumlah: newJumlah,
-        qtyPerPallet: newQtyPerPallet, jumlahPallet: newJumlahPallet,
+      const q = sel => editPanel.querySelector(sel);
+      const el = {
+        tanggal: q('.ed-tanggal'), jumlah: q('.ed-jumlah'), qtyPallet: q('.ed-qty-pallet'),
+        jumlahPallet: q('.ed-jumlah-pallet'), keterangan: q('.ed-keterangan'),
+        at: q('.ed-at'), palletFull: q('.ed-pallet-full'), qtyBoxPallet: q('.ed-qty-box-pallet'),
+        recehBox: q('.ed-receh-box'), recehPcs: q('.ed-receh-pcs'),
       };
-      const entriesSimulasi = [...entriesTanpaIni, entriBaru];
-      const kombinasiTerdampak = new Set([
-        `${t.kodeBarang}||${t.lokasi}`,
-        `${newKodeBarang}||${newLokasi}`,
-      ]);
-      for (const key of kombinasiTerdampak) {
-        const [kode, lok] = key.split('||');
-        const stokSimulasi = getStokAtLokasi(entriesSimulasi, kode, lok);
-        if (stokSimulasi < 0) {
-          return showToast(`Perubahan ini membuat stok "${newNamaBarang}" (${kode}) di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah, kode barang, atau lokasinya.`, 'error');
+      [el.jumlah, el.qtyPallet, el.at, el.palletFull, el.qtyBoxPallet, el.recehBox, el.recehPcs]
+        .filter(Boolean).forEach(attachThousandsFormatting);
+
+      // Dropdown Nama Barang / Supplier / Pemilik — komponen yang sama dengan form input.
+      const selB = setupSearchableSelect({
+        id: `ed${uid}-barang`, options: BARANG_OPTIONS, getLabel: o => o.nama, getSub: o => o.kode,
+        placeholder: 'Pilih barang...',
+        onSelect: o => { q('.ed-kode-value').textContent = o.kode; },
+      });
+      const selS = setupSearchableSelect({
+        id: `ed${uid}-supplier`, options: MASTER_DATA.supplier, getLabel: o => o,
+        placeholder: 'Pilih supplier...', onSelect: () => {},
+      });
+      const selP = setupSearchableSelect({
+        id: `ed${uid}-pemilik`, options: rebuildPemilikOptions(), getLabel: o => o,
+        placeholder: 'Pilih pemilik barang...', onSelect: () => {},
+      });
+      selB.setValue((BARANG_OPTIONS || []).find(b => b.kode === t.kodeBarang) || { kode: t.kodeBarang, nama: t.namaBarang });
+      if (t.supplier) selS.setValue(t.supplier);
+      if (t.pemilik) selP.setValue(t.pemilik);
+
+      // Lokasi: lewat Scan barcode, sama seperti form input.
+      let lokasiDipilih = t.lokasi || '';
+      const lokasiValueEl = q('.ed-lokasi-value');
+      q('.ed-btn-scan').addEventListener('click', () => {
+        scanTarget = {
+          setValue: v => {
+            lokasiDipilih = v;
+            lokasiValueEl.textContent = v;
+            lokasiValueEl.classList.add('has-value');
+          },
+        };
+        openScanModal();
+      });
+
+      // Hitung otomatis — sama seperti hitungMasuk()/hitungJumlahPallet() di form input.
+      function kunciHasil(kunci) {
+        [el.jumlah, el.qtyPallet].forEach(inp => {
+          inp.readOnly = kunci;
+          inp.closest('.input-icon').classList.toggle('is-locked', kunci);
+        });
+      }
+      function hitungUlang() {
+        if (masuk) {
+          const a = numOrZero(el.at), full = numOrZero(el.palletFull), bp = numOrZero(el.qtyBoxPallet);
+          const rBox = numOrZero(el.recehBox), rPcs = numOrZero(el.recehPcs);
+          if (a > 0 && bp > 0) {
+            const perPallet = a * bp;
+            const total = perPallet * full + a * rBox + rPcs;
+            el.qtyPallet.value = perPallet.toLocaleString('id-ID');
+            el.jumlah.value = total > 0 ? total.toLocaleString('id-ID') : '';
+            kunciHasil(true);
+          } else {
+            // Data lama tanpa rincian @ / box per pallet: Total Qty & Qty/Pallet tetap bisa diisi langsung.
+            kunciHasil(false);
+          }
         }
+        const j = parseFormattedNumber(el.jumlah.value);
+        const qp = parseFormattedNumber(el.qtyPallet.value);
+        el.jumlahPallet.value = (j > 0 && qp > 0) ? roundPalletDisplay(j / qp) : '-';
+      }
+      [el.jumlah, el.qtyPallet, el.at, el.palletFull, el.qtyBoxPallet, el.recehBox, el.recehPcs]
+        .filter(Boolean).forEach(inp => inp.addEventListener('input', hitungUlang));
+      if (masuk) {
+        const a0 = numOrZero(el.at), bp0 = numOrZero(el.qtyBoxPallet);
+        kunciHasil(a0 > 0 && bp0 > 0);
       }
 
-      // ---- BLOKIR KAPASITAS BLOK — Edit Laporan ----
-      // Kalau laporan yang diedit ini BARANG MASUK, pallet-nya bisa berubah
-      // (lokasi dan/atau qty per pallet ikut diedit). Pastikan lokasi baru
-      // tidak jadi melebihi kapasitas akibat perubahan ini — entriesTanpaIni
-      // dipakai sebagai basis (laporan ini sendiri dikeluarkan dulu) supaya
-      // kontribusi lamanya tidak ikut terhitung dobel di lokasi baru.
-      if (t.jenis === 'masuk' && newJumlahPallet) {
-        const cekEdit = cekKapasitasBlok(newLokasi, newJumlahPallet, entriesTanpaIni);
-        if (!cekEdit.ok) {
-          return showToast(
-            `Perubahan lokasi ke ${escapeHtml(cekEdit.lokasi)} melebihi kapasitas.\n` +
-            `Dibutuhkan: ${roundPalletDisplay(newJumlahPallet)} pallet\n` +
-            `Sisa kapasitas: hanya ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet.\n` +
-            `Pilih lokasi lain atau batalkan perubahan.`, 'error'
-          );
-        }
-      }
+      q('.btn-mini-cancel').addEventListener('click', () => { editPanel.hidden = true; });
+      q('.btn-mini-save').addEventListener('click', async () => {
+        if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
+        const barang = selB.getValue();
+        const newSupplier = selS.getValue();
+        const newPemilik = selP.getValue();
+        const newLokasi = (lokasiDipilih || '').trim();
+        const newTanggal = el.tanggal.value;
+        const jumlahParsed = parseFormattedNumber(el.jumlah.value);
+        const newJumlah = Number.isFinite(jumlahParsed) ? Math.trunc(jumlahParsed) : NaN;
+        const newKeterangan = el.keterangan.value.trim();
+        const qtyPalletRaw = el.qtyPallet.value.trim();
+        const qpParsed = parseFormattedNumber(qtyPalletRaw);
+        const newQtyPerPallet = qtyPalletRaw ? qpParsed : null;
 
-      try {
-        const session = getSession();
-        const oleh = (session && session.nama) || 'Admin';
-        const waktu = Date.now();
-        const adaPerubahan = t.namaBarang !== newNamaBarang || t.kodeBarang !== newKodeBarang
-          || t.supplier !== newSupplier || t.pemilik !== newPemilik
-          || t.lokasi !== newLokasi || t.tanggal !== newTanggal
-          || t.jumlah !== newJumlah || (t.qtyPerPallet ?? null) !== newQtyPerPallet
-          || (t.keterangan || '') !== newKeterangan;
-        const editLogBaru = adaPerubahan
-          ? [...(t.editLog || []), {
-              oleh, waktu,
-              namaBarangLama: t.namaBarang, namaBarangBaru: newNamaBarang,
-              kodeBarangLama: t.kodeBarang, kodeBarangBaru: newKodeBarang,
-              supplierLama: t.supplier, supplierBaru: newSupplier,
-              pemilikLama: t.pemilik, pemilikBaru: newPemilik,
-              lokasiLama: t.lokasi, lokasiBaru: newLokasi,
-              tanggalLama: t.tanggal, tanggalBaru: newTanggal,
-              jumlahLama: t.jumlah, jumlahBaru: newJumlah,
-              qtyPerPalletLama: t.qtyPerPallet ?? null, qtyPerPalletBaru: newQtyPerPallet,
-            }]
-          : (t.editLog || []);
-        await updateEntryInFirestore(t.id, {
+        // Rincian MASUK (disimpan bersama laporan, sama seperti form input)
+        const newAt = masuk ? numOrZero(el.at) : 0;
+        const newPalletFull = masuk ? numOrZero(el.palletFull) : 0;
+        const newQtyBoxPallet = masuk ? numOrZero(el.qtyBoxPallet) : 0;
+        const newRecehBox = masuk ? numOrZero(el.recehBox) : 0;
+        const newRecehPcs = masuk ? numOrZero(el.recehPcs) : 0;
+        const newQtyPerBox = masuk ? (newAt > 0 ? newAt : null) : (t.qtyPerBox ?? null);
+
+        if (!barang) return showToast('Pilih nama barang terlebih dahulu.', 'error');
+        const newKodeBarang = barang.kode;
+        const newNamaBarang = barang.nama;
+        if (!newSupplier) return showToast('Pilih supplier terlebih dahulu.', 'error');
+        if (!newPemilik) return showToast('Pilih pemilik barang (pabrik) terlebih dahulu.', 'error');
+        if (!newLokasi) return showToast('Scan barcode lokasi penyimpanan terlebih dahulu.', 'error');
+        if (!newTanggal) return showToast(masuk ? 'Tanggal kedatangan tidak boleh kosong.' : 'Tanggal penginputan tidak boleh kosong.', 'error');
+        if (masuk && (newAt > 0) !== (newQtyBoxPallet > 0)) return showToast('Isi @ (Qty per Box/Ikat) dan Qty / Pallet (Box/Ikat) bersamaan, atau kosongkan keduanya.', 'error');
+        if (!newJumlah || newJumlah <= 0) return showToast(masuk ? 'Total Qty (Pcs) harus lebih dari 0.' : 'Jumlah Qty (Pcs) harus lebih dari 0.', 'error');
+        if (newJumlah >= 1000000) return showToast('Jumlah melebihi batas 1.000.000 pcs per laporan. Periksa kembali angkanya.', 'error');
+        if (qtyPalletRaw && (!newQtyPerPallet || newQtyPerPallet <= 0)) return showToast('Qty per pallet harus lebih dari 0.', 'error');
+        if (!qtyPalletRaw && t.qtyPerPallet != null) return showToast('Qty per pallet wajib diisi dengan angka lebih dari 0.', 'error');
+        if (!newKeterangan) return showToast('Keterangan wajib diisi untuk setiap perubahan laporan.', 'error');
+
+        const newJumlahPallet = newQtyPerPallet ? Math.round((newJumlah / newQtyPerPallet) * 100) / 100 : null;
+        const rincianMasuk = masuk ? {
+          palletFull: newPalletFull, qtyBoxPerPallet: newQtyBoxPallet, recehBox: newRecehBox, recehPcs: newRecehPcs,
+        } : {};
+
+        // Simulasikan hasil edit (entri lama dibuang, diganti versi baru),
+        // lalu pastikan stok pada kombinasi kode+lokasi LAMA maupun BARU
+        // (kalau ada yang berubah) tidak jadi minus akibat perubahan ini.
+        const entriesTanpaIni = currentEntries.filter(e => e.id !== t.id);
+        const entriBaru = {
+          ...t,
           namaBarang: newNamaBarang, kodeBarang: newKodeBarang,
           supplier: newSupplier, pemilik: newPemilik,
           lokasi: newLokasi, tanggal: newTanggal, jumlah: newJumlah,
           qtyPerPallet: newQtyPerPallet, jumlahPallet: newJumlahPallet,
-          keterangan: newKeterangan,
-          updatedAt: waktu, editLog: editLogBaru,
-        });
-        showToast('Laporan berhasil diperbarui.');
-      } catch (err) {
-        showToast('Gagal menyimpan perubahan: ' + err.message, 'error');
-      }
+          qtyPerBox: newQtyPerBox, ...rincianMasuk,
+        };
+        const entriesSimulasi = [...entriesTanpaIni, entriBaru];
+        const kombinasiTerdampak = new Set([
+          `${t.kodeBarang}||${t.lokasi}`,
+          `${newKodeBarang}||${newLokasi}`,
+        ]);
+        for (const key of kombinasiTerdampak) {
+          const [kode, lok] = key.split('||');
+          const stokSimulasi = getStokAtLokasi(entriesSimulasi, kode, lok);
+          if (stokSimulasi < 0) {
+            return showToast(`Perubahan ini membuat stok "${newNamaBarang}" (${kode}) di lokasi ${lok} jadi minus (${stokSimulasi.toLocaleString('id-ID')} pcs). Sesuaikan jumlah, kode barang, atau lokasinya.`, 'error');
+          }
+        }
+
+        // ---- BLOKIR KAPASITAS BLOK — Edit Laporan ----
+        // entriesTanpaIni dipakai sebagai basis (laporan ini sendiri dikeluarkan
+        // dulu) supaya kontribusi lamanya tidak terhitung dobel di lokasi baru.
+        if (t.jenis === 'masuk' && newJumlahPallet) {
+          const cekEdit = cekKapasitasBlok(newLokasi, newJumlahPallet, entriesTanpaIni);
+          if (!cekEdit.ok) {
+            return showToast(
+              `Perubahan lokasi ke ${escapeHtml(cekEdit.lokasi)} melebihi kapasitas.\n` +
+              `Dibutuhkan: ${roundPalletDisplay(newJumlahPallet)} pallet\n` +
+              `Sisa kapasitas: hanya ${roundPalletDisplay(cekEdit.sisa)} dari batas ${cekEdit.batas.toLocaleString('id-ID')} pallet.\n` +
+              `Pilih lokasi lain atau batalkan perubahan.`, 'error'
+            );
+          }
+        }
+
+        try {
+          const session = getSession();
+          const oleh = (session && session.nama) || 'Admin';
+          const waktu = Date.now();
+          const adaPerubahan = t.namaBarang !== newNamaBarang || t.kodeBarang !== newKodeBarang
+            || t.supplier !== newSupplier || t.pemilik !== newPemilik
+            || t.lokasi !== newLokasi || t.tanggal !== newTanggal
+            || t.jumlah !== newJumlah || (t.qtyPerPallet ?? null) !== newQtyPerPallet
+            || (t.qtyPerBox ?? null) !== newQtyPerBox
+            || (masuk && ((t.palletFull ?? 0) !== newPalletFull || (t.qtyBoxPerPallet ?? 0) !== newQtyBoxPallet
+              || (t.recehBox ?? 0) !== newRecehBox || (t.recehPcs ?? 0) !== newRecehPcs))
+            || (t.keterangan || '') !== newKeterangan;
+          const editLogBaru = adaPerubahan
+            ? [...(t.editLog || []), {
+                oleh, waktu,
+                namaBarangLama: t.namaBarang, namaBarangBaru: newNamaBarang,
+                kodeBarangLama: t.kodeBarang, kodeBarangBaru: newKodeBarang,
+                supplierLama: t.supplier, supplierBaru: newSupplier,
+                pemilikLama: t.pemilik, pemilikBaru: newPemilik,
+                lokasiLama: t.lokasi, lokasiBaru: newLokasi,
+                tanggalLama: t.tanggal, tanggalBaru: newTanggal,
+                jumlahLama: t.jumlah, jumlahBaru: newJumlah,
+                qtyPerPalletLama: t.qtyPerPallet ?? null, qtyPerPalletBaru: newQtyPerPallet,
+              }]
+            : (t.editLog || []);
+          await updateEntryInFirestore(t.id, {
+            namaBarang: newNamaBarang, kodeBarang: newKodeBarang,
+            supplier: newSupplier, pemilik: newPemilik,
+            lokasi: newLokasi, tanggal: newTanggal, jumlah: newJumlah,
+            qtyPerPallet: newQtyPerPallet, jumlahPallet: newJumlahPallet,
+            qtyPerBox: newQtyPerBox, ...rincianMasuk,
+            keterangan: newKeterangan,
+            updatedAt: waktu, editLog: editLogBaru,
+          });
+          showToast('Laporan berhasil diperbarui.');
+        } catch (err) {
+          showToast('Gagal menyimpan perubahan: ' + err.message, 'error');
+        }
+      });
+    }
+
+    card.querySelector('.btn-edit').addEventListener('click', () => {
+      if (!editSiap) { siapkanFormEdit(); editSiap = true; editPanel.hidden = false; return; }
+      editPanel.hidden = !editPanel.hidden;
     });
 
     card.querySelector('.btn-delete').addEventListener('click', async () => {
@@ -8150,18 +8284,77 @@ function buildJejakCard(t) {
   return card;
 }
 
+// Semua waktu kejadian (tiap edit + waktu hapus) dari satu laporan
+function waktuKejadianJejak(t) {
+  const w = (t.editLog || []).map(e => e.waktu).filter(Boolean);
+  if (t.dihapusAt) w.push(t.dihapusAt);
+  return w;
+}
+
+function isiPilihanOlehJejak(jejakSemua) {
+  const sel = document.getElementById('jejak-filter-oleh');
+  if (!sel) return;
+  const nama = new Set();
+  jejakSemua.forEach(t => {
+    (t.editLog || []).forEach(e => { if (e.oleh) nama.add(e.oleh); });
+    if (t.dihapusOleh) nama.add(t.dihapusOleh);
+  });
+  const dipilih = sel.value;
+  const daftar = [...nama].sort((a, b) => a.localeCompare(b, 'id'));
+  sel.innerHTML = '<option value="">Semua</option>' +
+    daftar.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  sel.value = daftar.includes(dipilih) ? dipilih : '';
+}
+
 function renderJejak() {
-  const jejak = currentEntriesRaw.filter(t => t.dihapus || (t.editLog && t.editLog.length > 0));
+  const jejakSemua = currentEntriesRaw.filter(t => t.dihapus || (t.editLog && t.editLog.length > 0));
+  isiPilihanOlehJejak(jejakSemua);
+
+  const fStatus = document.getElementById('jejak-filter-status')?.value || 'semua';
+  const fJenis = document.getElementById('jejak-filter-jenis')?.value || 'semua';
+  const fOleh = document.getElementById('jejak-filter-oleh')?.value || '';
+  const fDari = document.getElementById('jejak-filter-dari')?.value || '';
+  const fSampai = document.getElementById('jejak-filter-sampai')?.value || '';
+  const dariMs = fDari ? new Date(fDari + 'T00:00:00').getTime() : null;
+  const sampaiMs = fSampai ? new Date(fSampai + 'T23:59:59.999').getTime() : null;
+  const q = (searchRiwayat.value || '').trim().toLowerCase();
+
+  const jejak = jejakSemua.filter(t => {
+    if (fStatus === 'dihapus' && !t.dihapus) return false;
+    if (fStatus === 'diedit' && !(t.editLog && t.editLog.length > 0)) return false;
+    if (fJenis !== 'semua' && t.jenis !== fJenis) return false;
+    if (fOleh) {
+      const cocok = t.dihapusOleh === fOleh || (t.editLog || []).some(e => e.oleh === fOleh);
+      if (!cocok) return false;
+    }
+    if (dariMs !== null || sampaiMs !== null) {
+      const ada = waktuKejadianJejak(t).some(w => (dariMs === null || w >= dariMs) && (sampaiMs === null || w <= sampaiMs));
+      if (!ada) return false;
+    }
+    if (q) {
+      const gudang = [t.operator, t.namaBarang, t.kodeBarang, t.lokasi, t.supplier, t.pemilik, t.dihapusOleh,
+        ...(t.editLog || []).map(e => e.oleh)]
+        .map(v => String(v || '').toLowerCase());
+      if (!gudang.some(v => v.includes(q))) return false;
+    }
+    return true;
+  });
+
   jejak.sort((a, b) => {
     const waktuA = Math.max(a.dihapusAt || 0, a.editLog && a.editLog.length ? a.editLog[a.editLog.length - 1].waktu : 0);
     const waktuB = Math.max(b.dihapusAt || 0, b.editLog && b.editLog.length ? b.editLog[b.editLog.length - 1].waktu : 0);
     return waktuB - waktuA;
   });
-  riwayatHint.textContent = `Jejak edit & hapus — ${jejak.length.toLocaleString('id-ID')} laporan pernah diubah/dihapus (semua periode, tidak dipengaruhi filter periode di atas).`;
+  const adaFilter = q || fStatus !== 'semua' || fJenis !== 'semua' || fOleh || fDari || fSampai;
+  riwayatHint.textContent = adaFilter
+    ? `Jejak edit & hapus — menampilkan ${jejak.length.toLocaleString('id-ID')} dari ${jejakSemua.length.toLocaleString('id-ID')} laporan (sesuai filter; tidak dipengaruhi filter periode di atas).`
+    : `Jejak edit & hapus — ${jejak.length.toLocaleString('id-ID')} laporan pernah diubah/dihapus (semua periode, tidak dipengaruhi filter periode di atas).`;
   riwayatList.innerHTML = '';
   if (jejak.length === 0) {
     riwayatEmpty.hidden = false;
-    riwayatEmpty.textContent = 'Belum ada laporan yang pernah diedit atau dihapus. 👍';
+    riwayatEmpty.textContent = jejakSemua.length === 0
+      ? 'Belum ada laporan yang pernah diedit atau dihapus. 👍'
+      : 'Tidak ada laporan jejak yang cocok dengan filter.';
     return;
   }
   riwayatEmpty.hidden = true;
@@ -8232,6 +8425,27 @@ if (btnToggleJejak) {
   btnToggleJejak.addEventListener('click', () => {
     riwayatJejakMode = !riwayatJejakMode;
     btnToggleJejak.classList.toggle('is-active', riwayatJejakMode);
+    const barFilter = document.getElementById('jejak-filters');
+    if (barFilter) barFilter.hidden = !riwayatJejakMode;
+    renderRiwayat();
+  });
+}
+
+/* ---- Filter di mode Jejak ---- */
+['jejak-filter-status', 'jejak-filter-jenis', 'jejak-filter-oleh', 'jejak-filter-dari', 'jejak-filter-sampai']
+  .forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', renderRiwayat);
+  });
+const btnResetJejak = document.getElementById('jejak-filter-reset');
+if (btnResetJejak) {
+  btnResetJejak.addEventListener('click', () => {
+    document.getElementById('jejak-filter-status').value = 'semua';
+    document.getElementById('jejak-filter-jenis').value = 'semua';
+    document.getElementById('jejak-filter-oleh').value = '';
+    document.getElementById('jejak-filter-dari').value = '';
+    document.getElementById('jejak-filter-sampai').value = '';
+    searchRiwayat.value = '';
     renderRiwayat();
   });
 }

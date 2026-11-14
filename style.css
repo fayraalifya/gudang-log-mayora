@@ -1580,7 +1580,20 @@ body.role-operator .katalog-mode-tabs { display: none; }
   .lokasi-map-grid:not(.is-rack-layout) { grid-template-columns: repeat(4, 1fr); }
 }
 /* Susunan rak: kolom = lorong, baris = tingkat (07 atas -> 01 bawah) */
-.lokasi-map-grid.is-rack-layout { overflow-x: auto; }
+/* Modal yang berisi peta lokasi dilebarkan supaya semua lorong muat satu layar */
+.modal-panel:has(.lokasi-map-grid.is-rack-layout) { max-width: min(96vw, 1500px); }
+.lokasi-map-grid.is-rack-layout {
+  max-height: none; overflow: visible; gap: 6px; padding: 2px;
+  container-type: inline-size;
+}
+/* Ukuran font mengikuti lebar tiap kolom (lebar grid / jumlah lorong) */
+.lokasi-map-grid.is-rack-layout .lokasi-map-cell {
+  min-width: 0; overflow: hidden; padding: 6px clamp(2px, 0.5cqw, 8px);
+  --fs: clamp(6px, calc(100cqw / var(--cols, 6) / 7.6), 12px);
+}
+.lokasi-map-grid.is-rack-layout .lokasi-map-code,
+.lokasi-map-grid.is-rack-layout .lokasi-map-pallet { font-size: var(--fs); white-space: nowrap; }
+.lokasi-map-grid.is-rack-layout .lokasi-map-cell:hover { transform: none; filter: brightness(0.96); }
 .lokasi-map-cell.is-none { visibility: hidden; border: none; min-height: 48px; }
 .lokasi-map-cell {
   display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
@@ -3267,3 +3280,37 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   .kds-detail-grid { grid-template-columns: 1fr; }
   .kds-pagination { flex-direction: column; align-items: flex-start; }
 }
+
+/* Filter mode Jejak (Riwayat Laporan admin) */
+.jejak-filters {
+  display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: flex-end;
+  padding: 10px 12px; margin: 0 0 12px;
+  background: var(--kertas); border: 1.5px dashed var(--kraft-line); border-radius: 10px;
+}
+.jejak-filters[hidden] { display: none; }
+.jejak-filter { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-muted); font-weight: 600; }
+.jejak-filter select, .jejak-filter input {
+  font: inherit; font-size: 12.5px; font-weight: 500; color: var(--ink-soft);
+  background: var(--kertas); border: 1.5px solid var(--kraft-line); border-radius: 8px;
+  padding: 6px 8px; min-width: 130px;
+}
+.jejak-filter select:focus, .jejak-filter input:focus { outline: 2px solid var(--navy); outline-offset: 1px; }
+.jejak-filter-reset { padding: 7px 12px; }
+@media (max-width: 640px) {
+  .jejak-filter { flex: 1 1 calc(50% - 12px); }
+  .jejak-filter select, .jejak-filter input { min-width: 0; width: 100%; }
+}
+
+
+/* Form Edit Laporan — tampilan sama dengan form input laporan */
+.ticket-edit .field label { font-size: 11px; letter-spacing: 0.6px; margin-bottom: 6px; }
+.ticket-edit .input-icon input {
+  width: auto; flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  padding: 0; border-radius: 0; font-size: 14.5px; color: var(--ink-soft);
+}
+.ticket-edit .input-icon input[readonly], .ticket-edit .input-icon input:disabled { background: transparent; cursor: not-allowed; }
+.ticket-edit .searchable .search-box input {
+  width: 100%; border: 1.5px solid var(--kraft-line); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+}
+.ticket-edit .kode-box { margin: 0; }
+.ticket-edit .lokasi-input-row { min-height: 46px; }
