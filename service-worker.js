@@ -16,7 +16,7 @@
 // masalah error "Cannot read properties of null" yang sebelumnya muncul —
 // tab lama tetap memakai script.js versi lama yang sudah ada di memori).
 // ==========================================================================
-const CACHE_VERSION = 'gdpm-log-v27';
+const CACHE_VERSION = 'gdpm-log-v28';
 const APP_SHELL = [
   './',
   './index.html',
@@ -61,7 +61,7 @@ self.addEventListener('fetch', (event) => {
 
   if (isSameOrigin) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy));

@@ -135,7 +135,7 @@ function getStokKombinasi(entries, kodeBarang, supplier, pemilik, lokasi, tangga
 function getPalletKombinasi(entries, kodeBarang, supplier, pemilik, lokasi, tanggalKedatangan) {
   return entries
     .filter(t => t.kodeBarang === kodeBarang && t.supplier === supplier && t.pemilik === pemilik && t.lokasi === lokasi && tanggalBatchOf(entries, t) === tanggalKedatangan && t.jumlahPallet != null)
-    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+    .reduce((s, t) => s + (String(t.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1) * (Number(t.jumlahPallet) || 0), 0);
 }
 
 // Qty per Box/Ikat untuk satu transaksi. Kalau transaksi itu sendiri tidak
@@ -2394,6 +2394,16 @@ function buildKodePemilikList(entries) {
   });
 }
 
+// Normalisasi kode lokasi supaya penulisan berbeda tetap dianggap lokasi yang
+// SAMA: spasi nyasar, huruf kecil, atau nol di depan (mis. "a-3-1", " A-03-01 ",
+// "A-3-01" -> semuanya jadi "A-03-01"). Dipakai saat mencocokkan transaksi
+// dengan daftar lokasi master (Katalog, peta blok, cek kapasitas).
+function normalizeLokasi(lokasi) {
+  const s = String(lokasi == null ? '' : lokasi).trim().toUpperCase().replace(/\s+/g, ' ');
+  const m = s.match(/^([A-Z0-9]+)\s*[-_./ ]\s*(\d+)\s*[-_./ ]\s*(\d+)$/);
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : s;
+}
+
 function buildLocationStock(entries) {
   const map = {};
   entries.forEach(t => {
@@ -2405,7 +2415,7 @@ function buildLocationStock(entries) {
     // baris terpisah di Katalog, dan teksnya kelihatan menjorok ke kanan
     // di kartu (karena white-space: nowrap menampilkan spasi itu apa
     // adanya, bukan cuma masalah CSS).
-    const lokasiKey = String(t.lokasi).trim().replace(/\s+/g, ' ');
+    const lokasiKey = normalizeLokasi(t.lokasi);
     if (!lokasiKey) return;
     const key = t.kodeBarang || t.namaBarang;
     if (!map[lokasiKey]) map[lokasiKey] = { items: {}, lastActivity: 0, tanggalKedatangan: null, totalPallet: 0 };
@@ -2417,11 +2427,18 @@ function buildLocationStock(entries) {
       };
     }
     const it = loc.items[key];
-    const arah = t.jenis === 'masuk' ? 1 : -1;
-    it.qty += arah * t.jumlah;
-    if (t.jumlahPallet != null) {
-      it.pallet += arah * t.jumlahPallet;
-      loc.totalPallet += arah * t.jumlahPallet;
+    // Tahan data "kotor": jenis dibaca tanpa peduli huruf besar/kecil, dan
+    // jumlah/pallet dipaksa jadi angka. Kalau jumlah kosong/bukan angka
+    // (undefined -> NaN), dulu satu baris saja meracuni total lokasi jadi
+    // NaN sehingga lokasi itu selalu tampil KOSONG di Katalog & peta rak.
+    const arah = String(t.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1;
+    const jml = Number(t.jumlah);
+    if (!Number.isFinite(jml)) return;
+    it.qty += arah * jml;
+    const plt = Number(t.jumlahPallet);
+    if (t.jumlahPallet != null && Number.isFinite(plt)) {
+      it.pallet += arah * plt;
+      loc.totalPallet += arah * plt;
     }
     if (t.supplier) it.supplierSet.add(t.supplier);
     if (t.pemilik) it.pemilikSet.add(t.pemilik);
@@ -5538,7 +5555,7 @@ function cekKapasitasBlok(lokasi, deltaPallet, entriesUntukHitung) {
   
   // Hitung pallet yang sudah ada di LOKASI SPESIFIK ini (bukan seluruh blok)
   const sekarang = (entriesUntukHitung || currentEntries)
-    .filter(t => t.lokasi === lokasi && t.jumlahPallet != null)
+    .filter(t => normalizeLokasi(t.lokasi) === normalizeLokasi(lokasi) && t.jumlahPallet != null)
     .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
   
   const setelah = sekarang + (deltaPallet || 0);
@@ -5571,7 +5588,7 @@ function buildLokasiOccupancy(entries) {
   const stockMap = new Map(locStock.map(l => [l.lokasi, l]));
   const masterLokasi = (typeof MASTER_DATA !== 'undefined' && MASTER_DATA.lokasi) ? MASTER_DATA.lokasi : [];
   const allLokasi = new Set(masterLokasi);
-  entries.forEach(t => { if (t.lokasi) allLokasi.add(t.lokasi); });
+  entries.forEach(t => { if (t.lokasi) allLokasi.add(normalizeLokasi(t.lokasi)); });
 
   const bloks = {};
   allLokasi.forEach(lokasi => {
@@ -5579,16 +5596,24 @@ function buildLokasiOccupancy(entries) {
     if (!bloks[blok]) bloks[blok] = { blok, slots: [], terisi: 0, kosong: 0, totalPallet: 0 };
     const b = bloks[blok];
     const stok = stockMap.get(lokasi);
-    const isTerisi = !!(stok && stok.totalQty > 0);
+    // Hanya barang dengan stok POSITIF yang dihitung. Dulu semua barang di
+    // lokasi dijumlahkan termasuk yang saldonya minus (mis. barang keluar
+    // lebih besar dari barang masuk setelah laporan masuk diedit), sehingga
+    // saldo minus itu "menghapus" stok barang lain dan lokasi tampil KOSONG
+    // padahal masih ada barangnya.
+    const itemPositif = stok ? stok.items.filter(it => it.qty > 0) : [];
+    const isTerisi = itemPositif.length > 0;
+    const qtyPositif = itemPositif.reduce((sum, it) => sum + it.qty, 0);
+    const palletPositif = Math.max(0, itemPositif.reduce((sum, it) => sum + (it.pallet || 0), 0));
     b.slots.push({
       lokasi,
       status: isTerisi ? 'terisi' : 'kosong',
-      qty: stok ? stok.totalQty : 0,
-      pallet: stok ? stok.totalPallet : 0,
-      itemCount: stok ? stok.itemCount : 0,
+      qty: qtyPositif,
+      pallet: palletPositif,
+      itemCount: itemPositif.length,
       tanggalKedatangan: stok ? stok.tanggalKedatangan : null,
     });
-    if (isTerisi) { b.terisi++; b.totalPallet += (stok.totalPallet || 0); } else { b.kosong++; }
+    if (isTerisi) { b.terisi++; b.totalPallet += palletPositif; } else { b.kosong++; }
   });
 
   Object.values(bloks).forEach(b => {
