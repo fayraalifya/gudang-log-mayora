@@ -4772,7 +4772,7 @@ const lokasiValueEl = document.getElementById('sel-lokasi-value');
 const capacityInfoBox = document.getElementById('capacity-info');
 
 // Fungsi untuk memperbarui display kapasitas pallet berdasarkan lokasi SPESIFIK yang dipilih
-// Setiap lokasi (A-01-01, B-05-03, dll) punya batas tersendiri: 43 pallet (A-F) atau 47 pallet (G-L)
+// Setiap lokasi (A-01-01, B-05-03, dll) punya batas tersendiri: 45 pallet (A-F) atau 47 pallet (G-L)
 function updateCapacityDisplay(lokasi) {
   if (!lokasi || !capacityInfoBox) return;
   
@@ -5287,7 +5287,7 @@ form.addEventListener('submit', async (e) => {
   // ---- BLOKIR KAPASITAS LOKASI — khusus BARANG MASUK ----
   // Sebelum laporan disimpan, cek apakah pallet baru ini akan membuat
   // total pallet di LOKASI SPESIFIK tujuan melebihi batas kapasitas lokasi
-  // (43 pallet untuk lorong A-F, 47 untuk G-L).
+  // (45 pallet untuk lorong A-F, 47 untuk G-L).
   // Kalau melebihi, laporan DIBLOKIR TOTAL — tidak bisa disimpan sama sekali sampai
   // operator pilih lokasi lain yang masih ada sisa kapasitas.
   if (jenis === 'masuk') {
@@ -5486,12 +5486,12 @@ syncPeriodControls();
 // Ubah angka di bawah ini kalau batas kapasitas gudang berubah.
 // ---- Batasan Kapasitas Per Lokasi ----
 // Setiap lokasi individual (A-01-01, A-01-02, dll) punya batasan pallet maksimal.
-// Lorong A-F: max 43 pallet per lokasi
+// Lorong A-F: max 45 pallet per lokasi
 // Lorong G-L: max 47 pallet per lokasi
 function getBatasLokasiPallet(lokasi) {
   if (!lokasi) return null;
   const lorong = String(lokasi).trim().charAt(0).toUpperCase();
-  if (['A', 'B', 'C', 'D', 'E', 'F'].includes(lorong)) return 43;
+  if (['A', 'B', 'C', 'D', 'E', 'F'].includes(lorong)) return 45;
   if (['G', 'H', 'I', 'J', 'K', 'L'].includes(lorong)) return 47;
   return null;  // Lorong lain tidak punya batasan
 }
@@ -5507,7 +5507,7 @@ function getBatasLokasiPallet(lokasi) {
 //
 // PERBAIKAN SEBENARNYA: kapasitas total satu Blok = (jumlah lokasi/rak yang
 // terdaftar di Blok itu di data master) × (kapasitas pallet per lokasi —
-// 43 untuk Blok A-F, 47 untuk Blok G-L). Jumlah lokasi per Blok TIDAK selalu
+// 45 untuk Blok A-F, 47 untuk Blok G-L). Jumlah lokasi per Blok TIDAK selalu
 // sama (lihat data.js: Blok A & G cuma 5 lorong x 7 tingkat = 35 lokasi,
 // tapi Blok B/C/E/H/I/K punya 17 lorong x 7 tingkat = 119 lokasi, Blok D/J
 // 15 lorong = 105 lokasi, Blok F/L 16 lorong = 112 lokasi) — jadi kapasitas
@@ -6985,7 +6985,7 @@ function openLokasiModal(lokasi) {
   const data = all.find(l => l.lokasi === lokasi);
   if (!data) return;
 
-  // Kapasitas per lokasi spesifik: 43 pallet (lorong A-F) atau 47 pallet (lorong G-L)
+  // Kapasitas per lokasi spesifik: 45 pallet (lorong A-F) atau 47 pallet (lorong G-L)
   // Setiap lokasi individual punya batasan tersendiri untuk mencegah overstock.
   const kapasitasLokasi = cekKapasitasBlok(lokasi, 0, currentEntries);
   const pctLokasi = kapasitasLokasi.batas ? Math.min(100, Math.round((kapasitasLokasi.sekarang / kapasitasLokasi.batas) * 100)) : null;
@@ -7928,8 +7928,8 @@ function buildTicketCard(t) {
 
     // Form edit dibangun SAAT PERTAMA DIBUKA (bukan saat kartu dirender) supaya
     // daftar riwayat yang panjang tetap ringan. Tampilan & perilakunya sama
-    // dengan form input laporan: dropdown Nama Barang/Supplier/Pemilik, lokasi
-    // lewat Scan, dan kolom hitung otomatis sesuai jenis MASUK / KELUAR.
+    // dengan form input laporan: dropdown Nama Barang/Supplier/Pemilik/Lokasi
+    // (tanpa Scan), dan kolom hitung otomatis sesuai jenis MASUK / KELUAR.
     function siapkanFormEdit() {
       const uid = ++editFormSeq;
       const masuk = t.jenis === 'masuk';
@@ -7979,18 +7979,7 @@ function buildTicketCard(t) {
         </div>
         ${selField('supplier', 'Supplier', EDIT_ICON.supplier, 'Pilih supplier...')}
         ${selField('pemilik', 'Pemilik Barang (Pabrik)', EDIT_ICON.pemilik, 'Pilih pemilik barang...')}
-        <div class="field">
-          <label>Lokasi Penyimpanan <span class="req">*</span></label>
-          <div class="lokasi-input-row">
-            <div class="lokasi-scan-box">
-              ${EDIT_ICON.pin}
-              <span class="select-value ed-lokasi-value has-value">${escapeHtml(t.lokasi || 'Belum di-scan...')}</span>
-            </div>
-            <button type="button" class="btn-scan ed-btn-scan" title="Scan barcode lokasi">
-              ${EDIT_ICON.scan}<span>Scan</span>
-            </button>
-          </div>
-        </div>
+        ${selField('lokasi', 'Lokasi Penyimpanan', EDIT_ICON.pin, 'Pilih lokasi...')}
         ${inpField('ed-tanggal', masuk ? 'Tanggal Kedatangan' : 'Tanggal Penginputan', EDIT_ICON.calendar, t.tanggal || '', { type: 'date', req: true })}
         ${masuk ? `
           ${inpField('ed-at', '@ — Qty per Box/Ikat (pcs)', EDIT_ICON.at, nf(at))}
@@ -8040,19 +8029,13 @@ function buildTicketCard(t) {
       if (t.supplier) selS.setValue(t.supplier);
       if (t.pemilik) selP.setValue(t.pemilik);
 
-      // Lokasi: lewat Scan barcode, sama seperti form input.
+      // Lokasi: dipilih dari daftar (tanpa scan) saat edit riwayat.
       let lokasiDipilih = t.lokasi || '';
-      const lokasiValueEl = q('.ed-lokasi-value');
-      q('.ed-btn-scan').addEventListener('click', () => {
-        scanTarget = {
-          setValue: v => {
-            lokasiDipilih = v;
-            lokasiValueEl.textContent = v;
-            lokasiValueEl.classList.add('has-value');
-          },
-        };
-        openScanModal();
+      const selL = setupSearchableSelect({
+        id: `ed${uid}-lokasi`, options: MASTER_DATA.lokasi || [], getLabel: o => o,
+        placeholder: 'Pilih lokasi...', onSelect: o => { lokasiDipilih = o; },
       });
+      if (t.lokasi) selL.setValue(t.lokasi);
 
       // Hitung otomatis — sama seperti hitungMasuk()/hitungJumlahPallet() di form input.
       function kunciHasil(kunci) {
@@ -8115,7 +8098,7 @@ function buildTicketCard(t) {
         const newNamaBarang = barang.nama;
         if (!newSupplier) return showToast('Pilih supplier terlebih dahulu.', 'error');
         if (!newPemilik) return showToast('Pilih pemilik barang (pabrik) terlebih dahulu.', 'error');
-        if (!newLokasi) return showToast('Scan barcode lokasi penyimpanan terlebih dahulu.', 'error');
+        if (!newLokasi) return showToast('Pilih lokasi penyimpanan terlebih dahulu.', 'error');
         if (!newTanggal) return showToast(masuk ? 'Tanggal kedatangan tidak boleh kosong.' : 'Tanggal penginputan tidak boleh kosong.', 'error');
         if (masuk && (newAt > 0) !== (newQtyBoxPallet > 0)) return showToast('Isi @ (Qty per Box/Ikat) dan Qty / Pallet (Box/Ikat) bersamaan, atau kosongkan keduanya.', 'error');
         if (!newJumlah || newJumlah <= 0) return showToast(masuk ? 'Total Qty (Pcs) harus lebih dari 0.' : 'Jumlah Qty (Pcs) harus lebih dari 0.', 'error');

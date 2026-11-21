@@ -1,5 +1,7 @@
 rules_version = '2';
 // ==========================================================================
+// v3.4 — whitelist EDIT ditambah qtyPerBox, palletFull, qtyBoxPerPallet,
+// recehBox, recehPcs (rincian barang masuk) yang ikut dikirim form Edit Riwayat.
 // v3.3 — Perbaikan rule `update` pada koleksi `laporan`: v3.2 memperbaiki
 // masalah field 'editLog'/'dihapus' tapi whitelist EDIT masih cuma
 // ['lokasi','jumlah','keterangan','updatedAt','editLog'], padahal form Edit
@@ -76,7 +78,9 @@ service cloud.firestore {
                             .hasOnly([
                               'namaBarang', 'kodeBarang', 'supplier', 'pemilik',
                               'lokasi', 'tanggal', 'jumlah', 'qtyPerPallet',
-                              'jumlahPallet', 'keterangan', 'updatedAt', 'editLog'
+                              'jumlahPallet', 'keterangan', 'updatedAt', 'editLog',
+                              'qtyPerBox', 'palletFull', 'qtyBoxPerPallet',
+                              'recehBox', 'recehPcs'
                             ])
                         && request.resource.data.namaBarang is string
                         && request.resource.data.namaBarang.size() > 0
@@ -97,6 +101,17 @@ service cloud.firestore {
                         && (request.resource.data.get('jumlahPallet', null) == null
                             || request.resource.data.jumlahPallet is number)
                         && request.resource.data.get('keterangan', '') is string
+                        && (request.resource.data.get('qtyPerBox', null) == null
+                            || (request.resource.data.qtyPerBox is number
+                                && request.resource.data.qtyPerBox > 0))
+                        && (request.resource.data.get('palletFull', null) == null
+                            || request.resource.data.palletFull is number)
+                        && (request.resource.data.get('qtyBoxPerPallet', null) == null
+                            || request.resource.data.qtyBoxPerPallet is number)
+                        && (request.resource.data.get('recehBox', null) == null
+                            || request.resource.data.recehBox is number)
+                        && (request.resource.data.get('recehPcs', null) == null
+                            || request.resource.data.recehPcs is number)
                         && request.resource.data.updatedAt is number
                       )
                       ||
