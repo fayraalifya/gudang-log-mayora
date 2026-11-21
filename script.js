@@ -4789,7 +4789,7 @@ const lokasiValueEl = document.getElementById('sel-lokasi-value');
 const capacityInfoBox = document.getElementById('capacity-info');
 
 // Fungsi untuk memperbarui display kapasitas pallet berdasarkan lokasi SPESIFIK yang dipilih
-// Setiap lokasi (A-01-01, B-05-03, dll) punya batas tersendiri: 45 pallet (A-F) atau 47 pallet (G-L)
+// Setiap lokasi (A-01-01, B-05-03, dll) punya batas tersendiri: 46 pallet (A-F) atau 47 pallet (G-L)
 function updateCapacityDisplay(lokasi) {
   if (!lokasi || !capacityInfoBox) return;
   
@@ -5304,7 +5304,7 @@ form.addEventListener('submit', async (e) => {
   // ---- BLOKIR KAPASITAS LOKASI — khusus BARANG MASUK ----
   // Sebelum laporan disimpan, cek apakah pallet baru ini akan membuat
   // total pallet di LOKASI SPESIFIK tujuan melebihi batas kapasitas lokasi
-  // (45 pallet untuk lorong A-F, 47 untuk G-L).
+  // (46 pallet untuk lorong A-F, 47 untuk G-L).
   // Kalau melebihi, laporan DIBLOKIR TOTAL — tidak bisa disimpan sama sekali sampai
   // operator pilih lokasi lain yang masih ada sisa kapasitas.
   if (jenis === 'masuk') {
@@ -5503,12 +5503,12 @@ syncPeriodControls();
 // Ubah angka di bawah ini kalau batas kapasitas gudang berubah.
 // ---- Batasan Kapasitas Per Lokasi ----
 // Setiap lokasi individual (A-01-01, A-01-02, dll) punya batasan pallet maksimal.
-// Lorong A-F: max 45 pallet per lokasi
+// Lorong A-F: max 46 pallet per lokasi
 // Lorong G-L: max 47 pallet per lokasi
 function getBatasLokasiPallet(lokasi) {
   if (!lokasi) return null;
   const lorong = String(lokasi).trim().charAt(0).toUpperCase();
-  if (['A', 'B', 'C', 'D', 'E', 'F'].includes(lorong)) return 45;
+  if (['A', 'B', 'C', 'D', 'E', 'F'].includes(lorong)) return 46;
   if (['G', 'H', 'I', 'J', 'K', 'L'].includes(lorong)) return 47;
   return null;  // Lorong lain tidak punya batasan
 }
@@ -5524,7 +5524,7 @@ function getBatasLokasiPallet(lokasi) {
 //
 // PERBAIKAN SEBENARNYA: kapasitas total satu Blok = (jumlah lokasi/rak yang
 // terdaftar di Blok itu di data master) × (kapasitas pallet per lokasi —
-// 45 untuk Blok A-F, 47 untuk Blok G-L). Jumlah lokasi per Blok TIDAK selalu
+// 46 untuk Blok A-F, 47 untuk Blok G-L). Jumlah lokasi per Blok TIDAK selalu
 // sama (lihat data.js: Blok A & G cuma 5 lorong x 7 tingkat = 35 lokasi,
 // tapi Blok B/C/E/H/I/K punya 17 lorong x 7 tingkat = 119 lokasi, Blok D/J
 // 15 lorong = 105 lokasi, Blok F/L 16 lorong = 112 lokasi) — jadi kapasitas
@@ -7010,7 +7010,7 @@ function openLokasiModal(lokasi) {
   const data = all.find(l => l.lokasi === lokasi);
   if (!data) return;
 
-  // Kapasitas per lokasi spesifik: 45 pallet (lorong A-F) atau 47 pallet (lorong G-L)
+  // Kapasitas per lokasi spesifik: 46 pallet (lorong A-F) atau 47 pallet (lorong G-L)
   // Setiap lokasi individual punya batasan tersendiri untuk mencegah overstock.
   const kapasitasLokasi = cekKapasitasBlok(lokasi, 0, currentEntries);
   const pctLokasi = kapasitasLokasi.batas ? Math.min(100, Math.round((kapasitasLokasi.sekarang / kapasitasLokasi.batas) * 100)) : null;
