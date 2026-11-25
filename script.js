@@ -3154,7 +3154,7 @@ async function diagnosaPenolakan(entry) {
         .reduce((a, t) => a + (String(t.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1) * (Number(t.jumlahPallet) || 0), 0);
       console.log('[diagnosa] pallet', lok, { server, layar, tambah: kon.delta });
       if (Math.abs(server - layar) > 0.05) {
-        info.push('Penghitung pallet ' + lok + ' di server (' + roundPalletDisplay(server) + ') tidak sama dengan hitungan layar (' + roundPalletDisplay(layar) + ') — minta admin tekan "Sinkron Kapasitas".');
+        info.push('Penghitung pallet ' + lok + ' di server (' + roundPalletDisplay(server) + ') tidak sama dengan hitungan layar (' + roundPalletDisplay(layar) + ') — hubungi admin untuk koreksi data di Firebase Console.');
       } else if (masuk && server + kon.delta > 47.001) {
         info.push('Kapasitas ' + lok + ' benar-benar penuh (' + roundPalletDisplay(server) + ' + ' + roundPalletDisplay(kon.delta) + ' > 47 pallet).');
       }
@@ -3169,7 +3169,7 @@ async function diagnosaPenolakan(entry) {
         .reduce((a, t) => a + kontribusiStokEntry(t).delta, 0);
       console.log('[diagnosa] stok', stk.key, { server, layar, tambah: stk.delta });
       if (Math.abs(server - layar) > 0.5) {
-        info.push('Penghitung stok ' + stk.key + ' di server (' + server + ' pcs) tidak sama dengan hitungan layar (' + layar + ' pcs) — minta admin tekan "Sinkron Kapasitas".');
+        info.push('Penghitung stok ' + stk.key + ' di server (' + server + ' pcs) tidak sama dengan hitungan layar (' + layar + ' pcs) — hubungi admin untuk koreksi data di Firebase Console.');
       } else if (!masuk && server + stk.delta < 0) {
         info.push('Stok ' + stk.key + ' di server tidak cukup (' + server + ' pcs).');
       }
@@ -3231,37 +3231,6 @@ async function softDeleteEntryFromFirestore(id, oleh, oldEntry) {
   if (kon) { const m = new Map(); tambahDeltaKapasitas(m, kon.lokasi, -kon.delta); tulisDeltaKapasitas(batch, fb, m, null); }
   if (stk) { const m = new Map(); tambahDeltaKapasitas(m, stk.key, -stk.delta); tulisDeltaStok(batch, fb, m, null); }
   await batch.commit();
-}
-
-// Sinkronisasi awal / koreksi (ADMIN): hitung ulang penghitung tiap lokasi
-// dari semua laporan aktif lalu tulis ke `kapasitasLokasi`. WAJIB dijalankan
-// sekali setelah rules baru di-deploy (dan kapan pun angka dirasa melenceng).
-async function sinkronkanKapasitasLokasi() {
-  const fb = window.gudangFirebase;
-  const hitung = new Map(), hitungStok = new Map();
-  currentEntries.forEach(e => {
-    const k = kontribusiPalletEntry(e);
-    if (k) tambahDeltaKapasitas(hitung, k.lokasi, k.delta);
-    const st = kontribusiStokEntry(e);
-    if (st) tambahDeltaKapasitas(hitungStok, st.key, st.delta);
-  });
-  const existing = await fb.getDocs(fb.kapasitasLokasiCol);
-  existing.docs.forEach(d => { if (!hitung.has(d.id)) hitung.set(d.id, 0); });
-  const existingStok = await fb.getDocs(fb.collection(fb.db, 'stokLokasi'));
-  existingStok.docs.forEach(d => { if (!hitungStok.has(d.id)) hitungStok.set(d.id, 0); });
-
-  const ops = [
-    ...[...hitung.entries()].map(([id, v]) => ['kapasitasLokasi', id, { pallet: Math.round(v * 100) / 100 }]),
-    ...[...hitungStok.entries()].map(([id, v]) => ['stokLokasi', id, { pcs: Math.round(v) }]),
-  ];
-  for (let i = 0; i < ops.length; i += 400) {
-    const batch = fb.writeBatch(fb.db);
-    ops.slice(i, i + 400).forEach(([col, id, data]) => {
-      batch.set(fb.doc(fb.db, col, id), { ...data, updatedAt: Date.now() }, { merge: true });
-    });
-    await batch.commit();
-  }
-  return ops.length;
 }
 
 async function clearAllEntriesInFirestore() {
@@ -8927,19 +8896,3 @@ window.addEventListener('gudang-firebase-auth-error', () => {
   setConnectUI('error');
 });
 
-// Tombol admin: sinkronkan penghitung kapasitas lokasi di server.
-(function () {
-  const btn = document.getElementById('btn-sinkron-kapasitas');
-  if (!btn) return;
-  btn.addEventListener('click', async () => {
-    if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
-    if (!await showConfirmModal({ title: 'Sinkronkan Kapasitas Lokasi', message: 'Hitung ulang jumlah pallet tiap lokasi dari semua laporan aktif dan simpan ke server?' })) return;
-    btn.disabled = true;
-    try {
-      const n = await sinkronkanKapasitasLokasi();
-      showToast(`Kapasitas & stok (${n} data) berhasil disinkronkan.`);
-    } catch (err) {
-      showToast('Gagal sinkronisasi: ' + err.message, 'error');
-    } finally { btn.disabled = false; }
-  });
-})();
