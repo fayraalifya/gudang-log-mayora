@@ -3126,6 +3126,63 @@ function tulisDeltaStok(batch, fb, map, lastLaporanId) {
   });
 }
 
+// Diagnosa penyebab permission-denied saat kirim laporan: bandingkan angka
+// penghitung di SERVER (kapasitasLokasi / stokLokasi) dengan hitungan dari
+// daftar laporan di layar, dan cek profil akun. Hasil lengkap di console.
+async function diagnosaPenolakan(entry) {
+  const fb = window.gudangFirebase;
+  try {
+    const uid = fb.auth.currentUser && fb.auth.currentUser.uid;
+    if (!uid) return 'Sesi login Firebase tidak aktif — keluar lalu login ulang.';
+    const [op, ad] = await Promise.all([
+      fb.getDoc(fb.doc(fb.db, 'operator', uid)),
+      fb.getDoc(fb.doc(fb.db, 'admin', uid)),
+    ]);
+    if (!op.exists() && !ad.exists()) {
+      return 'Akun ini tidak punya profil operator/admin di server — daftar ulang atau hubungi admin.';
+    }
+    const lok = normalizeLokasi(entry.lokasi);
+    const masuk = String(entry.jenis || '').trim().toLowerCase() === 'masuk';
+    const info = [];
+
+    const kon = kontribusiPalletEntry(entry);
+    if (kon) {
+      const snap = await fb.getDoc(fb.doc(fb.db, 'kapasitasLokasi', lok));
+      const server = snap.exists() ? Number(snap.data().pallet) || 0 : 0;
+      const layar = currentEntries
+        .filter(t => normalizeLokasi(t.lokasi) === lok && t.jumlahPallet != null && t.id !== entry.id)
+        .reduce((a, t) => a + (String(t.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1) * (Number(t.jumlahPallet) || 0), 0);
+      console.log('[diagnosa] pallet', lok, { server, layar, tambah: kon.delta });
+      if (Math.abs(server - layar) > 0.05) {
+        info.push('Penghitung pallet ' + lok + ' di server (' + roundPalletDisplay(server) + ') tidak sama dengan hitungan layar (' + roundPalletDisplay(layar) + ') — minta admin tekan "Sinkron Kapasitas".');
+      } else if (masuk && server + kon.delta > 47.001) {
+        info.push('Kapasitas ' + lok + ' benar-benar penuh (' + roundPalletDisplay(server) + ' + ' + roundPalletDisplay(kon.delta) + ' > 47 pallet).');
+      }
+    }
+
+    const stk = kontribusiStokEntry(entry);
+    if (stk) {
+      const snap = await fb.getDoc(fb.doc(fb.db, 'stokLokasi', stk.key));
+      const server = snap.exists() ? Number(snap.data().pcs) || 0 : 0;
+      const layar = currentEntries
+        .filter(t => { const k = kontribusiStokEntry(t); return k && k.key === stk.key && t.id !== entry.id; })
+        .reduce((a, t) => a + kontribusiStokEntry(t).delta, 0);
+      console.log('[diagnosa] stok', stk.key, { server, layar, tambah: stk.delta });
+      if (Math.abs(server - layar) > 0.5) {
+        info.push('Penghitung stok ' + stk.key + ' di server (' + server + ' pcs) tidak sama dengan hitungan layar (' + layar + ' pcs) — minta admin tekan "Sinkron Kapasitas".');
+      } else if (!masuk && server + stk.delta < 0) {
+        info.push('Stok ' + stk.key + ' di server tidak cukup (' + server + ' pcs).');
+      }
+    }
+
+    if (info.length) return info.join(' ');
+    return 'Angka penghitung cocok, jadi kemungkinan firestore.rules terbaru belum di-deploy atau ada rule lain yang gagal (cek console browser).';
+  } catch (e) {
+    console.error('[diagnosa] gagal:', e);
+    return 'Penyebab pasti tidak bisa dibaca (' + (e && e.message ? e.message : e) + ').';
+  }
+}
+
 async function addEntryToFirestore(entry) {
   const fb = window.gudangFirebase;
   const kon = kontribusiPalletEntry(entry);
@@ -5581,7 +5638,9 @@ form.addEventListener('submit', async (e) => {
     writePromise.catch((err) => {
       console.error('Gagal menyinkronkan laporan ke server:', err);
       if (err && err.code === 'permission-denied') {
-        showToast('Laporan DITOLAK server: kapasitas lokasi melebihi 47 pallet ATAU stok barang di lokasi tidak cukup (atau data belum disinkronkan admin). Laporan tidak tercatat.', 'error');
+        diagnosaPenolakan(entryData).then((alasan) => {
+          showToast('Laporan DITOLAK server. ' + alasan + ' Laporan tidak tercatat.', 'error');
+        });
       } else {
         showToast('Salah satu laporan gagal terkirim ke server: ' + err.message, 'error');
       }
