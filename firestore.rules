@@ -47,6 +47,60 @@ service cloud.firestore {
       return isOperator() || isAdmin();
     }
 
+    // ---- KAPASITAS LOKASI (dokumen penghitung kapasitasLokasi/{lokasi}) ----
+    // Lokasi lorong A-L maksimal 47 pallet (samakan dengan getBatasLokasiPallet
+    // di script.js). Laporan baru WAJIB ditulis satu batch dengan perubahan
+    // penghitung lokasinya, dan nilai penghitung SETELAH batch dicek di sini.
+    function batasLokasiPallet() {
+      return 47;
+    }
+    function lokasiBerbatas(lok) {
+      return lok.matches('^[A-L]-.*');
+    }
+    function kapPath(lok) {
+      return /databases/$(database)/documents/kapasitasLokasi/$(lok);
+    }
+    function kapSebelum(lok) {
+      return exists(kapPath(lok)) ? get(kapPath(lok)).data.pallet : 0;
+    }
+    // ---- STOK per (kode barang + lokasi): dokumen stokLokasi/{kode_lokasi} ----
+    function stokBerkunci(d) {
+      return d.kodeBarang.matches('^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')
+          && d.lokasi.matches('^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$');
+    }
+    function stokPath(d) {
+      return /databases/$(database)/documents/stokLokasi/$(d.kodeBarang + '_' + d.lokasi);
+    }
+    function stokSebelum(d) {
+      return exists(stokPath(d)) ? get(stokPath(d)).data.pcs : 0;
+    }
+    function stokLaporanOk(docId, d) {
+      return !stokBerkunci(d)
+        || (
+          existsAfter(stokPath(d))
+          && getAfter(stokPath(d)).data.lastLaporanId == docId
+          && math.abs(getAfter(stokPath(d)).data.pcs
+                      - (stokSebelum(d) + (d.jenis == 'masuk' ? d.jumlah : -d.jumlah))) < 0.5
+          && (d.jenis == 'masuk' || getAfter(stokPath(d)).data.pcs >= 0)
+        );
+    }
+    function kapasitasLaporanOk(docId, d) {
+      return !lokasiBerbatas(d.lokasi)
+        || d.get('jumlahPallet', null) == null
+        || (
+          d.jumlahPallet is number
+          && d.get('qtyPerPallet', null) != null
+          && d.qtyPerPallet is number
+          && d.qtyPerPallet > 0
+          && math.abs(d.jumlahPallet - d.jumlah / d.qtyPerPallet) < 0.01
+          && existsAfter(kapPath(d.lokasi))
+          && getAfter(kapPath(d.lokasi)).data.lastLaporanId == docId
+          && math.abs(getAfter(kapPath(d.lokasi)).data.pallet
+                      - (kapSebelum(d.lokasi) + (d.jenis == 'masuk' ? d.jumlahPallet : -d.jumlahPallet))) < 0.001
+          && (d.jenis != 'masuk' || getAfter(kapPath(d.lokasi)).data.pallet <= batasLokasiPallet() + 0.001)
+        );
+    }
+
     match /laporan/{docId} {
       allow read: if isAppUser();
       allow create: if isAppUser()
@@ -68,7 +122,9 @@ service cloud.firestore {
                     && request.resource.data.jumlah < 1000000
                     && request.resource.data.tanggal is string
                     && request.resource.data.createdAt is number
-                    && request.resource.data.updatedAt is number;
+                    && request.resource.data.updatedAt is number
+                    && kapasitasLaporanOk(docId, request.resource.data)
+                    && stokLaporanOk(docId, request.resource.data);
       allow update: if isAdmin()
                     && (
                       (
@@ -228,6 +284,43 @@ service cloud.firestore {
                             && request.resource.data.ditambahOleh.size() > 0))
                     && (!('deleted' in request.resource.data.diff(resource.data).affectedKeys())
                         || request.resource.data.deleted is bool);
+      allow delete: if isAdmin();
+    }
+
+    // ---- Penghitung kapasitas per lokasi ----
+    // Admin: bebas (edit/hapus laporan & sinkronisasi). Operator: hanya
+    // boleh mengubah bersama pembuatan laporan BARU yang id-nya = lastLaporanId.
+    match /kapasitasLokasi/{lok} {
+      allow read: if isAppUser();
+      allow create, update: if (isAdmin() && request.resource.data.pallet is number)
+                    || (
+                      isAppUser()
+                      && request.resource.data.pallet is number
+                      && request.resource.data.lastLaporanId is string
+                      && request.resource.data.diff(resource == null ? {} : resource.data).affectedKeys()
+                            .hasOnly(['pallet', 'lastLaporanId', 'updatedAt'])
+                      && !exists(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
+                      && existsAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
+                      && getAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId)).data.lokasi == lok
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // ---- Penghitung stok per kode+lokasi (sama pola dengan kapasitasLokasi) ----
+    match /stokLokasi/{key} {
+      allow read: if isAppUser();
+      allow create, update: if (isAdmin() && request.resource.data.pcs is number)
+                    || (
+                      isAppUser()
+                      && request.resource.data.pcs is number
+                      && request.resource.data.lastLaporanId is string
+                      && request.resource.data.diff(resource == null ? {} : resource.data).affectedKeys()
+                            .hasOnly(['pcs', 'lastLaporanId', 'updatedAt'])
+                      && !exists(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
+                      && existsAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
+                      && (getAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId)).data.kodeBarang
+                          + '_' + getAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId)).data.lokasi) == key
+                    );
       allow delete: if isAdmin();
     }
 

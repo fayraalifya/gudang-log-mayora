@@ -62,6 +62,7 @@ import {
   getDocs,
   query,
   where,
+  increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   getAuth,
@@ -108,6 +109,7 @@ const BARANG_BARU_COLLECTION = "barangBaru";
 const PEMILIK_BARU_COLLECTION = "pemilikBaru";
 const SUPPLIER_BARU_COLLECTION = "supplierBaru";
 const LOKASI_BARU_COLLECTION = "lokasiBaru";
+const KAPASITAS_LOKASI_COLLECTION = "kapasitasLokasi";
 
 // ---- Promise "SDK siap" ----
 // Beda dari versi lama: ini TIDAK LAGI menunggu proses sign-in (karena
@@ -148,6 +150,7 @@ window.gudangFirebase = {
   pemilikBaruCol: collection(db, PEMILIK_BARU_COLLECTION),
   supplierBaruCol: collection(db, SUPPLIER_BARU_COLLECTION),
   lokasiBaruCol: collection(db, LOKASI_BARU_COLLECTION),
+  kapasitasLokasiCol: collection(db, KAPASITAS_LOKASI_COLLECTION),
   collection,
   addDoc,
   setDoc,
@@ -161,6 +164,7 @@ window.gudangFirebase = {
   getDocs,
   query,
   where,
+  increment,
   // ---- Auth ----
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,

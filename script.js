@@ -6,6 +6,14 @@
 // Harus di-deklarasikan DI ATAS class definition untuk avoid TDZ (Temporal Dead Zone)
 let currentEntries = [];
 let currentEntriesRaw = [];
+// true = lokasi tujuan Barang Masuk penuh / akan melebihi kapasitas -> tombol kirim dikunci
+let kapasitasTerblokir = false;
+// true = jumlah Barang Keluar melebihi stok kombinasi yang dipilih -> tombol kirim dikunci
+let stokKeluarTerblokir = false;
+function terapkanKunciSubmit() {
+  const b = document.getElementById('btn-submit');
+  if (b) b.disabled = !firestoreReady || kapasitasTerblokir || stokKeluarTerblokir;
+}
 
 /* ==========================================================================
    OVERLAY MASTER DATA — barang, supplier, pemilik, lokasi
@@ -2776,7 +2784,7 @@ function setConnectUI(state) {
   // sedang offline; laporan tetap boleh dikirim dan otomatis tersimpan
   // dulu ke perangkat (lihat updatePendingSyncUI & submit handler).
   const submitBtn = document.getElementById('btn-submit');
-  if (submitBtn) submitBtn.disabled = state !== 'connected';
+  if (submitBtn) submitBtn.disabled = state !== 'connected' || kapasitasTerblokir || stokKeluarTerblokir;
 
   if (currentRole() === 'operator') {
     operatorNotReady.hidden = state === 'connected';
@@ -3018,27 +3026,143 @@ document.getElementById('btn-retry-connect').addEventListener('click', () => {
   initFirestoreConnection();
 });
 
-async function addEntryToFirestore(entry) {
-  const fb = window.gudangFirebase;
-  await fb.addDoc(fb.laporanCol, entry);
+// ==========================================================================
+// KAPASITAS LOKASI DI SERVER (dokumen penghitung per lokasi)
+// Koleksi `kapasitasLokasi/{lokasi}` = { pallet, lastLaporanId, updatedAt }.
+// Setiap laporan Barang Masuk/Keluar ditulis ATOMIK (satu batch) bersama
+// perubahan penghitung lokasinya (increment). firestore.rules memeriksa
+// penghitung SETELAH batch (getAfter) — kalau > 47 pallet, seluruh batch
+// DITOLAK server, walau dua operator input bersamaan atau sedang offline.
+// ==========================================================================
+function kontribusiPalletEntry(e) {
+  if (!e || !e.lokasi || e.jumlahPallet == null) return null;
+  const lok = normalizeLokasi(e.lokasi);
+  if (!getBatasLokasiPallet(lok)) return null;
+  const p = Number(e.jumlahPallet) || 0;
+  if (!p) return null;
+  const arah = String(e.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1;
+  return { lokasi: lok, delta: arah * p };
 }
 
-async function updateEntryInFirestore(id, changes) {
+function tambahDeltaKapasitas(map, lokasi, delta) {
+  map.set(lokasi, (map.get(lokasi) || 0) + delta);
+}
+
+function tulisDeltaKapasitas(batch, fb, map, lastLaporanId) {
+  map.forEach((delta, lokasi) => {
+    if (!delta) return;
+    const data = { pallet: fb.increment(delta), updatedAt: Date.now() };
+    if (lastLaporanId) data.lastLaporanId = lastLaporanId;
+    batch.set(fb.doc(fb.db, 'kapasitasLokasi', lokasi), data, { merge: true });
+  });
+}
+
+// ---- Penghitung STOK per (kode barang + lokasi), koleksi `stokLokasi` ----
+// Backstop server untuk Barang Keluar: stok kode+lokasi tidak boleh minus,
+// walau dua operator mengeluarkan bersamaan / offline. (Pengecekan per BATCH
+// yang lebih halus tetap dilakukan di browser — lihat submit handler.)
+function stokKeyAman(kode, lokasi) {
+  const k = String(kode || ''), l = String(lokasi || '');
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(k)) return null;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/.test(l)) return null;
+  return k + '_' + l;
+}
+function kontribusiStokEntry(e) {
+  if (!e || !e.kodeBarang || !e.lokasi) return null;
+  const key = stokKeyAman(e.kodeBarang, normalizeLokasi(e.lokasi));
+  if (!key) return null;
+  const n = Number(e.jumlah) || 0;
+  if (!n) return null;
+  return { key, delta: (String(e.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1) * n };
+}
+function tulisDeltaStok(batch, fb, map, lastLaporanId) {
+  map.forEach((delta, key) => {
+    if (!delta) return;
+    const data = { pcs: fb.increment(delta), updatedAt: Date.now() };
+    if (lastLaporanId) data.lastLaporanId = lastLaporanId;
+    batch.set(fb.doc(fb.db, 'stokLokasi', key), data, { merge: true });
+  });
+}
+
+async function addEntryToFirestore(entry) {
   const fb = window.gudangFirebase;
-  await fb.updateDoc(fb.doc(fb.db, 'laporan', id), changes);
+  const kon = kontribusiPalletEntry(entry);
+  const stk = kontribusiStokEntry(entry);
+  if (!kon && !stk) { await fb.addDoc(fb.laporanCol, entry); return; }
+  const ref = fb.doc(fb.laporanCol);            // id dibuat di klien
+  const batch = fb.writeBatch(fb.db);
+  batch.set(ref, entry);
+  if (kon) { const m = new Map(); tambahDeltaKapasitas(m, kon.lokasi, kon.delta); tulisDeltaKapasitas(batch, fb, m, ref.id); }
+  if (stk) { const m = new Map(); tambahDeltaKapasitas(m, stk.key, stk.delta); tulisDeltaStok(batch, fb, m, ref.id); }
+  await batch.commit();
+}
+
+// oldEntry (opsional) = laporan sebelum diedit, supaya penghitung lokasi
+// lama dikurangi & lokasi baru ditambah dalam satu batch (admin).
+async function updateEntryInFirestore(id, changes, oldEntry) {
+  const fb = window.gudangFirebase;
+  const ref = fb.doc(fb.db, 'laporan', id);
+  if (!oldEntry) { await fb.updateDoc(ref, changes); return; }
+  const baruEntry = { ...oldEntry, ...changes };
+  const m = new Map(), ms = new Map();
+  const lama = kontribusiPalletEntry(oldEntry), baru = kontribusiPalletEntry(baruEntry);
+  if (lama) tambahDeltaKapasitas(m, lama.lokasi, -lama.delta);
+  if (baru) tambahDeltaKapasitas(m, baru.lokasi, baru.delta);
+  const sl = kontribusiStokEntry(oldEntry), sb = kontribusiStokEntry(baruEntry);
+  if (sl) tambahDeltaKapasitas(ms, sl.key, -sl.delta);
+  if (sb) tambahDeltaKapasitas(ms, sb.key, sb.delta);
+  const batch = fb.writeBatch(fb.db);
+  batch.update(ref, changes);
+  tulisDeltaKapasitas(batch, fb, m, null);
+  tulisDeltaStok(batch, fb, ms, null);
+  await batch.commit();
 }
 
 // SOFT DELETE — dokumennya TIDAK dihapus dari Firestore, cuma ditandai
-// dihapus + dicatat siapa & kapan. Ini penting untuk akuntabilitas gudang:
-// kalau suatu saat ada selisih stok yang harus ditelusuri, riwayat siapa
-// yang menghapus laporan apa tetap ada, gak hilang begitu saja.
-async function softDeleteEntryFromFirestore(id, oleh) {
+// dihapus + dicatat siapa & kapan. Penghitung lokasi & stok ikut dikoreksi.
+async function softDeleteEntryFromFirestore(id, oleh, oldEntry) {
   const fb = window.gudangFirebase;
-  await fb.updateDoc(fb.doc(fb.db, 'laporan', id), {
-    dihapus: true,
-    dihapusOleh: oleh,
-    dihapusAt: Date.now(),
+  const ref = fb.doc(fb.db, 'laporan', id);
+  const changes = { dihapus: true, dihapusOleh: oleh, dihapusAt: Date.now() };
+  const kon = kontribusiPalletEntry(oldEntry);
+  const stk = kontribusiStokEntry(oldEntry);
+  if (!kon && !stk) { await fb.updateDoc(ref, changes); return; }
+  const batch = fb.writeBatch(fb.db);
+  batch.update(ref, changes);
+  if (kon) { const m = new Map(); tambahDeltaKapasitas(m, kon.lokasi, -kon.delta); tulisDeltaKapasitas(batch, fb, m, null); }
+  if (stk) { const m = new Map(); tambahDeltaKapasitas(m, stk.key, -stk.delta); tulisDeltaStok(batch, fb, m, null); }
+  await batch.commit();
+}
+
+// Sinkronisasi awal / koreksi (ADMIN): hitung ulang penghitung tiap lokasi
+// dari semua laporan aktif lalu tulis ke `kapasitasLokasi`. WAJIB dijalankan
+// sekali setelah rules baru di-deploy (dan kapan pun angka dirasa melenceng).
+async function sinkronkanKapasitasLokasi() {
+  const fb = window.gudangFirebase;
+  const hitung = new Map(), hitungStok = new Map();
+  currentEntries.forEach(e => {
+    const k = kontribusiPalletEntry(e);
+    if (k) tambahDeltaKapasitas(hitung, k.lokasi, k.delta);
+    const st = kontribusiStokEntry(e);
+    if (st) tambahDeltaKapasitas(hitungStok, st.key, st.delta);
   });
+  const existing = await fb.getDocs(fb.kapasitasLokasiCol);
+  existing.docs.forEach(d => { if (!hitung.has(d.id)) hitung.set(d.id, 0); });
+  const existingStok = await fb.getDocs(fb.collection(fb.db, 'stokLokasi'));
+  existingStok.docs.forEach(d => { if (!hitungStok.has(d.id)) hitungStok.set(d.id, 0); });
+
+  const ops = [
+    ...[...hitung.entries()].map(([id, v]) => ['kapasitasLokasi', id, { pallet: Math.round(v * 100) / 100 }]),
+    ...[...hitungStok.entries()].map(([id, v]) => ['stokLokasi', id, { pcs: Math.round(v) }]),
+  ];
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = fb.writeBatch(fb.db);
+    ops.slice(i, i + 400).forEach(([col, id, data]) => {
+      batch.set(fb.doc(fb.db, col, id), { ...data, updatedAt: Date.now() }, { merge: true });
+    });
+    await batch.commit();
+  }
+  return ops.length;
 }
 
 async function clearAllEntriesInFirestore() {
@@ -4750,6 +4874,7 @@ function refreshKombinasiUI(kodeBarang) {
     btn.addEventListener('click', () => {
       const c = combos[Number(btn.dataset.idx)];
       kombinasiTerkunci = c;
+      if (typeof updateCapacityDisplay === 'function') updateCapacityDisplay();
       selSupplier.setValue(c.supplier);
       selPemilik.setValue(c.pemilik);
       selLokasi.reset();
@@ -4790,45 +4915,87 @@ const capacityInfoBox = document.getElementById('capacity-info');
 
 // Fungsi untuk memperbarui display kapasitas pallet berdasarkan lokasi SPESIFIK yang dipilih
 // Setiap lokasi (A-01-01, B-05-03, dll) punya batas tersendiri: 47 pallet (A-F) atau 47 pallet (G-L)
-function updateCapacityDisplay(lokasi) {
-  if (!lokasi || !capacityInfoBox) return;
-  
-  const cek = cekKapasitasBlok(lokasi, 0, currentEntries);
+function updateCapacityCore(lokasi) {
+  if (lokasi === undefined) lokasi = (typeof selLokasi !== 'undefined') ? selLokasi.getValue() : null;
+  const submitBtn = document.getElementById('btn-submit');
+  const warnEl = document.getElementById('capacity-warning');
+  const setBlocked = (v) => {
+    kapasitasTerblokir = v;
+    terapkanKunciSubmit();
+  };
+  if (!lokasi || !capacityInfoBox) { setBlocked(false); if (warnEl) warnEl.hidden = true; return; }
+
+  // Pallet yang sedang diketik di form (hanya dihitung untuk Barang MASUK)
+  const j = parseFormattedNumber(inputJumlah.value);
+  const q = parseFormattedNumber(inputQtyPallet.value);
+  const palletInput = (jenis === 'masuk' && j && q > 0) ? Math.round((j / q) * 100) / 100 : 0;
+
+  const cek = cekKapasitasBlok(lokasi, palletInput, currentEntries);
   const capacityCurrentEl = document.getElementById('capacity-current');
   const capacityMaxEl = document.getElementById('capacity-max');
   const capacityRemainingEl = document.getElementById('capacity-remaining');
   const capacityBarFill = document.getElementById('capacity-bar-fill');
-  
-  if (cek.batas) {
-    // Hapus atribut hidden untuk menampilkan info
-    capacityInfoBox.removeAttribute('hidden');
-    
-    // Update nilai kapasitas lokasi
-    if (capacityCurrentEl) capacityCurrentEl.textContent = roundPalletDisplay(cek.sekarang);
-    if (capacityMaxEl) capacityMaxEl.textContent = cek.batas.toLocaleString('id-ID');
-    if (capacityRemainingEl) {
-      capacityRemainingEl.textContent = roundPalletDisplay(cek.sisa);
-      
-      // Update kelas warna berdasarkan persentase penggunaan
-      capacityRemainingEl.classList.remove('warning', 'danger');
-      const persenTerpakai = (cek.sekarang / cek.batas) * 100;
-      if (persenTerpakai >= 90) {
-        capacityRemainingEl.classList.add('danger');  // Merah: >90%
-      } else if (persenTerpakai >= 70) {
-        capacityRemainingEl.classList.add('warning'); // Kuning: 70-89%
-      }
-      // Hijau (normal): <70% — tidak perlu class khusus
-    }
-    
-    // Update progress bar dengan warna gradient
-    if (capacityBarFill) {
-      const persenTerpakai = Math.min(100, (cek.sekarang / cek.batas) * 100);
-      capacityBarFill.style.width = persenTerpakai + '%';
-    }
-  } else {
-    // Lokasi tidak terdaftar dalam sistem batasan, sembunyikan info
+
+  if (!cek.batas) {
     capacityInfoBox.setAttribute('hidden', '');
+    setBlocked(false);
+    if (warnEl) warnEl.hidden = true;
+    return;
   }
+
+  capacityInfoBox.removeAttribute('hidden');
+  if (capacityCurrentEl) capacityCurrentEl.textContent = roundPalletDisplay(cek.sekarang);
+  if (capacityMaxEl) capacityMaxEl.textContent = cek.batas.toLocaleString('id-ID');
+  if (capacityRemainingEl) {
+    capacityRemainingEl.textContent = roundPalletDisplay(cek.sisa);
+    capacityRemainingEl.classList.remove('warning', 'danger');
+    const pct = (cek.sekarang / cek.batas) * 100;
+    if (pct >= 90) capacityRemainingEl.classList.add('danger');
+    else if (pct >= 70) capacityRemainingEl.classList.add('warning');
+  }
+  if (capacityBarFill) {
+    capacityBarFill.style.width = Math.min(100, (cek.setelah / cek.batas) * 100) + '%';
+    capacityBarFill.classList.toggle('over', !cek.ok);
+  }
+
+  // ---- Peringatan + kunci tombol (khusus Barang MASUK) ----
+  let pesan = '';
+  if (jenis === 'masuk') {
+    if (cek.sekarang >= cek.batas) {
+      pesan = `⛔ Lokasi ${cek.lokasi} SUDAH PENUH (${roundPalletDisplay(cek.sekarang)} / ${cek.batas} pallet). Barang tidak bisa dimasukkan ke lokasi ini — scan lokasi lain.`;
+    } else if (!cek.ok) {
+      pesan = `⛔ Melebihi kapasitas! Laporan ini ${roundPalletDisplay(palletInput)} pallet, sedangkan sisa Lokasi ${cek.lokasi} hanya ${roundPalletDisplay(cek.sisa)} pallet. Kurangi jumlah atau scan lokasi lain.`;
+    }
+  }
+  if (warnEl) { warnEl.textContent = pesan; warnEl.hidden = !pesan; }
+  setBlocked(!!pesan);
+}
+
+// Peringatan LANGSUNG untuk Barang KELUAR: jumlah > stok kombinasi terpilih.
+function updateStokKeluarWarning() {
+  const warnEl = document.getElementById('stok-keluar-warning');
+  let pesan = '';
+  if (jenis === 'keluar' && kombinasiTerkunci) {
+    const barang = selBarang.getValue();
+    const lok = selLokasi.getValue();
+    const j = parseFormattedNumber(inputJumlah.value);
+    if (barang && lok && lok !== kombinasiTerkunci.lokasi) {
+      pesan = `⛔ Lokasi yang di-scan (${lok}) tidak sama dengan lokasi kombinasi stok (${kombinasiTerkunci.lokasi}). Scan ulang lokasi yang benar.`;
+    } else if (barang && lok && j > 0) {
+      const stok = getStokKombinasi(currentEntries, barang.kode, kombinasiTerkunci.supplier, kombinasiTerkunci.pemilik, lok, kombinasiTerkunci.tanggalKedatangan);
+      if (j > stok) {
+        pesan = `⛔ Stok tidak cukup! Anda mengeluarkan ${j.toLocaleString('id-ID')} pcs, sedangkan stok tersedia di kombinasi ini hanya ${Math.max(stok, 0).toLocaleString('id-ID')} pcs. Kurangi jumlah.`;
+      }
+    }
+  }
+  if (warnEl) { warnEl.textContent = pesan; warnEl.hidden = !pesan; }
+  stokKeluarTerblokir = !!pesan;
+  terapkanKunciSubmit();
+}
+
+function updateCapacityDisplay(lokasi) {
+  updateCapacityCore(lokasi);
+  updateStokKeluarWarning();
 }
 
 const selLokasi = {
@@ -4842,6 +5009,10 @@ const selLokasi = {
     }
     // Sembunyikan kapasitas info saat lokasi di-reset
     if (capacityInfoBox) capacityInfoBox.setAttribute('hidden', '');
+    kapasitasTerblokir = false;
+    stokKeluarTerblokir = false;
+    const _w = document.getElementById('capacity-warning'); if (_w) _w.hidden = true;
+    const _s = document.getElementById('stok-keluar-warning'); if (_s) _s.hidden = true;
   },
   setValue: (v) => {
     selLokasi._value = v;
@@ -4901,6 +5072,7 @@ function hitungJumlahPallet() {
   const qtyPallet = parseFormattedNumber(inputQtyPallet.value);
   if (!jumlah || !qtyPallet || qtyPallet <= 0) {
     inputJumlahPallet.value = '';
+    updateCapacityDisplay();
     return;
   }
   const hasil = jumlah / qtyPallet;
@@ -4908,6 +5080,7 @@ function hitungJumlahPallet() {
   // pemisah ribuan juga (mis. 1.250,5)
   const dibulatkan = Math.round(hasil * 100) / 100;
   inputJumlahPallet.value = dibulatkan.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+  updateCapacityDisplay();
 }
 inputJumlah.addEventListener('input', hitungJumlahPallet);
 inputQtyPallet.addEventListener('input', hitungJumlahPallet);
@@ -5365,13 +5538,17 @@ form.addEventListener('submit', async (e) => {
 
     writePromise.catch((err) => {
       console.error('Gagal menyinkronkan laporan ke server:', err);
-      showToast('Salah satu laporan gagal terkirim ke server: ' + err.message, 'error');
+      if (err && err.code === 'permission-denied') {
+        showToast('Laporan DITOLAK server: kapasitas lokasi melebihi 47 pallet ATAU stok barang di lokasi tidak cukup (atau data belum disinkronkan admin). Laporan tidak tercatat.', 'error');
+      } else {
+        showToast('Salah satu laporan gagal terkirim ke server: ' + err.message, 'error');
+      }
     });
   } catch (err) {
     showError('Gagal menyimpan laporan: ' + err.message);
   } finally {
     isSubmittingLaporan = false;
-    submitBtn.disabled = !firestoreReady;
+    submitBtn.disabled = !firestoreReady || kapasitasTerblokir || stokKeluarTerblokir;
     submitText.textContent = originalText;
   }
 });
@@ -5556,12 +5733,12 @@ function cekKapasitasBlok(lokasi, deltaPallet, entriesUntukHitung) {
   // Hitung pallet yang sudah ada di LOKASI SPESIFIK ini (bukan seluruh blok)
   const sekarang = (entriesUntukHitung || currentEntries)
     .filter(t => normalizeLokasi(t.lokasi) === normalizeLokasi(lokasi) && t.jumlahPallet != null)
-    .reduce((s, t) => s + (t.jenis === 'masuk' ? t.jumlahPallet : -t.jumlahPallet), 0);
+    .reduce((s, t) => s + (String(t.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1) * (Number(t.jumlahPallet) || 0), 0);
   
   const setelah = sekarang + (deltaPallet || 0);
   const lorong = String(lokasi).trim().charAt(0).toUpperCase();
   return {
-    ok: setelah <= batas, lokasi, lorong, batas, sekarang,
+    ok: setelah <= batas + 1e-9, lokasi, lorong, batas, sekarang,
     sisa: Math.max(batas - sekarang, 0), setelah,
   };
 }
@@ -8210,7 +8387,7 @@ function buildTicketCard(t) {
             qtyPerBox: newQtyPerBox, ...rincianMasuk,
             keterangan: newKeterangan,
             updatedAt: waktu, editLog: editLogBaru,
-          });
+          }, t);
           showToast('Laporan berhasil diperbarui.');
         } catch (err) {
           showToast('Gagal menyimpan perubahan: ' + err.message, 'error');
@@ -8229,7 +8406,7 @@ function buildTicketCard(t) {
       const session = getSession();
       const oleh = (session && session.nama) || 'Admin';
       try {
-        await softDeleteEntryFromFirestore(t.id, oleh);
+        await softDeleteEntryFromFirestore(t.id, oleh, t);
         showToast('Laporan dihapus.');
       } catch (err) {
         showToast('Gagal menghapus: ' + err.message, 'error');
@@ -8648,3 +8825,20 @@ document.getElementById('btn-export').addEventListener('click', async () => {
 window.addEventListener('gudang-firebase-auth-error', () => {
   setConnectUI('error');
 });
+
+// Tombol admin: sinkronkan penghitung kapasitas lokasi di server.
+(function () {
+  const btn = document.getElementById('btn-sinkron-kapasitas');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    if (!firestoreReady) return showToast('Database tidak terhubung.', 'error');
+    if (!await showConfirmModal({ title: 'Sinkronkan Kapasitas Lokasi', message: 'Hitung ulang jumlah pallet tiap lokasi dari semua laporan aktif dan simpan ke server?' })) return;
+    btn.disabled = true;
+    try {
+      const n = await sinkronkanKapasitasLokasi();
+      showToast(`Kapasitas & stok (${n} data) berhasil disinkronkan.`);
+    } catch (err) {
+      showToast('Gagal sinkronisasi: ' + err.message, 'error');
+    } finally { btn.disabled = false; }
+  });
+})();

@@ -3354,3 +3354,18 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
   .modal-panel:has(.lokasi-map-grid) .modal-stat:nth-child(4) { grid-column: 1 / -1; }
   .lokasi-map-legend { margin-bottom: 8px; }
 }
+
+
+/* ---- Panel kapasitas lokasi di form Barang Masuk ---- */
+.capacity-info-box { margin: 12px 0; padding: 12px 14px; border: 1.5px solid var(--kraft-line); border-radius: 12px; background: var(--hijau-soft); }
+.capacity-info-box[hidden] { display: none; }
+.capacity-info-label { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+.capacity-info-details { font-size: 14px; margin-bottom: 8px; }
+.capacity-remaining-text.warning { color: var(--oranye); font-weight: 700; }
+.capacity-remaining-text.danger { color: var(--merah-deep); font-weight: 700; }
+.capacity-bar { height: 8px; border-radius: 6px; background: var(--kraft-line); overflow: hidden; }
+.capacity-bar-fill { height: 100%; background: var(--hijau); transition: width .15s; }
+.capacity-bar-fill.over { background: var(--merah); }
+.capacity-warning { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--merah-soft); color: var(--merah-deep); border: 1.5px solid var(--merah); font-weight: 700; font-size: 13px; line-height: 1.4; }
+.capacity-warning[hidden] { display: none; }
+.btn-submit:disabled { cursor: not-allowed; }

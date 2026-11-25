@@ -550,7 +550,9 @@
             <div class="capacity-bar" id="capacity-bar">
               <div class="capacity-bar-fill" id="capacity-bar-fill" style="width: 0%"></div>
             </div>
+            <div id="capacity-warning" class="capacity-warning" role="alert" hidden></div>
           </div>
+          <div id="stok-keluar-warning" class="capacity-warning" role="alert" hidden></div>
 
         </div>
 
@@ -1356,6 +1358,9 @@
             <button type="button" id="btn-export" class="btn-secondary">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
               Unduh Excel
+            </button>
+            <button type="button" id="btn-sinkron-kapasitas" class="btn-secondary" title="Hitung ulang penghitung kapasitas lokasi di server">
+              Sinkron Kapasitas
             </button>
           </div>
         </div>
