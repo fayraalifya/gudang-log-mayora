@@ -3369,3 +3369,12 @@ body.role-operator #katalog-mode-tabs [data-mode="pemilik"] { display: none !imp
 .capacity-warning { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--merah-soft); color: var(--merah-deep); border: 1.5px solid var(--merah); font-weight: 700; font-size: 13px; line-height: 1.4; }
 .capacity-warning[hidden] { display: none; }
 .btn-submit:disabled { cursor: not-allowed; }
+
+/* ---- Peringatan admin: lokasi melebihi kapasitas ---- */
+.kap-alert { margin: 12px 0; padding: 14px 16px; border: 2px solid var(--merah); border-radius: 12px; background: var(--merah-soft); color: var(--merah-deep); }
+.kap-alert[hidden] { display: none; }
+.kap-alert-title { font-weight: 800; font-size: 15px; margin-bottom: 6px; }
+.kap-alert-hint { font-size: 13px; line-height: 1.45; margin-bottom: 8px; }
+.kap-alert-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.kap-alert-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 13px; padding: 6px 0; border-top: 1px dashed var(--merah); }
+.kap-alert-list em { font-style: normal; font-weight: 700; }

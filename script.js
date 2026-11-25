@@ -2916,7 +2916,49 @@ function updateAdminNavBadge(panel, count) {
   });
 }
 
+// ---- Peringatan ADMIN: lokasi yang tercatat melebihi kapasitas ----
+// Dihitung dari laporan aktif. Muncul di atas Dashboard admin selama masih
+// ada lokasi dengan total pallet > batas.
+function renderPeringatanKapasitasAdmin() {
+  const box = document.getElementById('admin-kapasitas-alert');
+  if (!box) return;
+  if (currentRole() !== 'admin') { box.hidden = true; return; }
+
+  const total = new Map();
+  currentEntries.forEach(t => {
+    if (!t.lokasi || t.jumlahPallet == null) return;
+    const lok = normalizeLokasi(t.lokasi);
+    if (!getBatasLokasiPallet(lok)) return;
+    const arah = String(t.jenis || '').trim().toLowerCase() === 'masuk' ? 1 : -1;
+    total.set(lok, (total.get(lok) || 0) + arah * (Number(t.jumlahPallet) || 0));
+  });
+  const over = [...total.entries()]
+    .map(([lok, p]) => ({ lok, p, batas: getBatasLokasiPallet(lok) }))
+    .filter(x => x.p > x.batas + 1e-9)
+    .sort((a, b) => (b.p - b.batas) - (a.p - a.batas));
+
+  if (!over.length) { box.hidden = true; box.innerHTML = ''; return; }
+
+  box.hidden = false;
+  box.innerHTML = `
+    <div class="kap-alert-title">⚠️ ${over.length} lokasi tercatat MELEBIHI kapasitas</div>
+    <div class="kap-alert-hint">Pindahkan barangnya ke lokasi lain, atau perbaiki laporannya: menu <strong>Riwayat</strong> → <strong>Edit Laporan</strong> (ubah lokasi / jumlah) bila ada kesalahan input. Selama belum dibereskan, barang masuk ke lokasi ini ditolak.</div>
+    <ul class="kap-alert-list">
+      ${over.slice(0, 20).map(x => `
+        <li>
+          <span><strong>${escapeHtml(x.lok)}</strong> — ${roundPalletDisplay(x.p)} / ${x.batas} pallet
+          <em>(kelebihan ${roundPalletDisplay(x.p - x.batas)} pallet)</em></span>
+          <button type="button" class="btn-secondary kap-alert-btn" data-lokasi="${escapeHtml(x.lok)}">Lihat batch</button>
+        </li>`).join('')}
+    </ul>
+    ${over.length > 20 ? `<div class="kap-alert-hint">+${over.length - 20} lokasi lainnya.</div>` : ''}`;
+  box.querySelectorAll('.kap-alert-btn').forEach(b => {
+    b.addEventListener('click', () => openLokasiModal(b.dataset.lokasi));
+  });
+}
+
 function renderAll() {
+  renderPeringatanKapasitasAdmin();
   renderRingkasan();
   renderStokWarning();
   renderKatalog();
