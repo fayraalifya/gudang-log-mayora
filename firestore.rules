@@ -1,5 +1,14 @@
 rules_version = '2';
 // ==========================================================================
+// v3.6 — Laporan dengan jumlahPallet yang dibulatkan jadi 0 (qty receh kecil
+// dibanding qtyPerPallet, mis. 10 pcs dari pallet 2.400 pcs) sebelumnya
+// SELALU ditolak di lokasi A-L, karena browser tidak menulis penghitung
+// kapasitasLokasi untuk 0 pallet sementara rules mewajibkannya. Sekarang
+// jumlahPallet == 0 diperlakukan sama seperti null (tanpa penghitung).
+// ==========================================================================
+// ==========================================================================
+// v3.5 — kapSebelum/stokSebelum tahan terhadap dokumen penghitung yang field
+// pallet/pcs-nya hilang atau bukan angka (dianggap 0, sama seperti increment()).
 // v3.4 — whitelist EDIT ditambah qtyPerBox, palletFull, qtyBoxPerPallet,
 // recehBox, recehPcs (rincian barang masuk) yang ikut dikirim form Edit Riwayat.
 // v3.3 — Perbaikan rule `update` pada koleksi `laporan`: v3.2 memperbaiki
@@ -61,7 +70,8 @@ service cloud.firestore {
       return /databases/$(database)/documents/kapasitasLokasi/$(lok);
     }
     function kapSebelum(lok) {
-      return exists(kapPath(lok)) ? get(kapPath(lok)).data.pallet : 0;
+      return exists(kapPath(lok)) && (get(kapPath(lok)).data.get('pallet', 0) is number)
+        ? get(kapPath(lok)).data.get('pallet', 0) : 0;
     }
     // ---- STOK per (kode barang + lokasi): dokumen stokLokasi/{kode_lokasi} ----
     function stokBerkunci(d) {
@@ -72,7 +82,8 @@ service cloud.firestore {
       return /databases/$(database)/documents/stokLokasi/$(d.kodeBarang + '_' + d.lokasi);
     }
     function stokSebelum(d) {
-      return exists(stokPath(d)) ? get(stokPath(d)).data.pcs : 0;
+      return exists(stokPath(d)) && (get(stokPath(d)).data.get('pcs', 0) is number)
+        ? get(stokPath(d)).data.get('pcs', 0) : 0;
     }
     function stokLaporanOk(docId, d) {
       return !stokBerkunci(d)
@@ -87,6 +98,7 @@ service cloud.firestore {
     function kapasitasLaporanOk(docId, d) {
       return !lokasiBerbatas(d.lokasi)
         || d.get('jumlahPallet', null) == null
+        || d.get('jumlahPallet', null) == 0
         || (
           d.jumlahPallet is number
           && d.get('qtyPerPallet', null) != null
