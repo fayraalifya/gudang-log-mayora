@@ -1,5 +1,13 @@
 rules_version = '2';
 // ==========================================================================
+// v3.7 — PENOLAKAN SERVER UNTUK STOK & KAPASITAS DIMATIKAN.
+// Laporan masuk/keluar tidak lagi dicek terhadap penghitung kapasitasLokasi
+// dan stokLokasi, dan penulisan penghitung itu tidak lagi disyaratkan cocok
+// dengan laporan. Validasi stok & kapasitas tetap berjalan di browser
+// (script.js). Fungsi kapasitasLaporanOk / stokLaporanOk dibiarkan ada tapi
+// tidak dipakai; aktifkan kembali di rule `create` laporan bila perlu.
+// ==========================================================================
+// ==========================================================================
 // v3.6 — Laporan dengan jumlahPallet yang dibulatkan jadi 0 (qty receh kecil
 // dibanding qtyPerPallet, mis. 10 pcs dari pallet 2.400 pcs) sebelumnya
 // SELALU ditolak di lokasi A-L, karena browser tidak menulis penghitung
@@ -134,9 +142,7 @@ service cloud.firestore {
                     && request.resource.data.jumlah < 1000000
                     && request.resource.data.tanggal is string
                     && request.resource.data.createdAt is number
-                    && request.resource.data.updatedAt is number
-                    && kapasitasLaporanOk(docId, request.resource.data)
-                    && stokLaporanOk(docId, request.resource.data);
+                    && request.resource.data.updatedAt is number;
       allow update: if isAdmin()
                     && (
                       (
@@ -304,35 +310,14 @@ service cloud.firestore {
     // boleh mengubah bersama pembuatan laporan BARU yang id-nya = lastLaporanId.
     match /kapasitasLokasi/{lok} {
       allow read: if isAppUser();
-      allow create, update: if (isAdmin() && request.resource.data.pallet is number)
-                    || (
-                      isAppUser()
-                      && request.resource.data.pallet is number
-                      && request.resource.data.lastLaporanId is string
-                      && request.resource.data.diff(resource == null ? {} : resource.data).affectedKeys()
-                            .hasOnly(['pallet', 'lastLaporanId', 'updatedAt'])
-                      && !exists(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
-                      && existsAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
-                      && getAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId)).data.lokasi == lok
-                    );
+      allow create, update: if isAppUser() && request.resource.data.pallet is number;
       allow delete: if isAdmin();
     }
 
     // ---- Penghitung stok per kode+lokasi (sama pola dengan kapasitasLokasi) ----
     match /stokLokasi/{key} {
       allow read: if isAppUser();
-      allow create, update: if (isAdmin() && request.resource.data.pcs is number)
-                    || (
-                      isAppUser()
-                      && request.resource.data.pcs is number
-                      && request.resource.data.lastLaporanId is string
-                      && request.resource.data.diff(resource == null ? {} : resource.data).affectedKeys()
-                            .hasOnly(['pcs', 'lastLaporanId', 'updatedAt'])
-                      && !exists(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
-                      && existsAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId))
-                      && (getAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId)).data.kodeBarang
-                          + '_' + getAfter(/databases/$(database)/documents/laporan/$(request.resource.data.lastLaporanId)).data.lokasi) == key
-                    );
+      allow create, update: if isAppUser() && request.resource.data.pcs is number;
       allow delete: if isAdmin();
     }
 
